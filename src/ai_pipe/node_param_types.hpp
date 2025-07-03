@@ -11,13 +11,15 @@
 #ifndef __AI_NODE_PARAM_TYPES_HPP__
 #define __AI_NODE_PARAM_TYPES_HPP__
 
-#include "core/infer_types.hpp"
-#include "logger/logger.hpp"
-#include "pipe_common_types.hpp"
-#include "utils/data_packet.hpp"
-#include "utils/param_center.hpp"
-#include <nlohmann/json.hpp>
 #include <variant>
+
+#include "pipe_common_types.hpp"
+
+#include <ai_core/algo_data_types.hpp>
+#include <data_packet.hpp>
+#include <logger.hpp>
+#include <nlohmann/json.hpp>
+#include <param_center.hpp>
 
 namespace ai_pipe {
 struct DemoSourceNodeParams {
@@ -48,11 +50,11 @@ struct VisualizationNodeParams {
   std::string outputDir;
 };
 
-using NodeParams = utils::ParamCenter<
+using NodeParams = common_utils::ParamCenter<
     std::variant<std::monostate, DemoSourceNodeParams, DemoProcessingNodeParams,
                  DemoSinkNodeParams>>;
 
-using NodeConstructParams = ::utils::DataPacket;
+using NodeConstructParams = common_utils::DataPacket;
 
 void from_json(const nlohmann::json &j, DemoSourceNodeParams &p);
 

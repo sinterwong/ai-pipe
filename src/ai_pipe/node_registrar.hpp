@@ -2,10 +2,11 @@
 #define __NODE_REGISTRAR_HPP__
 
 #include "node_base.hpp"
-#include "utils/type_safe_factory.hpp"
+
+#include <type_safe_factory.hpp>
 
 namespace ai_pipe {
-using NodeFactory = ::utils::Factory<NodeBase>;
+using NodeFactory = common_utils::Factory<NodeBase>;
 
 class NodeRegistrar {
 public:

@@ -9,14 +9,16 @@
  *
  */
 #include "pipeline_context.hpp"
+
+#include <ai_core/algo_manager.hpp>
 namespace ai_pipe {
 
 void PipelineContext::setAlgoManager(
-    std::shared_ptr<infer::dnn::AlgoManager> manager) {
+    std::shared_ptr<ai_core::dnn::AlgoManager> manager) {
   algoManager_ = std::move(manager);
 }
 
-std::shared_ptr<infer::dnn::AlgoManager>
+std::shared_ptr<ai_core::dnn::AlgoManager>
 PipelineContext::getAlgoManager() const {
   return algoManager_;
 }

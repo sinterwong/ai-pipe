@@ -13,19 +13,18 @@
 #define __PIPE_TYPES_HPP__
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
-#include "utils/data_packet.hpp"
-#include "utils/thread_pool.hpp"
+#include <data_packet.hpp>
+#include <thread_pool.hpp>
 
 namespace ai_pipe {
 
-using PortData = ::utils::DataPacket;
+using PortData = common_utils::DataPacket;
 
 using PortDataPtr = std::shared_ptr<PortData>;
 
-using ThreadPool = ::utils::thread_pool;
+using ThreadPool = common_utils::thread_pool;
 
 using PortDataMap = std::map<std::string, PortDataPtr>;
 

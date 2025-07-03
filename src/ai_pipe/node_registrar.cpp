@@ -1,15 +1,15 @@
 
+
 #include "node_registrar.hpp"
-
-#include "node_base.hpp"
-#include "node_param_types.hpp"
-#include "utils/type_safe_factory.hpp"
-
 #include "demo_nodes.hpp"
 #include "image_reader_node.hpp"
+#include "node_base.hpp"
+#include "node_param_types.hpp"
 #include "result_saver_node.hpp"
 #include "vision_inference_node.hpp"
 #include "visualization_node.hpp"
+
+#include <type_safe_factory.hpp>
 
 namespace ai_pipe {
 

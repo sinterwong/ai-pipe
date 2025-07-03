@@ -10,10 +10,11 @@
  */
 #ifndef __PIPE_NODE_BASE_HPP_
 #define __PIPE_NODE_BASE_HPP_
-#include "pipe_types.hpp"
-#include "pipeline_context.hpp"
 #include <string>
 #include <vector>
+
+#include "pipe_types.hpp"
+#include "pipeline_context.hpp"
 namespace ai_pipe {
 
 class NodeBase {

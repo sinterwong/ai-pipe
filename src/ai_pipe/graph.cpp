@@ -8,9 +8,11 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include "graph.hpp"
-#include "logger/logger.hpp"
 #include <algorithm>
+
+#include "graph.hpp"
+
+#include <logger.hpp>
 
 namespace ai_pipe {
 bool Graph::addNode(const std::shared_ptr<NodeBase> &node) {

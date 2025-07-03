@@ -1,13 +1,13 @@
-#include "vision_inference_node.hpp"
-#include "core/infer_types.hpp"
-#include "logger/logger.hpp"
-#include "types/pipe_data_types.hpp"
-#include "utils/mexception.hpp"
-
 #include <vector>
 
+#include "types/pipe_data_types.hpp"
+#include "vision_inference_node.hpp"
+
+#include <logger.hpp>
+#include <mexception.hpp>
+
 namespace ai_pipe {
-using namespace utils::exception;
+using namespace common_utils::exception;
 VisionInferenceNode::VisionInferenceNode(
     const std::string &name, const VisionInferenceNodeParams &params)
     : NodeBase(name), params_(params) {
@@ -67,31 +67,49 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
 
   // make input data
   // TODO: maybe a dedicated node can be set up later to complete this step
-  infer::AlgoInput algoInput;
-  infer::FrameInput frameInput;
+  ai_core::AlgoPreprocParams preprocParams;
+  ai_core::FramePreprocessArg framePreprocArgs;
+  framePreprocArgs.roi = {0, 0, imageData->data.cols, imageData->data.rows};
+  framePreprocArgs.originShape = {imageData->data.cols, imageData->data.rows,
+                                  imageData->data.channels()};
+  framePreprocArgs.modelInputShape = {640, 640, 3};
+  framePreprocArgs.isEqualScale = true;
+  framePreprocArgs.needResize = true;
+  framePreprocArgs.pad = {0, 0, 0};
+  framePreprocArgs.meanVals = {0, 0, 0};
+  framePreprocArgs.normVals = {255.f, 255.f, 255.f};
+  framePreprocArgs.dataType = ai_core::DataType::FLOAT16;
+  framePreprocArgs.hwc2chw = true;
+  framePreprocArgs.inputName = "images";
+  preprocParams.setParams(framePreprocArgs);
+
+  ai_core::AlgoInput algoInput;
+  ai_core::FrameInput frameInput;
   frameInput.image = imageData->data;
-  frameInput.args.originShape = {imageData->data.cols, imageData->data.rows};
-  frameInput.args.roi = {0, 0, imageData->data.cols, imageData->data.rows};
-  frameInput.args.isEqualScale = true;
-  frameInput.args.pad = {0, 0, 0};
-  frameInput.args.meanVals = {0, 0, 0};
-  frameInput.args.normVals = {255.f, 255.f, 255.f};
   algoInput.setParams(frameInput);
 
-  infer::AlgoOutput result;
-  infer::InferErrorCode inferRet =
-      algoManager->infer(params_.modelName, algoInput, result);
-  if (inferRet != infer::InferErrorCode::SUCCESS) {
+  ai_core::AlgoPostprocParams postprocParams;
+  ai_core::AnchorDetParams anchorDetParams;
+  anchorDetParams.condThre = 0.35;
+  anchorDetParams.nmsThre = 0.5;
+  anchorDetParams.outputNames = {"output0"};
+  postprocParams.setParams(anchorDetParams);
+
+  ai_core::AlgoOutput algoOutput;
+
+  ai_core::InferErrorCode inferRet = algoManager->infer(
+      params_.modelName, algoInput, preprocParams, algoOutput, postprocParams);
+  if (inferRet != ai_core::InferErrorCode::SUCCESS) {
     LOG_ERRORS << "VisionInferenceNode: Inference failed for model '"
                << params_.modelName << "'. Error: " << (int)inferRet;
-    throw InferenceException(
+    throw ExecutionException(
         "VisionInferenceNode: Inference failed for model '" +
         params_.modelName + "'.");
   }
 
   auto inference_result_data_packet = std::make_shared<PortData>();
-  inference_result_data_packet->setParam<infer::AlgoOutput>("infer_result",
-                                                            result);
+  inference_result_data_packet->setParam<ai_core::AlgoOutput>("infer_result",
+                                                              algoOutput);
   outputs[ouputPortName] = inference_result_data_packet;
 }
 

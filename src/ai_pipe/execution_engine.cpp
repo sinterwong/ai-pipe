@@ -8,10 +8,12 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include "execution_engine.hpp"
-#include "logger/logger.hpp"
-#include "utils/thread_safe_queue.hpp"
 #include <memory>
+
+#include "execution_engine.hpp"
+
+#include <logger.hpp>
+#include <thread_safe_queue.hpp>
 namespace ai_pipe {
 
 ExecutionEngine::~ExecutionEngine() {
@@ -109,7 +111,7 @@ bool ExecutionEngine::initialize(Graph *graph, uint8_t numWorkers) {
     PortInputQueues portQueues;
     for (const auto &portName : node->getExpectedInputPorts()) {
       portQueues[portName] =
-          std::make_shared<::utils::ThreadSafeQueue<PortDataPtr>>();
+          std::make_shared<common_utils::ThreadSafeQueue<PortDataPtr>>();
     }
     nodeInputQueues_[node] = std::move(portQueues);
   }

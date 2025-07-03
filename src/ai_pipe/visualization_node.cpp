@@ -1,14 +1,14 @@
 #include <filesystem>
 
 #include "types/pipe_data_types.hpp"
-#include "utils/mexception.hpp"
 #include "visualization_node.hpp"
 
+#include <mexception.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace ai_pipe {
-using namespace utils::exception;
+using namespace common_utils::exception;
 
 VisualizationNode::VisualizationNode(const std::string &name,
                                      const VisualizationNodeParams &params)
@@ -50,13 +50,14 @@ void VisualizationNode::process(const PortDataMap &inputs, PortDataMap &outputs,
       rawImagePacket->getParam<ImageFramePtr>("image_data");
 
   const auto &inferRetPacket = inputs.at(inferRetInputPort);
-  if (!inferRetPacket->has<infer::AlgoOutput>("infer_result")) {
+  if (!inferRetPacket->has<ai_core::AlgoOutput>("infer_result")) {
     throw InvalidValueException("VisualizationNode: '" + inferRetInputPort +
                                 "' input is not of type InferenceResult.");
   }
-  auto algoOutput = inferRetPacket->getParam<infer::AlgoOutput>("infer_result");
+  auto algoOutput =
+      inferRetPacket->getParam<ai_core::AlgoOutput>("infer_result");
 
-  const auto &inferRet = algoOutput.getParams<infer::DetRet>();
+  const auto &inferRet = algoOutput.getParams<ai_core::DetRet>();
   if (!inferRet) {
     throw InvalidValueException(
         "VisualizationNode: Inference result is not of type DetRet.");

@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 SET(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 # Project setting
@@ -6,21 +6,17 @@ INCLUDE(cmake/messagecolor.cmake)
 INCLUDE(cmake/utils.cmake)
 AI_WORKFLOW_EXTRACT_VERSION()
 
-PROJECT(AIWorkflow VERSION ${AI_WORKFLOW_VERSION} LANGUAGES CXX)
+PROJECT(AIWorkflowSDK VERSION ${AI_WORKFLOW_VERSION} LANGUAGES CXX)
 
-SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD 20)
 
-OPTION(BUILD_TESTS "Build with tests" ON)
-OPTION(BUILD_TOOLS "Build with tools" ON)
+INCLUDE(GNUInstallDirs)
 
-# infer engine(You can only choose one type infer-engine)
-IF(NOT INFER_ENGINE)
-    SET(INFER_ENGINE ORT)  # supported: [ORT, NCNN]
-ENDIF()
+OPTION(BUILD_AI_SDK_TESTS "Build with tests" ON)
 
 MESSAGE(INFO "--------------------------------")
 MESSAGE(STATUS "Build AIWorkflow: ${AI_WORKFLOW_VERSION}")
-MESSAGE(STATUS "Build with tests: ${BUILD_TESTS}")
+MESSAGE(STATUS "Build with tests: ${BUILD_AI_SDK_TESTS}")
 MESSAGE(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 MESSAGE(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
@@ -44,7 +40,6 @@ ENDIF()
 IF(NOT TARGET_ARCH)
     SET(TARGET_ARCH ${CMAKE_SYSTEM_PROCESSOR})
 ENDIF()
-
 
 MESSAGE(STATUS "Your target os : ${TARGET_OS}")
 MESSAGE(STATUS "Your target arch : ${TARGET_ARCH}")
@@ -78,12 +73,10 @@ ADD_SUBDIRECTORY(3rdparty)
 MESSAGE(INFO "--------------------------------")
 ADD_SUBDIRECTORY(src)
 
-IF(BUILD_TESTS)
+IF(BUILD_AI_SDK_TESTS)
     MESSAGE(INFO "--------------------------------")
     ADD_SUBDIRECTORY(tests)
 ENDIF()
 
-IF(BUILD_TOOLS)
-    MESSAGE(INFO "--------------------------------")
-    ADD_SUBDIRECTORY(tools)
-ENDIF()
+message(INFO "--------- Install Resource --------")
+add_subdirectory(resources)

@@ -30,17 +30,13 @@ ai-workflow-sdk/
 ├── src/
 │   ├── api/     # interface to be provided externally
 │   └── ai_sdk   # Implementation of api
-│   └── core     # Core code
 │   └── jni      # Encapsulate the interface used by Android
-│   └── logger   # Log system
 │   └── ai_pipe  # Core logic
-│   └── utils    # common utils for all modules
 ├── cmake/
 ├── scripts/
 ├── platform/
 ├── tests/
 ├── build/
-├── tools/
 └── README.md
 ```
 
@@ -50,4 +46,3 @@ ai-workflow-sdk/
 - [x] Build CI
 - [x] Implement a demo module that combines a complete algorithm module and a pipeline module.
 - [ ] Implement the api interface of the SDK
-- [ ] Implement a more powerful AlgoManager

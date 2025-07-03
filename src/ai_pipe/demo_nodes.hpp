@@ -11,9 +11,10 @@
 #ifndef __DEMO_NODES_HPP__
 #define __DEMO_NODES_HPP__
 
-#include "logger/logger.hpp"
 #include "node_base.hpp"
 #include "node_param_types.hpp"
+
+#include <logger.hpp>
 
 namespace ai_pipe {
 

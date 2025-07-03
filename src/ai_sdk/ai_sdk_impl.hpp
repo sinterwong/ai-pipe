@@ -13,9 +13,9 @@
 #define __AI_WORKFLOW_SDK_IMPL_HPP__
 
 #include "api/ai_types.h"
-#include "utils/thread_safe_queue.hpp"
 #include <atomic>
 #include <thread>
+#include <thread_safe_queue.hpp>
 
 namespace ai_workflow {
 
@@ -37,9 +37,9 @@ public:
   ErrorCode terminate();
 
 private:
-  utils::ThreadSafeQueue<InputPacket> inputQueue;
+  common_utils::ThreadSafeQueue<InputPacket> inputQueue;
 
-  utils::ThreadSafeQueue<OutputPacket> outputQueue;
+  common_utils::ThreadSafeQueue<OutputPacket> outputQueue;
 
   std::thread processThread;
 
