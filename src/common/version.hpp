@@ -1,23 +1,26 @@
 /**
  * @file version.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2022-04-23
- * 
+ *
  * @copyright Copyright (c) 2022
- * 
+ *
  */
 
 #pragma once
 
 // for cmake
-#define BASIC_VER_MAJOR 0
-#define BASIC_VER_MINOR 1
-#define BASIC_VER_PATCH 0
+#define AI_WORKFLOW_VER_MAJOR 1
+#define AI_WORKFLOW_VER_MINOR 0
+#define AI_WORKFLOW_VER_PATCH 0
 
-#define BASIC_VERSION (BASIC_VER_MAJOR * 10000 + BASIC_VER_MINOR * 100 + BASIC_VER_PATCH)
+#define AI_WORKFLOW_VERSION                                                    \
+  (AI_WORKFLOW_VER_MAJOR * 10000 + AI_WORKFLOW_VER_MINOR * 100 +               \
+   AI_WORKFLOW_VER_PATCH)
 
 // for source code
-#define _BASIC_STR(s) #s
-#define BASIC_PROJECT_VERSION(major, minor, patch) "v" _BASIC_STR(major.minor.patch)
+#define _AI_WORKFLOW_STR(s) #s
+#define AI_WORKFLOW_PROJECT_VERSION(major, minor, patch)                       \
+  "v" _AI_WORKFLOW_STR(major.minor.patch)

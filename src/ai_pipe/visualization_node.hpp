@@ -1,9 +1,9 @@
 #ifndef __VISUALIZATION_NODE_HPP__
 #define __VISUALIZATION_NODE_HPP__
 
-#include "ai_pipe/node_base.hpp"
-#include "ai_pipe/pipe_types.hpp"
+#include "node_base.hpp"
 #include "node_param_types.hpp"
+#include "pipe_types.hpp"
 
 #include <opencv2/opencv.hpp>
 namespace ai_pipe {

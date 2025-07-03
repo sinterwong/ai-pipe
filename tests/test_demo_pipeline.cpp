@@ -1,23 +1,26 @@
+#include <filesystem>
+#include <fstream>
+
 #include "ai_pipe/pipe_types.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include "ai_pipe/pipeline_builder.hpp"
 #include "ai_pipe/pipeline_context.hpp"
-#include "algo_manager.hpp"
-#include "algo_registrar.hpp"
-#include "logger/logger.hpp"
-#include "nlohmann/json.hpp"
-#include "gtest/gtest.h"
-#include <filesystem>
-#include <fstream>
+
+#include <ai_core/algo_manager.hpp>
+#include <gtest/gtest.h>
+#include <logger.hpp>
+#include <nlohmann/json.hpp>
 
 namespace testing_demo_pipeline {
 
-using namespace infer;
-using namespace infer::dnn;
+namespace fs = std::filesystem;
 
-AlgoConstructParams loadParamFromJson(const std::string &configPath) {
+using namespace ai_core;
+using namespace ai_core::dnn;
 
-  AlgoConstructParams params;
+ai_core::AlgoConstructParams
+loadAlgoParamFromJson(const std::string &configPath) {
+  ai_core::AlgoConstructParams params;
 
   std::ifstream file(configPath);
   if (!file.is_open()) {
@@ -34,63 +37,136 @@ AlgoConstructParams loadParamFromJson(const std::string &configPath) {
                              std::string(e.what()));
   }
 
-  if (!j.contains("algorithms") || !j["algorithms"].is_array()) {
-    LOG_ERRORS << "Config missing 'algorithms' array or it's not an array.";
-    throw std::runtime_error(
-        "Config missing 'algorithms' array or not an array.");
-  }
+  try {
+    if (!j.contains("algorithms") || !j["algorithms"].is_array()) {
+      LOG_ERRORS << "Config missing 'algorithms' array or it's not an array.";
+      throw std::runtime_error(
+          "Config missing 'algorithms' array or not an array.");
+    }
 
-  if (j["algorithms"].empty()) {
-    LOG_ERRORS << "Config 'algorithms' array is empty.";
-    throw std::runtime_error("Config 'algorithms' array is empty.");
-  }
+    if (j["algorithms"].empty()) {
+      LOG_ERRORS << "Config 'algorithms' array is empty.";
+      throw std::runtime_error("Config 'algorithms' array is empty.");
+    }
 
-  // Assuming we are loading parameters for the first algorithm in the list
-  const auto &algoConfig = j["algorithms"][0];
+    const auto &algoConfig = j["algorithms"][0];
 
-  std::string moduleUniqeName = algoConfig.at("name").get<std::string>();
-  params.setParam("moduleUniqeName", moduleUniqeName);
+    // model name and types
+    params.setParam("moduleName", algoConfig["name"].get<std::string>());
+    const auto &types = algoConfig["types"];
+    params.setParam("preprocType", types["preproc"].get<std::string>());
+    params.setParam("inferType", types["infer"].get<std::string>());
+    params.setParam("postprocType", types["postproc"].get<std::string>());
 
-  std::string moduleName = algoConfig.at("type").get<std::string>();
-  params.setParam("moduleName", moduleName);
+    // parse preprocessing args
+    const auto &preprocJson = algoConfig["preprocParams"];
+    if (params.getParam<std::string>("preprocType") == "FramePreprocess") {
+      ai_core::FramePreprocessArg framePreprocessArg;
+      const auto &preprocJson = algoConfig["preprocParams"];
+      if (preprocJson.contains("inputShape")) {
+        framePreprocessArg.modelInputShape.w =
+            preprocJson["inputShape"].at("w").get<int>();
+        framePreprocessArg.modelInputShape.h =
+            preprocJson["inputShape"].at("h").get<int>();
+        framePreprocessArg.modelInputShape.c =
+            preprocJson["inputShape"].at("c").get<int>();
+      }
 
-  if (algoConfig.contains("inferParams")) {
-    AlgoInferParams inferParams;
+      if (preprocJson.contains("mean")) {
+        framePreprocessArg.meanVals =
+            preprocJson["mean"].get<std::vector<float>>();
+      }
+      if (preprocJson.contains("std")) {
+        framePreprocessArg.normVals =
+            preprocJson["std"].get<std::vector<float>>();
+      }
+      if (preprocJson.contains("pad")) {
+        framePreprocessArg.pad = preprocJson["pad"].get<std::vector<int>>()[0];
+      }
+
+      if (preprocJson.contains("hwc2chw")) {
+        framePreprocessArg.hwc2chw = preprocJson["hwc2chw"].get<bool>();
+      } else {
+        framePreprocessArg.hwc2chw = false;
+      }
+      if (preprocJson.contains("needResize")) {
+        framePreprocessArg.needResize = preprocJson["needResize"].get<bool>();
+      } else {
+        framePreprocessArg.needResize = false;
+      }
+
+      if (preprocJson.contains("isEqualScale")) {
+        framePreprocessArg.isEqualScale =
+            preprocJson["isEqualScale"].get<bool>();
+      } else {
+        framePreprocessArg.isEqualScale = false;
+      }
+      framePreprocessArg.dataType =
+          static_cast<ai_core::DataType>(preprocJson["dataType"].get<int>());
+      framePreprocessArg.inputName =
+          preprocJson["inputNames"].get<std::vector<std::string>>()[0];
+      params.setParam("preprocParams", framePreprocessArg);
+    } else {
+      LOG_ERRORS << "Unsupported preprocType: "
+                 << params.getParam<std::string>("preprocType");
+      throw std::runtime_error("Unsupported preprocType");
+    }
+
+    // parse infer args
+    ai_core::AlgoInferParams inferParams;
     const auto &inferJson = algoConfig["inferParams"];
-    FrameInferParam frameInferParam;
-    frameInferParam.modelPath = inferJson.at("modelPath").get<std::string>();
-    if (inferJson.contains("inputShape")) {
-      frameInferParam.inputShape.w = inferJson["inputShape"].at("w").get<int>();
-      frameInferParam.inputShape.h = inferJson["inputShape"].at("h").get<int>();
-    }
-    frameInferParam.deviceType =
-        static_cast<DeviceType>(inferJson.at("deviceType").get<int>());
-    frameInferParam.dataType =
-        static_cast<DataType>(inferJson.at("dataType").get<int>());
-    inferParams.setParams(frameInferParam);
+    std::string modelRelPath = inferJson.at("modelPath").get<std::string>();
+    // FIXME: 这里可能是个坑
+    inferParams.modelPath =
+        (std::filesystem::path(configPath).parent_path().parent_path() /
+         modelRelPath)
+            .string();
+    inferParams.deviceType =
+        static_cast<ai_core::DeviceType>(inferJson.at("deviceType").get<int>());
+    inferParams.dataType =
+        static_cast<ai_core::DataType>(inferJson.at("dataType").get<int>());
+    inferParams.needDecrypt = inferJson.at("needDecrypt").get<bool>();
     params.setParam("inferParams", inferParams);
-  }
 
-  if (algoConfig.contains("postProcParams")) {
-    AlgoPostprocParams postProcParams;
-    const auto &postProcJson = algoConfig["postProcParams"];
-    AnchorDetParams anchorDetParams;
-    anchorDetParams.condThre = postProcJson.at("condThre").get<float>();
-    anchorDetParams.nmsThre = postProcJson.at("nmsThre").get<float>();
-    if (postProcJson.contains("inputShape")) {
-      anchorDetParams.inputShape.w =
-          postProcJson["inputShape"].at("w").get<int>();
-      anchorDetParams.inputShape.h =
-          postProcJson["inputShape"].at("h").get<int>();
+    // parse postprocessing args
+    const auto &postProcJson = algoConfig["postprocParams"];
+
+    const auto outputNames =
+        postProcJson["outputNames"].get<std::vector<std::string>>();
+    // FIXME: 就这么先瞎写写吧，后面再完善
+    if (params.getParam<std::string>("postprocType") == "RTMDet" ||
+        params.getParam<std::string>("postprocType") == "Yolov11Det" ||
+        params.getParam<std::string>("postprocType") == "NanoDet") {
+      ai_core::AnchorDetParams anchorDetParams;
+      if (postProcJson.contains("condThre")) {
+        anchorDetParams.condThre = postProcJson.at("condThre").get<float>();
+      }
+      if (postProcJson.contains("nmsThre")) {
+        anchorDetParams.nmsThre = postProcJson.at("nmsThre").get<float>();
+      }
+      anchorDetParams.outputNames = outputNames;
+      params.setParam("postprocParams", anchorDetParams);
+    } else {
+      ai_core::GenericPostParams genericPostParams;
+      genericPostParams.outputNames = outputNames;
+      params.setParam("postprocParams", genericPostParams);
     }
-    postProcParams.setParams(anchorDetParams);
-    params.setParam("postProcParams", postProcParams);
+  } catch (const nlohmann::json::exception &e) {
+    LOG_ERRORS << "JSON parsing error: " << e.what();
+    throw std::runtime_error("JSON parsing error: " + std::string(e.what()));
+  } catch (const std::exception &e) {
+    LOG_ERRORS << "Standard exception: " << e.what();
+    throw std::runtime_error("Standard exception: " + std::string(e.what()));
   }
   return params;
 }
 
 TEST(DemoPipelineTest, RunPipeline) {
-  const std::string imagePathStr = "data/yolov11/image.png";
+  fs::path resourceDir = fs::path("resources");
+  fs::path confDir = resourceDir / "conf";
+  fs::path dataDir = resourceDir / "data";
+
+  const std::string imagePathStr = dataDir / "yolov11" / "image.png";
 
   std::filesystem::path inputImagePath(imagePathStr);
   std::string expectedOutputFileName = inputImagePath.stem().string() +
@@ -100,22 +176,33 @@ TEST(DemoPipelineTest, RunPipeline) {
       (std::filesystem::path("output_visualizations") / expectedOutputFileName)
           .string();
 
-  const std::string graphConfigPath = "conf/test_demo_pipeline_config.json";
+  const std::string graphConfigPath =
+      confDir / "test_demo_pipeline_config.json";
   ai_pipe::Pipeline pipeline;
   auto context = std::make_shared<ai_pipe::PipelineContext>();
   // create algoManager
-  AlgoConstructParams params = loadParamFromJson("conf/test_algo_manager.json");
-  std::shared_ptr<AlgoInferBase> engine =
-      AlgoInferFactory::instance().create("VisionInfer", params);
+  AlgoConstructParams params =
+      loadAlgoParamFromJson(confDir / "test_algo_manager_ort.json");
+  std::string name = params.getParam<std::string>("moduleName");
+
+  AlgoModuleTypes moduleTypes;
+  moduleTypes.preprocModule = params.getParam<std::string>("preprocType");
+  moduleTypes.inferModule = params.getParam<std::string>("inferType");
+  moduleTypes.postprocModule = params.getParam<std::string>("postprocType");
+
+  AlgoInferParams inferParams = params.getParam<AlgoInferParams>("inferParams");
+
+  std::shared_ptr<AlgoInference> engine =
+      std::make_shared<AlgoInference>(moduleTypes, inferParams);
+
   ASSERT_NE(engine, nullptr);
   ASSERT_EQ(engine->initialize(), InferErrorCode::SUCCESS);
   std::shared_ptr<AlgoManager> algoManager = std::make_shared<AlgoManager>();
   ASSERT_NE(algoManager, nullptr);
-  auto moduleUniqueName = params.getParam<std::string>("moduleUniqeName");
-  ASSERT_EQ(algoManager->registerAlgo(moduleUniqueName, engine),
-            InferErrorCode::SUCCESS);
-  ASSERT_TRUE(algoManager->hasAlgo(moduleUniqueName));
-  ASSERT_NE(algoManager->getAlgo(moduleUniqueName), nullptr);
+
+  ASSERT_EQ(algoManager->registerAlgo(name, engine), InferErrorCode::SUCCESS);
+  ASSERT_TRUE(algoManager->hasAlgo(name));
+  ASSERT_NE(algoManager->getAlgo(name), nullptr);
   context->setAlgoManager(algoManager);
   ASSERT_TRUE(context->isValid());
 
