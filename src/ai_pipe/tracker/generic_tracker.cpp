@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2025
  *
  */
+#include <ostream>
 
 #include "generic_tracker.hpp"
 #include "tracker/iou_associator.hpp"

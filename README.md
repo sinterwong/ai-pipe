@@ -1,14 +1,14 @@
 # ai-workflow-sdk
-This is a multi-platform AI inference software package. It currently encapsulates two inference frameworks, ONNX Runtime and NCNN, for performing model inference. The pipeline module framework supports DAG-based logic construction, enabling the direct creation of pipelines through configuration files once computing nodes are defined and registered. Plans include supporting additional computing frameworks and platforms in the future.
+The pipeline module framework supports DAG-based logic construction, enabling the direct creation of pipelines through configuration files once computing nodes are defined and registered. Plans include supporting additional platforms in the future.
 
 ## Features ✨
 *   **Cross-platform:** Supports Android and Linux.
-*   **Multiple backends:** ONNX Runtime and NCNN.
 *   **Easy to use:** Simple API for inference.
+*   **High decoupling and scalability:** Standardized interface design and new node registration process.
 
 ## Env 🛠️
 *   CMake 3.15+
-*   NDK r27
+*   GCC 11+
 *   IDE VSCode
 *   Ubuntu 24.04
 
@@ -19,8 +19,8 @@ This is a multi-platform AI inference software package. It currently encapsulate
 1. **Link Libraries:** Symbolically link manually compiled libraries to `/repo/3rdparty/target/${TARGET_OS}_${TARGET_ARCH}` (e.g., `/repo/3rdparty/target/Linux_x86_64/opencv`).
 2. **Manage Dependencies:** Use `/repo/load_3rdparty.cmake` to manage the loading of your libraries.
 3. You can download dependencies from the following links:
-    *   [Android_aarch64](https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.1.0-alpha/dependency-Android_aarch64.tgz)
-    *   [Linux_x86_64](https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.1.0-alpha/dependency-Linux_x86_64.tgz)
+    *   [Android_aarch64](https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.2.0-alpha/dependency_Android_aarch64.tgz)
+    *   [Linux_x86_64](https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.2.0-alpha/dependency_Linux_x86_64.tgz)
     *   decompress it to `/repo/3rdparty/target/${TARGET_OS}_${TARGET_ARCH}`
 
 ## Project Structure 🏗️
@@ -28,15 +28,14 @@ This is a multi-platform AI inference software package. It currently encapsulate
 ```
 ai-workflow-sdk/
 ├── src/
-│   ├── api/     # interface to be provided externally
+│   ├── common     # the common module of the repo
 │   └── ai_sdk   # Implementation of api
 │   └── jni      # Encapsulate the interface used by Android
-│   └── ai_pipe  # Core logic
+│   └── ai_pipe  # Core logic architecture
 ├── cmake/
 ├── scripts/
 ├── platform/
 ├── tests/
-├── build/
 └── README.md
 ```
 
@@ -45,4 +44,5 @@ ai-workflow-sdk/
 - [x] Design and implement native pipeline module
 - [x] Build CI
 - [x] Implement a demo module that combines a complete algorithm module and a pipeline module.
+- [ ] Separate the ai_pipe and make it an independent tool.
 - [ ] Implement the api interface of the SDK

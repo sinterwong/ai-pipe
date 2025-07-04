@@ -4,9 +4,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 ADD_SUBDIRECTORY(ai_pipe)
 ADD_SUBDIRECTORY(ai_sdk)
 
-IF (TARGET_OS STREQUAL "Android")
-    ADD_SUBDIRECTORY(jni)
-ENDIF()
+# IF (TARGET_OS STREQUAL "Android")
+#     ADD_SUBDIRECTORY(jni)
+# ENDIF()
 
 # transfer all headers to the include directory 
 FILE(MAKE_DIRECTORY ${PROJECT_INCLUDE_DIR})
