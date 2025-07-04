@@ -2,7 +2,6 @@
 #define __NODE_REGISTRAR_HPP__
 
 #include "node_base.hpp"
-
 #include <type_safe_factory.hpp>
 
 namespace ai_pipe {

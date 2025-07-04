@@ -1,6 +1,6 @@
 #include <vector>
 
-#include "types/pipe_data_types.hpp"
+#include "logic_types/pipe_data_types.hpp"
 #include "vision_inference_node.hpp"
 
 #include <logger.hpp>

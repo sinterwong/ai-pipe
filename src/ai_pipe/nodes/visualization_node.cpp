@@ -1,6 +1,6 @@
 #include <filesystem>
 
-#include "types/pipe_data_types.hpp"
+#include "logic_types/pipe_data_types.hpp"
 #include "visualization_node.hpp"
 
 #include <mexception.hpp>

@@ -44,5 +44,4 @@ ai-workflow-sdk/
 - [x] Design and implement native pipeline module
 - [x] Build CI
 - [x] Implement a demo module that combines a complete algorithm module and a pipeline module.
-- [ ] Separate the ai_pipe and make it an independent tool.
 - [ ] Implement the api interface of the SDK

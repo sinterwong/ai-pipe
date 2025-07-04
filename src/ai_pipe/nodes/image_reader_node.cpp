@@ -1,7 +1,7 @@
 
 #include "image_reader_node.hpp"
-#include "pipe_common_types.hpp"
-#include "types/pipe_data_types.hpp"
+#include "logic_types/pipe_common_types.hpp"
+#include "logic_types/pipe_data_types.hpp"
 
 #include <logger.hpp>
 #include <mexception.hpp>

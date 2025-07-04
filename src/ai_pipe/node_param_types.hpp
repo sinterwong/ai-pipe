@@ -13,7 +13,7 @@
 
 #include <variant>
 
-#include "pipe_common_types.hpp"
+#include "logic_types/pipe_common_types.hpp"
 
 #include <ai_core/algo_data_types.hpp>
 #include <data_packet.hpp>

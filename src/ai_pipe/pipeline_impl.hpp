@@ -1,29 +1,30 @@
 /**
- * @file pipeline.hpp
+ * @file pipeline_impl.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
- * @date 2025-04-20
+ * @date 2025-07-04
  *
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __PIPE_PIPELINE_HPP__
-#define __PIPE_PIPELINE_HPP__
-#include "graph.hpp"
-#include "pipeline_context.hpp"
+#ifndef __PIPE_PIPELINE_IMPL_HPP__
+#define __PIPE_PIPELINE_IMPL_HPP__
+
+#include "execution_engine.hpp"
+#include "pipeline.hpp"
 
 namespace ai_pipe {
-class Pipeline {
+class Pipeline::Impl {
 public:
-  Pipeline();
-  ~Pipeline();
+  Impl();
+  ~Impl();
 
-  Pipeline(const Pipeline &) = delete;
-  Pipeline &operator=(const Pipeline &) = delete;
+  Impl(const Impl &) = delete;
+  Impl &operator=(const Impl &) = delete;
 
-  Pipeline(Pipeline &&other) noexcept;
-  Pipeline &operator=(Pipeline &&other) noexcept;
+  Impl(Impl &&other) noexcept;
+  Impl &operator=(Impl &&other) noexcept;
 
   bool initialize(const PipelineConfig &config,
                   std::shared_ptr<PipelineContext> context_);
@@ -54,16 +55,23 @@ public:
                                                    const std::string &nodeName)>
                                     callback);
 
-  const Graph &getGraph() const;
+  const Graph &getGraph() const { return *graph_; }
 
-  PipelineContext &getContext();
+  PipelineContext &getContext() { return *context_; }
 
 private:
   Graph buildGraphFromConfig(const std::string &configPath);
 
 private:
-  class Impl;
-  std::unique_ptr<Impl> pImpl_;
+  std::unique_ptr<Graph> graph_;
+  std::unique_ptr<ExecutionEngine> executionEngine_;
+  std::atomic<PipelineState> state_;
+
+  std::shared_ptr<PipelineContext> context_;
+
+  std::function<void(const std::string &errorMsg, const std::string &nodeName)>
+      onPipelineError_;
+  std::function<void(const PortDataMap &finalResults)> onPipelineResult_;
 };
 } // namespace ai_pipe
 
