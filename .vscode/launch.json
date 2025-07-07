@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++: g++ build and debug active file",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/install/tests/ai_workflow_tests",
+      "args": [
+        "--gtest_filter=*.*"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/install",
+      "environment": [
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "${workspaceFolder}/install/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/dependency_lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/ai_core/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/logger/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/opencv/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/gtest/lib:${env:LD_LIBRARY_PATH}"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      // "preLaunchTask": "C/C++: g++ build active file"
+    }
+  ]
+}

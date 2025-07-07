@@ -1,5 +1,5 @@
 FUNCTION(AI_WORKFLOW_extract_version)
-    FILE(READ "${CMAKE_SOURCE_DIR}/src/common/version.hpp" file_contents)
+    FILE(READ "${CMAKE_SOURCE_DIR}/src/ai_sdk/api/ai_version.h" file_contents)
     STRING(REGEX MATCH "AI_WORKFLOW_VER_MAJOR ([0-9]+)" _  "${file_contents}")
     IF(NOT CMAKE_MATCH_COUNT EQUAL 1)
         MESSAGE(FATAL_ERROR "Could not extract major version number from version.hpp")

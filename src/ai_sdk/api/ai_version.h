@@ -24,3 +24,7 @@
 #define _AI_WORKFLOW_STR(s) #s
 #define AI_WORKFLOW_PROJECT_VERSION(major, minor, patch)                       \
   "v" _AI_WORKFLOW_STR(major.minor.patch)
+
+#define AI_WORKFLOW_VERSION_STR                                                \
+  AI_WORKFLOW_PROJECT_VERSION(AI_WORKFLOW_VER_MAJOR, AI_WORKFLOW_VER_MINOR,    \
+                              AI_WORKFLOW_VER_PATCH)

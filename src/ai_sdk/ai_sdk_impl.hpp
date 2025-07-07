@@ -13,8 +13,6 @@
 #define __AI_WORKFLOW_SDK_IMPL_HPP__
 
 #include "api/ai_types.h"
-#include <atomic>
-#include <thread>
 #include <thread_safe_queue.hpp>
 
 namespace ai_workflow {
@@ -28,22 +26,7 @@ public:
 
   ErrorCode initialize(const SDKConfig &config);
 
-  ErrorCode calcCurrentROI(const ImageData &input, Rect &roi);
-
-  ErrorCode pushInput(const InputPacket &input);
-
-  ErrorCode tryGetNextOutput(OutputPacket &output);
-
   ErrorCode terminate();
-
-private:
-  common_utils::ThreadSafeQueue<InputPacket> inputQueue;
-
-  common_utils::ThreadSafeQueue<OutputPacket> outputQueue;
-
-  std::thread processThread;
-
-  std::atomic<bool> isRunning;
 
 private:
   void processLoop();

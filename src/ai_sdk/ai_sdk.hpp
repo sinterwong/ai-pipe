@@ -26,12 +26,6 @@ public:
 
   ErrorCode initialize(const SDKConfig &config);
 
-  ErrorCode pushInput(const InputPacket &input);
-
-  ErrorCode calcCurrentROI(const ImageData &input, Rect &roi);
-
-  ErrorCode tryGetNextOutput(OutputPacket &output);
-
   ErrorCode terminate();
 
   static std::string getVersion();

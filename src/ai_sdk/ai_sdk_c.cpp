@@ -17,43 +17,12 @@ AI_WORKFLOW_SDK_API void AIWorkflowSDK_Destroy(AIWorkflowSDKHandle handle) {
 
 AI_WORKFLOW_SDK_API ai_workflow::ErrorCode
 AIWorkflowSDK_Initialize(AIWorkflowSDKHandle handle,
-                      const ai_workflow::SDKConfig *config) {
+                         const ai_workflow::SDKConfig *config) {
   if (!handle || !config) {
     return ai_workflow::ErrorCode::INITIALIZATION_FAILED;
   }
   ai_workflow::AIWorkflowSDK *sdk = (ai_workflow::AIWorkflowSDK *)handle;
   return sdk->initialize(*config);
-}
-
-AI_WORKFLOW_SDK_API ai_workflow::ErrorCode
-AIWorkflowSDK_PushInput(AIWorkflowSDKHandle handle,
-                     const ai_workflow::InputPacket *input) {
-  if (!handle || !input) {
-    return ai_workflow::ErrorCode::INVALID_STATE;
-  }
-  ai_workflow::AIWorkflowSDK *sdk = (ai_workflow::AIWorkflowSDK *)handle;
-  return sdk->pushInput(*input);
-}
-
-AI_WORKFLOW_SDK_API ai_workflow::ErrorCode
-AIWorkflowSDK_CalcCurrentROI(AIWorkflowSDKHandle handle,
-                          const ai_workflow::ImageData *input,
-                          ai_workflow::Rect *roi) {
-  if (!handle || !input || !roi) {
-    return ai_workflow::ErrorCode::INVALID_STATE;
-  }
-  ai_workflow::AIWorkflowSDK *sdk = (ai_workflow::AIWorkflowSDK *)handle;
-  return sdk->calcCurrentROI(*input, *roi);
-}
-
-AI_WORKFLOW_SDK_API ai_workflow::ErrorCode
-AIWorkflowSDK_TryGetNextOutput(AIWorkflowSDKHandle handle,
-                            ai_workflow::OutputPacket *result) {
-  if (!handle || !result) {
-    return ai_workflow::ErrorCode::INVALID_STATE;
-  }
-  ai_workflow::AIWorkflowSDK *sdk = (ai_workflow::AIWorkflowSDK *)handle;
-  return sdk->tryGetNextOutput(*result);
 }
 
 AI_WORKFLOW_SDK_API ai_workflow::ErrorCode

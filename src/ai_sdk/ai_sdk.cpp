@@ -11,6 +11,8 @@
 
 #include "ai_sdk.hpp"
 #include "ai_sdk_impl.hpp"
+#include "ai_version.h"
+
 #include <string>
 
 namespace ai_workflow {
@@ -26,27 +28,6 @@ ErrorCode AIWorkflowSDK::initialize(const SDKConfig &config) {
   return impl_->initialize(config);
 }
 
-ErrorCode AIWorkflowSDK::pushInput(const InputPacket &input) {
-  if (!impl_) {
-    return ErrorCode::INVALID_STATE;
-  }
-  return impl_->pushInput(input);
-}
-
-ErrorCode AIWorkflowSDK::calcCurrentROI(const ImageData &input, Rect &roi) {
-  if (!impl_) {
-    return ErrorCode::INVALID_STATE;
-  }
-  return impl_->calcCurrentROI(input, roi);
-}
-
-ErrorCode AIWorkflowSDK::tryGetNextOutput(OutputPacket &output) {
-  if (!impl_) {
-    return ErrorCode::INVALID_STATE;
-  }
-  return impl_->tryGetNextOutput(output);
-}
-
 ErrorCode AIWorkflowSDK::terminate() {
   if (!impl_) {
     return ErrorCode::INVALID_STATE;
@@ -54,6 +35,6 @@ ErrorCode AIWorkflowSDK::terminate() {
   return impl_->terminate();
 }
 
-std::string AIWorkflowSDK::getVersion() { return "1.0.0"; }
+std::string AIWorkflowSDK::getVersion() { return AI_WORKFLOW_VERSION_STR; }
 
 } // namespace ai_workflow

@@ -20,5 +20,5 @@ protected:
 };
 
 TEST_F(AIWorkflowSDKTest, CppAPI) {
-  ASSERT_EQ(AIWorkflowSDK::getVersion(), "1.0.0");
+  ASSERT_EQ(AIWorkflowSDK::getVersion(), "v0.2.1");
 }
