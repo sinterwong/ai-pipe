@@ -26,8 +26,6 @@ build/
 logs/
 cmake-build-debug/
 cmake-build-debug-remote-host/
-.vscode/launch.json
 .cache
-.vscode/launch.json
 
 CMakeUserPresets.json
