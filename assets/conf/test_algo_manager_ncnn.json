@@ -4,8 +4,8 @@
             "name": "yolo-det-80c",
             "types": {
                 "preproc": "FramePreprocess",
-                "infer": "OrtAlgoInference",
-                "postproc": "Yolov11Det"
+                "infer": "NCNNAlgoInference",
+                "postproc": "AnchorDetPostproc"
             },
             "preprocParams": {
                 "inputShape": {
@@ -30,20 +30,22 @@
                 ],
                 "isEqualScale": true,
                 "needResize": true,
-                "dataType": 1,
+                "dataType": 0,
                 "hwc2chw": true,
                 "inputNames": [
-                    "images"
-                ]
+                    "in0"
+                ],
+                "preprocTaskType": 0
             },
             "inferParams": {
                 "name": "yolo-det-80c-001",
-                "modelPath": "models/yolov11n-fp16.onnx",
+                "modelPath": "models/yolov11n.ncnn",
                 "deviceType": 0,
                 "dataType": 1,
                 "needDecrypt": false
             },
             "postprocParams": {
+                "detAlogType": 0,
                 "condThre": 0.5,
                 "nmsThre": 0.45,
                 "outputNames": [

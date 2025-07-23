@@ -14,6 +14,8 @@
 
 #include "iou_associator.hpp"
 
+#include <opencv2/opencv.hpp>
+
 namespace ai_pipe::tracker {
 
 IoUAssociator::IoUAssociator(float iouThreshold)
@@ -157,20 +159,19 @@ AssociationResult IoUAssociator::associate(
 
 float IoUAssociator::calculateIOU(const ai_core::BBox &bbox1,
                                   const ai_core::BBox &bbox2) const {
-  float x1 = std::max(bbox1.rect.x, bbox2.rect.x);
-  float y1 = std::max(bbox1.rect.y, bbox2.rect.y);
-  float x2 = std::min(bbox1.rect.x + bbox1.rect.width,
-                      bbox2.rect.x + bbox2.rect.width);
-  float y2 = std::min(bbox1.rect.y + bbox1.rect.height,
-                      bbox2.rect.y + bbox2.rect.height);
+  float x1 = std::max(bbox1.rect->x, bbox2.rect->x);
+  float y1 = std::max(bbox1.rect->y, bbox2.rect->y);
+  float x2 = std::min(bbox1.rect->x + bbox1.rect->width,
+                      bbox2.rect->x + bbox2.rect->width);
+  float y2 = std::min(bbox1.rect->y + bbox1.rect->height,
+                      bbox2.rect->y + bbox2.rect->height);
 
   float intersectionWidth = std::max(0.0f, x2 - x1);
   float intersectionHeight = std::max(0.0f, y2 - y1);
 
   float intersectionArea = intersectionWidth * intersectionHeight;
-
-  float bbox1Area = bbox1.rect.width * bbox1.rect.height;
-  float bbox2Area = bbox2.rect.width * bbox2.rect.height;
+  float bbox1Area = bbox1.rect->width * bbox1.rect->height;
+  float bbox2Area = bbox2.rect->width * bbox2.rect->height;
 
   return intersectionArea / (bbox1Area + bbox2Area - intersectionArea);
 }

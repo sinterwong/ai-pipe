@@ -44,8 +44,8 @@ void ResultSaverNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   LOG_INFOS << "Inference Results:";
   for (const auto &box : detResults->bboxes) {
     LOG_INFOS << "  Label: " << box.label << ", Score: " << box.score
-              << ", BBox: [" << box.rect.x << ", " << box.rect.y << ", "
-              << box.rect.width << ", " << box.rect.height << "]";
+              << ", BBox: [" << box.rect->x << ", " << box.rect->y << ", "
+              << box.rect->width << ", " << box.rect->height << "]";
   }
 }
 

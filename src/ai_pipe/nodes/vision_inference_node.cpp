@@ -69,9 +69,6 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
   // TODO: maybe a dedicated node can be set up later to complete this step
   ai_core::AlgoPreprocParams preprocParams;
   ai_core::FramePreprocessArg framePreprocArgs;
-  framePreprocArgs.roi = {0, 0, imageData->data.cols, imageData->data.rows};
-  framePreprocArgs.originShape = {imageData->data.cols, imageData->data.rows,
-                                  imageData->data.channels()};
   framePreprocArgs.modelInputShape = {640, 640, 3};
   framePreprocArgs.isEqualScale = true;
   framePreprocArgs.needResize = true;
@@ -80,16 +77,20 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
   framePreprocArgs.normVals = {255.f, 255.f, 255.f};
   framePreprocArgs.dataType = ai_core::DataType::FLOAT16;
   framePreprocArgs.hwc2chw = true;
-  framePreprocArgs.inputName = "images";
+  framePreprocArgs.inputNames = {"images"};
   preprocParams.setParams(framePreprocArgs);
 
   ai_core::AlgoInput algoInput;
   ai_core::FrameInput frameInput;
-  frameInput.image = imageData->data;
+  frameInput.image = std::make_shared<cv::Mat>(imageData->data);
+  frameInput.inputRoi = std::make_shared<cv::Rect>(0, 0, imageData->data.cols,
+                                                   imageData->data.rows);
   algoInput.setParams(frameInput);
 
   ai_core::AlgoPostprocParams postprocParams;
   ai_core::AnchorDetParams anchorDetParams;
+  anchorDetParams.detAlogType =
+      ai_core::AnchorDetParams::AnchorDetAlogType::YOLO_DET_V11;
   anchorDetParams.condThre = 0.35;
   anchorDetParams.nmsThre = 0.5;
   anchorDetParams.outputNames = {"output0"};

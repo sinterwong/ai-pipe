@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 #include <logger.hpp>
 #include <nlohmann/json.hpp>
+#include <opencv2/core/mat.hpp>
 
 namespace testing_demo_pipeline {
 
@@ -18,9 +19,8 @@ namespace fs = std::filesystem;
 using namespace ai_core;
 using namespace ai_core::dnn;
 
-ai_core::AlgoConstructParams
-loadAlgoParamFromJson(const std::string &configPath) {
-  ai_core::AlgoConstructParams params;
+AlgoConstructParams loadParamFromJson(const std::string &configPath) {
+  AlgoConstructParams params;
 
   std::ifstream file(configPath);
   if (!file.is_open()) {
@@ -61,7 +61,7 @@ loadAlgoParamFromJson(const std::string &configPath) {
     // parse preprocessing args
     const auto &preprocJson = algoConfig["preprocParams"];
     if (params.getParam<std::string>("preprocType") == "FramePreprocess") {
-      ai_core::FramePreprocessArg framePreprocessArg;
+      FramePreprocessArg framePreprocessArg;
       const auto &preprocJson = algoConfig["preprocParams"];
       if (preprocJson.contains("inputShape")) {
         framePreprocessArg.modelInputShape.w =
@@ -81,9 +81,8 @@ loadAlgoParamFromJson(const std::string &configPath) {
             preprocJson["std"].get<std::vector<float>>();
       }
       if (preprocJson.contains("pad")) {
-        framePreprocessArg.pad = preprocJson["pad"].get<std::vector<int>>()[0];
+        framePreprocessArg.pad = preprocJson["pad"].get<std::vector<int>>();
       }
-
       if (preprocJson.contains("hwc2chw")) {
         framePreprocessArg.hwc2chw = preprocJson["hwc2chw"].get<bool>();
       } else {
@@ -101,10 +100,26 @@ loadAlgoParamFromJson(const std::string &configPath) {
       } else {
         framePreprocessArg.isEqualScale = false;
       }
-      framePreprocessArg.dataType =
-          static_cast<ai_core::DataType>(preprocJson["dataType"].get<int>());
-      framePreprocessArg.inputName =
-          preprocJson["inputNames"].get<std::vector<std::string>>()[0];
+      if (preprocJson.contains("dataType")) {
+        framePreprocessArg.dataType =
+            static_cast<DataType>(preprocJson["dataType"].get<int>());
+      } else {
+        framePreprocessArg.dataType = DataType::FLOAT32;
+      }
+      if (preprocJson.contains("bufferLocation")) {
+        framePreprocessArg.outputLocation = static_cast<BufferLocation>(
+            preprocJson["bufferLocation"].get<int>());
+      } else {
+        framePreprocessArg.outputLocation = BufferLocation::CPU;
+      }
+      if (preprocJson.contains("preprocTaskType")) {
+        framePreprocessArg.preprocTaskType =
+            static_cast<FramePreprocessArg::FramePreprocType>(
+                preprocJson["preprocTaskType"].get<int>());
+      }
+
+      framePreprocessArg.inputNames =
+          preprocJson["inputNames"].get<std::vector<std::string>>();
       params.setParam("preprocParams", framePreprocessArg);
     } else {
       LOG_ERRORS << "Unsupported preprocType: "
@@ -113,7 +128,7 @@ loadAlgoParamFromJson(const std::string &configPath) {
     }
 
     // parse infer args
-    ai_core::AlgoInferParams inferParams;
+    AlgoInferParams inferParams;
     const auto &inferJson = algoConfig["inferParams"];
     std::string modelRelPath = inferJson.at("modelPath").get<std::string>();
     // FIXME: 这里可能是个坑
@@ -122,9 +137,9 @@ loadAlgoParamFromJson(const std::string &configPath) {
          modelRelPath)
             .string();
     inferParams.deviceType =
-        static_cast<ai_core::DeviceType>(inferJson.at("deviceType").get<int>());
+        static_cast<DeviceType>(inferJson.at("deviceType").get<int>());
     inferParams.dataType =
-        static_cast<ai_core::DataType>(inferJson.at("dataType").get<int>());
+        static_cast<DataType>(inferJson.at("dataType").get<int>());
     inferParams.needDecrypt = inferJson.at("needDecrypt").get<bool>();
     params.setParam("inferParams", inferParams);
 
@@ -134,10 +149,13 @@ loadAlgoParamFromJson(const std::string &configPath) {
     const auto outputNames =
         postProcJson["outputNames"].get<std::vector<std::string>>();
     // FIXME: 就这么先瞎写写吧，后面再完善
-    if (params.getParam<std::string>("postprocType") == "RTMDet" ||
-        params.getParam<std::string>("postprocType") == "Yolov11Det" ||
-        params.getParam<std::string>("postprocType") == "NanoDet") {
-      ai_core::AnchorDetParams anchorDetParams;
+    if (params.getParam<std::string>("postprocType") == "AnchorDetPostproc") {
+      AnchorDetParams anchorDetParams;
+      if (postProcJson.contains("detAlogType")) {
+        anchorDetParams.detAlogType =
+            static_cast<AnchorDetParams::AnchorDetAlogType>(
+                postProcJson.at("detAlogType").get<int>());
+      }
       if (postProcJson.contains("condThre")) {
         anchorDetParams.condThre = postProcJson.at("condThre").get<float>();
       }
@@ -147,7 +165,7 @@ loadAlgoParamFromJson(const std::string &configPath) {
       anchorDetParams.outputNames = outputNames;
       params.setParam("postprocParams", anchorDetParams);
     } else {
-      ai_core::GenericPostParams genericPostParams;
+      GenericPostParams genericPostParams;
       genericPostParams.outputNames = outputNames;
       params.setParam("postprocParams", genericPostParams);
     }
@@ -162,7 +180,7 @@ loadAlgoParamFromJson(const std::string &configPath) {
 }
 
 TEST(DemoPipelineTest, RunPipeline) {
-  fs::path resourceDir = fs::path("resources");
+  fs::path resourceDir = fs::path("assets");
   fs::path confDir = resourceDir / "conf";
   fs::path dataDir = resourceDir / "data";
 
@@ -182,7 +200,7 @@ TEST(DemoPipelineTest, RunPipeline) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
   // create algoManager
   AlgoConstructParams params =
-      loadAlgoParamFromJson(confDir / "test_algo_manager_ort.json");
+      loadParamFromJson(confDir / "test_algo_manager_ort.json");
   std::string name = params.getParam<std::string>("moduleName");
 
   AlgoModuleTypes moduleTypes;
