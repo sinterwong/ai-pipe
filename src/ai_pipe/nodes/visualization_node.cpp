@@ -66,15 +66,15 @@ void VisualizationNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   cv::Mat visualizedImage = imageData->data.clone();
 
   for (const auto &box : inferRet->bboxes) {
-    cv::rectangle(
-        visualizedImage, cv::Point(box.rect.x, box.rect.y),
-        cv::Point(box.rect.x + box.rect.width, box.rect.y + box.rect.height),
-        cv::Scalar(0, 255, 0), 2);
+    cv::rectangle(visualizedImage, cv::Point(box.rect->x, box.rect->y),
+                  cv::Point(box.rect->x + box.rect->width,
+                            box.rect->y + box.rect->height),
+                  cv::Scalar(0, 255, 0), 2);
     std::string label_text =
         "Label: " + std::to_string(box.label) +
         " Score: " + std::to_string(box.score).substr(0, 4);
     cv::putText(visualizedImage, label_text,
-                cv::Point(box.rect.x, box.rect.y - 10),
+                cv::Point(box.rect->x, box.rect->y - 10),
                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2);
   }
 

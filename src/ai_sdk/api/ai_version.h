@@ -14,7 +14,7 @@
 // for cmake
 #define AI_WORKFLOW_VER_MAJOR 0
 #define AI_WORKFLOW_VER_MINOR 2
-#define AI_WORKFLOW_VER_PATCH 1
+#define AI_WORKFLOW_VER_PATCH 2
 
 #define AI_WORKFLOW_VERSION                                                    \
   (AI_WORKFLOW_VER_MAJOR * 10000 + AI_WORKFLOW_VER_MINOR * 100 +               \

@@ -4,7 +4,7 @@
             "name": "yolo-det-80c",
             "types": {
                 "preproc": "FramePreprocess",
-                "infer": "OrtAlgoInference",
+                "infer": "TrtAlgoInference",
                 "postproc": "Yolov11Det"
             },
             "preprocParams": {
@@ -30,16 +30,18 @@
                 ],
                 "isEqualScale": true,
                 "needResize": true,
-                "dataType": 1,
+                "dataType": 0,
                 "hwc2chw": true,
                 "inputNames": [
                     "images"
-                ]
+                ],
+                "preprocTaskType": 2,
+                "bufferLocation": 1
             },
             "inferParams": {
-                "name": "yolo-det-80c-001",
-                "modelPath": "models/yolov11n-fp16.onnx",
-                "deviceType": 0,
+                "name": "yolo-det-80c-001-trt",
+                "modelPath": "models/yolov11n_trt_fp16.engine",
+                "deviceType": 1,
                 "dataType": 1,
                 "needDecrypt": false
             },

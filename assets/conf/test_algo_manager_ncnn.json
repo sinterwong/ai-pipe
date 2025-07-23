@@ -34,7 +34,8 @@
                 "hwc2chw": true,
                 "inputNames": [
                     "in0"
-                ]
+                ],
+                "preprocTaskType": 0
             },
             "inferParams": {
                 "name": "yolo-det-80c-001",
