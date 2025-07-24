@@ -187,9 +187,7 @@ TEST(DemoPipelineTest, RunPipeline) {
   const std::string imagePathStr = dataDir / "yolov11" / "image.png";
 
   std::filesystem::path inputImagePath(imagePathStr);
-  std::string expectedOutputFileName = inputImagePath.stem().string() +
-                                       "_0_visualized" +
-                                       inputImagePath.extension().string();
+  std::string expectedOutputFileName = "vis_demo_infer_pipe_0.jpg";
   std::string expectedOutputPathStr =
       (std::filesystem::path("output_visualizations") / expectedOutputFileName)
           .string();
@@ -235,7 +233,7 @@ TEST(DemoPipelineTest, RunPipeline) {
   auto imagePathData = std::make_shared<ai_pipe::PortData>();
   imagePathData->setParam<std::string>("image_path", imagePathStr);
   // Use the top-level input port name defined in the graph's "inputs" section
-  inputs["ImageReader"] = imagePathData;
+  inputs["ImagePack"] = imagePathData;
 
   bool resultReceived = false;
   bool errorOccurred = false;
@@ -287,8 +285,8 @@ TEST(DemoPipelineTest, RunPipeline) {
   pipeline.reset();
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
 
-  //   if (std::filesystem::exists(expectedOutputPathStr)) {
-  //     std::filesystem::remove(expectedOutputPathStr);
-  //   }
+  if (std::filesystem::exists(expectedOutputPathStr)) {
+    std::filesystem::remove(expectedOutputPathStr);
+  }
 }
 } // namespace testing_demo_pipeline

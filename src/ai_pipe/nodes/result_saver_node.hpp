@@ -31,7 +31,7 @@ public:
   }
 
 private:
-  ResultSaverNodeParams params_;
+  ResultSaverNodeParams mParams;
 };
 
 } // namespace ai_pipe

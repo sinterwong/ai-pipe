@@ -1,27 +1,27 @@
 /**
- * @file vision_inference_node.hpp
+ * @file postprocssor_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
- * @date 2025-06-22
+ * @date 2025-07-23
  *
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __INFERENCE_NODE_HPP__
-#define __INFERENCE_NODE_HPP__
+
+#ifndef __POSTPROCESSOR_NODE_HPP__
+#define __POSTPROCESSOR_NODE_HPP__
 
 #include "node_base.hpp"
 #include "node_param_types.hpp"
-#include "pipe_types.hpp"
+#include <ai_core/algo_postproc.hpp>
 
 namespace ai_pipe {
-
-class VisionInferenceNode : public NodeBase {
+class PostprocessorNode : public NodeBase {
 public:
-  VisionInferenceNode(const std::string &name,
-                      const VisionInferenceNodeParams &params);
-  ~VisionInferenceNode() override = default;
+  PostprocessorNode(const std::string &name,
+                    const PostprocessorNodeParams &params);
+  ~PostprocessorNode() override = default;
 
   void process(const PortDataMap &inputs, PortDataMap &outputs,
                std::shared_ptr<PipelineContext> context = nullptr) override;
@@ -30,9 +30,8 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  VisionInferenceNodeParams mParams;
+  std::unique_ptr<ai_core::dnn::AlgoPostproc> mPostprocessor;
+  PostprocessorNodeParams mParams;
 };
-
 } // namespace ai_pipe
-
-#endif // __INFERENCE_NODE_HPP__
+#endif

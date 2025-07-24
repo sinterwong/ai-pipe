@@ -21,8 +21,12 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  VisualizationNodeParams params_;
-  std::filesystem::path outputDir_;
+  cv::Mat visualizeAccordOutput(ai_core::AlgoOutput &algoOutput,
+                                const cv::Mat &originalImage) const;
+
+private:
+  VisualizationNodeParams mParams;
+  std::filesystem::path mOutputDirPath;
 };
 
 } // namespace ai_pipe

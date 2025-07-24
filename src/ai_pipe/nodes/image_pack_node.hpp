@@ -1,5 +1,5 @@
 /**
- * @file vision_inference_node.hpp
+ * @file image_pack_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -8,20 +8,21 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __INFERENCE_NODE_HPP__
-#define __INFERENCE_NODE_HPP__
+#ifndef __IMAGE_PACKING_NODE_HPP__
+#define __IMAGE_PACKING_NODE_HPP__
 
 #include "node_base.hpp"
 #include "node_param_types.hpp"
 #include "pipe_types.hpp"
 
+#include <opencv2/opencv.hpp>
+
 namespace ai_pipe {
 
-class VisionInferenceNode : public NodeBase {
+class ImagePackNode : public NodeBase {
 public:
-  VisionInferenceNode(const std::string &name,
-                      const VisionInferenceNodeParams &params);
-  ~VisionInferenceNode() override = default;
+  ImagePackNode(const std::string &name, const ImagePackNodeParams &params);
+  ~ImagePackNode() override = default;
 
   void process(const PortDataMap &inputs, PortDataMap &outputs,
                std::shared_ptr<PipelineContext> context = nullptr) override;
@@ -30,9 +31,14 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  VisionInferenceNodeParams mParams;
+  cv::Mat convertBgrImageToColorType(const cv::Mat &image,
+                                     const ColorType colorType) const;
+
+private:
+  uint64_t mCounter;
+  ImagePackNodeParams mParams;
 };
 
 } // namespace ai_pipe
 
-#endif // __INFERENCE_NODE_HPP__
+#endif // __IMAGE_READER_NODE_HPP__
