@@ -31,15 +31,5 @@
   "C_Cpp.codeAnalysis.runAutomatically": true,
   "C_Cpp.default.intelliSenseMode": "linux-gcc-arm64",
   "C_Cpp.errorSquiggles": "disabled",
-  "cmake.cmakePath": "cmake",
-  "files.associations": {
-    "alignedvector3": "cpp",
-    "span": "cpp",
-    "string_span": "cpp",
-    "*.inc": "cpp",
-    "array": "cpp",
-    "string": "cpp",
-    "string_view": "cpp",
-    "ranges": "cpp"
-  }
+  "cmake.cmakePath": "cmake"
 }

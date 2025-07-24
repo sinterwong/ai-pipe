@@ -1,0 +1,135 @@
+{
+    "graph_name": "YoloInferPipeline",
+    "nodes": [
+        {
+            "name": "ImageReader",
+            "type": "ImageReaderNode",
+            "params": {
+                "color_type": "RGB888"
+            }
+        },
+        {
+            "name": "WrapperFrame",
+            "type": "GenFrameNode",
+            "params": {}
+        },
+        {
+            "name": "YoloPreprocessor",
+            "type": "PreprocessorNode",
+            "params": {
+                "module_name": "FramePreprocess",
+                "preproc_params": {
+                    "model_input_shape": {
+                        "w": 640,
+                        "h": 640,
+                        "c": 3
+                    },
+                    "mean_vals": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "norm_vals": [
+                        255.0,
+                        255.0,
+                        255.0
+                    ],
+                    "pad": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "need_resize": true,
+                    "is_equal_scale": true,
+                    "data_type": 1,
+                    "hwc2chw": true,
+                    "preproc_task_type": 0,
+                    "input_names": [
+                        "images"
+                    ],
+                    "buffer_location": 0
+                }
+            }
+        },
+        {
+            "name": "YoloInferenceEngine",
+            "type": "InferEngineNode",
+            "params": {
+                "module_name": "OrtAlgoInference",
+                "infer_params": {
+                    "name": "yolo-det-80c-001",
+                    "model_path": "assets/models/yolov11n-fp16.onnx",
+                    "need_decrypt": false,
+                    "device_type": 0,
+                    "data_type": 1
+                }
+            }
+        },
+        {
+            "name": "YoloPostprocessor",
+            "type": "PostprocessorNode",
+            "params": {
+                "module_name": "AnchorDetPostproc",
+                "postproc_params": {
+                    "det_alog_type": 0,
+                    "cond_thre": 0.5,
+                    "nms_thre": 0.45,
+                    "output_names": [
+                        "output0"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Visualization",
+            "type": "VisualizationNode",
+            "params": {
+                "output_dir": "output_visualizations"
+            }
+        }
+    ],
+    "edges": [
+        {
+            "from_node": "ImageReader",
+            "from_port": "image_output_data",
+            "to_node": "WrapperFrame",
+            "to_port": "image_input_data"
+        },
+        {
+            "from_node": "WrapperFrame",
+            "from_port": "algo_input",
+            "to_node": "YoloPreprocessor",
+            "to_port": "algo_input"
+        },
+        {
+            "from_node": "YoloPreprocessor",
+            "from_port": "model_input_tensor",
+            "to_node": "YoloInferenceEngine",
+            "to_port": "model_input_tensor"
+        },
+        {
+            "from_node": "YoloPreprocessor",
+            "from_port": "final_preproc_params",
+            "to_node": "YoloPostprocessor",
+            "to_port": "final_preproc_params"
+        },
+        {
+            "from_node": "YoloInferenceEngine",
+            "from_port": "model_output_tensor",
+            "to_node": "YoloPostprocessor",
+            "to_port": "model_output_tensor"
+        },
+        {
+            "from_node": "YoloPostprocessor",
+            "from_port": "algo_output",
+            "to_node": "Visualization",
+            "to_port": "infer_ret_viz_input"
+        },
+        {
+            "from_node": "ImageReader",
+            "from_port": "image_output_data_with_path",
+            "to_node": "Visualization",
+            "to_port": "raw_image_viz_input"
+        }
+    ]
+}

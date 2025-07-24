@@ -21,6 +21,10 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
+  cv::Mat visualizeAccordOutput(ai_core::AlgoOutput &algoOutput,
+                                const cv::Mat &originalImage) const;
+
+private:
   VisualizationNodeParams params_;
   std::filesystem::path outputDir_;
 };
