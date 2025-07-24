@@ -32,7 +32,7 @@ jobs:
         DEST_DIR="${{ github.workspace }}/3rdparty/target/"
         OUTPUT_FILE="dependency.tgz"
         
-        RELEASE_URL="https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.2.2-alpha/dependency_Linux_x86_64.tgz"
+        RELEASE_URL="https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.2.3-alpha/dependency_Linux_x86_64.tgz"
         
         mkdir -p "$DEST_DIR"
         
