@@ -30,7 +30,7 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  VisionInferenceNodeParams params_;
+  VisionInferenceNodeParams mParams;
 };
 
 } // namespace ai_pipe

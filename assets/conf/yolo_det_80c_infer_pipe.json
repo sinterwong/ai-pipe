@@ -2,15 +2,15 @@
     "graph_name": "YoloInferPipeline",
     "nodes": [
         {
-            "name": "ImageReader",
-            "type": "ImageReaderNode",
+            "name": "ImagePack",
+            "type": "ImagePackNode",
             "params": {
                 "color_type": "RGB888"
             }
         },
         {
             "name": "WrapperFrame",
-            "type": "GenFrameNode",
+            "type": "MakeFrameInputNode",
             "params": {}
         },
         {
@@ -84,13 +84,14 @@
             "name": "Visualization",
             "type": "VisualizationNode",
             "params": {
-                "output_dir": "output_visualizations"
+                "output_dir": "output_visualizations",
+                "prefix_name": "vis_algo_pipe"
             }
         }
     ],
     "edges": [
         {
-            "from_node": "ImageReader",
+            "from_node": "ImagePack",
             "from_port": "image_output_data",
             "to_node": "WrapperFrame",
             "to_port": "image_input_data"
@@ -126,7 +127,7 @@
             "to_port": "infer_ret_viz_input"
         },
         {
-            "from_node": "ImageReader",
+            "from_node": "ImagePack",
             "from_port": "image_output_data_with_path",
             "to_node": "Visualization",
             "to_port": "raw_image_viz_input"

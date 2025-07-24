@@ -12,19 +12,16 @@ using namespace common_utils::exception;
 
 VisualizationNode::VisualizationNode(const std::string &name,
                                      const VisualizationNodeParams &params)
-    : NodeBase(name), params_(params) {
+    : NodeBase(name), mParams(params) {
 
-  if (params_.outputDir.empty()) {
-    LOG_ERRORS << "VisualizationNode: Missing 'output_dir' parameter.";
-    throw InvalidValueException(
-        "VisualizationNode: Missing 'output_dir' parameter.");
+  if (!mParams.outputDir.empty()) {
+    if (!std::filesystem::exists(mParams.outputDir)) {
+      std::filesystem::create_directories(mParams.outputDir);
+    }
+    LOG_INFOS << "VisualizationNode: Output directory set to: "
+              << mParams.outputDir;
+    mOutputDirPath = mParams.outputDir;
   }
-
-  if (!std::filesystem::exists(params_.outputDir)) {
-    std::filesystem::create_directories(params_.outputDir);
-  }
-
-  outputDir_ = params_.outputDir;
 }
 
 void VisualizationNode::process(const PortDataMap &inputs, PortDataMap &outputs,
@@ -41,8 +38,7 @@ void VisualizationNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   }
 
   const auto &rawImagePacket = inputs.at(rawImageInputPort);
-  if (!rawImagePacket->has<ImageFramePtr>("image_data") ||
-      !rawImagePacket->has<std::string>("image_path")) {
+  if (!rawImagePacket->has<ImageFramePtr>("image_data")) {
     throw InvalidValueException("VisualizationNode: '" + rawImageInputPort +
                                 "' input is not of type ImageFrame.");
   }
@@ -65,19 +61,17 @@ void VisualizationNode::process(const PortDataMap &inputs, PortDataMap &outputs,
 
   cv::Mat visualizedImage = visualizeAccordOutput(algoOutput, imageData->data);
 
-  auto outputName = rawImagePacket->getParam<std::string>("image_path");
-  std::filesystem::path originalPath(outputName);
-  std::string filenameStem = originalPath.stem().string();
-  std::string filenameExt = originalPath.extension().string();
-  std::string outputFileName = filenameStem + "_" +
-                               std::to_string(imageData->frameId) +
-                               "_visualized" + filenameExt;
-  std::string outputPathStr = (outputDir_ / outputFileName).string();
+  if (!mParams.outputDir.empty()) {
+    std::string filename;
+    filename =
+        mParams.prefixName + "_" + std::to_string(imageData->frameId) + ".jpg";
 
-  if (!cv::imwrite(outputPathStr, visualizedImage)) {
-    throw FileOperationException(
-        "VisualizationNode: Failed to save visualized image to " +
-        outputPathStr);
+    std::string outputPathStr = (mOutputDirPath / filename).string();
+    if (!cv::imwrite(outputPathStr, visualizedImage)) {
+      throw FileOperationException(
+          "VisualizationNode: Failed to save visualized image to " +
+          outputPathStr);
+    }
   }
 
   auto visualizedDataPacket = std::make_shared<PortData>();

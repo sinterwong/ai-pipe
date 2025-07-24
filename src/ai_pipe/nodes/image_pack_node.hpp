@@ -1,27 +1,28 @@
 /**
- * @file gen_frame_node.hpp
+ * @file image_pack_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
- * @date 2025-07-23
+ * @date 2025-06-22
  *
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __GEN_FRAME_NODE_HPP__
-#define __GEN_FRAME_NODE_HPP__
+#ifndef __IMAGE_PACKING_NODE_HPP__
+#define __IMAGE_PACKING_NODE_HPP__
 
 #include "node_base.hpp"
 #include "node_param_types.hpp"
-#include <ai_core/algo_input_types.hpp>
+#include "pipe_types.hpp"
+
 #include <opencv2/opencv.hpp>
 
 namespace ai_pipe {
 
-class GenFrameNode : public NodeBase {
+class ImagePackNode : public NodeBase {
 public:
-  GenFrameNode(const std::string &name, const GenFrameNodeParams &params);
-  ~GenFrameNode() override = default;
+  ImagePackNode(const std::string &name, const ImagePackNodeParams &params);
+  ~ImagePackNode() override = default;
 
   void process(const PortDataMap &inputs, PortDataMap &outputs,
                std::shared_ptr<PipelineContext> context = nullptr) override;
@@ -30,9 +31,14 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  GenFrameNodeParams mParams;
+  cv::Mat convertBgrImageToColorType(const cv::Mat &image,
+                                     const ColorType colorType) const;
+
+private:
+  uint64_t mCounter;
+  ImagePackNodeParams mParams;
 };
 
 } // namespace ai_pipe
 
-#endif // __GEN_FRAME_NODE_HPP__
+#endif // __IMAGE_READER_NODE_HPP__

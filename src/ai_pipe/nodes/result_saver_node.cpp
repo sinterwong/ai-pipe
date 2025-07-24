@@ -8,14 +8,14 @@ using namespace common_utils::exception;
 
 ResultSaverNode::ResultSaverNode(const std::string &name,
                                  const ResultSaverNodeParams &params)
-    : NodeBase(name), params_(params) {
-  if (params_.outputDir.empty()) {
+    : NodeBase(name), mParams(params) {
+  if (mParams.outputDir.empty()) {
     LOG_ERRORS << "ResultSaverNode: Missing 'output_dir' parameter.";
     throw InvalidValueException(
         "ResultSaverNode: Missing 'output_dir' parameter.");
   }
-  if (!std::filesystem::exists(params_.outputDir)) {
-    std::filesystem::create_directories(params_.outputDir);
+  if (!std::filesystem::exists(mParams.outputDir)) {
+    std::filesystem::create_directories(mParams.outputDir);
   }
 }
 

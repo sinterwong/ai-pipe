@@ -25,8 +25,8 @@ private:
                                 const cv::Mat &originalImage) const;
 
 private:
-  VisualizationNodeParams params_;
-  std::filesystem::path outputDir_;
+  VisualizationNodeParams mParams;
+  std::filesystem::path mOutputDirPath;
 };
 
 } // namespace ai_pipe

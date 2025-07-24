@@ -2,8 +2,8 @@
     "graph_name": "DemoPipelineTest",
     "nodes": [
         {
-            "name": "ImageReader",
-            "type": "ImageReaderNode",
+            "name": "ImagePack",
+            "type": "ImagePackNode",
             "params": {
                 "color_type": "RGB888"
             }
@@ -26,19 +26,20 @@
             "name": "Visualization",
             "type": "VisualizationNode",
             "params": {
-                "output_dir": "output_visualizations"
+                "output_dir": "output_visualizations",
+                "prefix_name": "vis_demo_infer_pipe"
             }
         }
     ],
     "edges": [
         {
-            "from_node": "ImageReader",
+            "from_node": "ImagePack",
             "from_port": "image_output_data",
             "to_node": "Inference",
             "to_port": "raw_image_input"
         },
         {
-            "from_node": "ImageReader",
+            "from_node": "ImagePack",
             "from_port": "image_output_data_with_path",
             "to_node": "Visualization",
             "to_port": "raw_image_viz_input"

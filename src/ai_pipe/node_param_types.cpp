@@ -151,7 +151,7 @@ void from_json(const nlohmann::json &j, GenericPostParams &p) {
 } // namespace ai_core
 
 namespace ai_pipe {
-void from_json(const nlohmann::json &j, ImageReaderNodeParams &p) {
+void from_json(const nlohmann::json &j, ImagePackNodeParams &p) {
   if (j.contains("color_type")) {
     std::string color_type_str = j.at("color_type").get<std::string>();
     if (color_type_str == "RGB888") {
@@ -170,15 +170,15 @@ void from_json(const nlohmann::json &j, ImageReaderNodeParams &p) {
       throw std::runtime_error("Unknown color_type: " + color_type_str);
     }
   } else {
-    LOG_WARNINGS << "Missing 'color_type' in ImageReaderNodeParams JSON. "
+    LOG_WARNINGS << "Missing 'color_type' in ImagePackNodeParams JSON. "
                     "Defaulting to BGR888.";
     p.colorType = ColorType::BGR888;
   }
 }
 
-void from_json(const nlohmann::json &j, GenFrameNodeParams &p) {
-  // GenFrameNodeParams currently has no parameters, so this function is empty.
-  // If parameters are added in the future, they should be parsed here.
+void from_json(const nlohmann::json &j, MakeFrameInputNodeParams &p) {
+  // MakeFrameInputNodeParams currently has no parameters, so this function is
+  // empty. If parameters are added in the future, they should be parsed here.
   (void)j; // Suppress unused variable warning
   (void)p; // Suppress unused variable warning
 }
@@ -207,6 +207,13 @@ void from_json(const nlohmann::json &j, VisualizationNodeParams &p) {
   } else {
     throw std::runtime_error(
         "Missing 'output_dir' in VisualizationNodeParams JSON");
+  }
+  if (j.contains("prefix_name")) {
+    j.at("prefix_name").get_to(p.prefixName);
+  } else {
+    LOG_WARNINGS << "Missing 'prefix_name' in VisualizationNodeParams JSON. "
+                    "Defaulting to empty string.";
+    p.prefixName = "";
   }
 }
 

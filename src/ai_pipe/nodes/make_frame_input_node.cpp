@@ -1,5 +1,5 @@
 /**
- * @file gen_frame_node.cpp
+ * @file make_frame_input_node.cpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -8,7 +8,7 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include "gen_frame_node.hpp"
+#include "make_frame_input_node.hpp"
 #include "logic_types/pipe_data_types.hpp"
 #include <logger.hpp>
 #include <mexception.hpp>
@@ -16,27 +16,29 @@
 namespace ai_pipe {
 using namespace common_utils::exception;
 
-GenFrameNode::GenFrameNode(const std::string &name,
-                           const GenFrameNodeParams &params)
+MakeFrameInputNode::MakeFrameInputNode(const std::string &name,
+                                       const MakeFrameInputNodeParams &params)
     : NodeBase(name), mParams(params) {}
 
-void GenFrameNode::process(const PortDataMap &inputs, PortDataMap &outputs,
-                           std::shared_ptr<PipelineContext> context) {
+void MakeFrameInputNode::process(const PortDataMap &inputs,
+                                 PortDataMap &outputs,
+                                 std::shared_ptr<PipelineContext> context) {
 
   const std::string inputPortName = getExpectedInputPorts()[0];
   const std::string outputPortName = getExpectedOutputPorts()[0];
 
   if (inputs.find(inputPortName) == inputs.end()) {
-    LOG_ERRORS << "GenFrameNode: Missing '" << inputPortName << "' input.";
-    throw InvalidValueException("GenFrameNode: Missing '" + inputPortName +
-                                "' input.");
+    LOG_ERRORS << "MakeFrameInputNode: Missing '" << inputPortName
+               << "' input.";
+    throw InvalidValueException("MakeFrameInputNode: Missing '" +
+                                inputPortName + "' input.");
   }
 
   const auto &inputDataPacket = inputs.at(inputPortName);
   if (!inputDataPacket->has<ImageFramePtr>("image_data")) {
-    LOG_ERRORS << "GenFrameNode: '" << inputPortName
+    LOG_ERRORS << "MakeFrameInputNode: '" << inputPortName
                << "' input does not contain 'image_data'.";
-    throw InvalidValueException("GenFrameNode: '" + inputPortName +
+    throw InvalidValueException("MakeFrameInputNode: '" + inputPortName +
                                 "' input does not contain 'image_data'.");
   }
 
@@ -54,11 +56,11 @@ void GenFrameNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   outputs[outputPortName] = outputDataPacket;
 }
 
-std::vector<std::string> GenFrameNode::getExpectedInputPorts() const {
+std::vector<std::string> MakeFrameInputNode::getExpectedInputPorts() const {
   return {"image_input_data"};
 }
 
-std::vector<std::string> GenFrameNode::getExpectedOutputPorts() const {
+std::vector<std::string> MakeFrameInputNode::getExpectedOutputPorts() const {
   return {"algo_input"};
 }
 } // namespace ai_pipe

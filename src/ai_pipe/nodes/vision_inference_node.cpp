@@ -10,9 +10,9 @@ namespace ai_pipe {
 using namespace common_utils::exception;
 VisionInferenceNode::VisionInferenceNode(
     const std::string &name, const VisionInferenceNodeParams &params)
-    : NodeBase(name), params_(params) {
+    : NodeBase(name), mParams(params) {
 
-  if (params_.modelName.empty()) {
+  if (mParams.modelName.empty()) {
     LOG_ERRORS << "VisionInferenceNode: Missing 'model_name' parameter.";
     throw InvalidValueException(
         "VisionInferenceNode: Missing 'model_name' parameter.");
@@ -46,11 +46,11 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
         "VisionInferenceNode: AlgoManager is not set in pipeline context.");
   }
 
-  if (!algoManager->hasAlgo(params_.modelName)) {
-    LOG_ERRORS << "VisionInferenceNode: Model '" << params_.modelName
+  if (!algoManager->hasAlgo(mParams.modelName)) {
+    LOG_ERRORS << "VisionInferenceNode: Model '" << mParams.modelName
                << "' not registered with AlgoManager.";
     throw InvalidValueException("VisionInferenceNode: Model '" +
-                                params_.modelName +
+                                mParams.modelName +
                                 "' not registered with AlgoManager.");
   }
 
@@ -99,13 +99,13 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
   ai_core::AlgoOutput algoOutput;
 
   ai_core::InferErrorCode inferRet = algoManager->infer(
-      params_.modelName, algoInput, preprocParams, algoOutput, postprocParams);
+      mParams.modelName, algoInput, preprocParams, algoOutput, postprocParams);
   if (inferRet != ai_core::InferErrorCode::SUCCESS) {
     LOG_ERRORS << "VisionInferenceNode: Inference failed for model '"
-               << params_.modelName << "'. Error: " << (int)inferRet;
+               << mParams.modelName << "'. Error: " << (int)inferRet;
     throw ExecutionException(
         "VisionInferenceNode: Inference failed for model '" +
-        params_.modelName + "'.");
+        mParams.modelName + "'.");
   }
 
   auto inference_result_data_packet = std::make_shared<PortData>();

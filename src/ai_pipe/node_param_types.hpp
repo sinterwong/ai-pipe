@@ -20,15 +20,11 @@
 #include <param_center.hpp>
 
 namespace ai_pipe {
-struct ImageReaderNodeParams {
+struct ImagePackNodeParams {
   ColorType colorType;
 };
 
-struct VideoFrameNodeParams {
-  ColorType colorType;
-};
-
-struct GenFrameNodeParams {};
+struct MakeFrameInputNodeParams {};
 
 struct VisionInferenceNodeParams {
   std::string modelName;
@@ -40,6 +36,7 @@ struct ResultSaverNodeParams {
 
 struct VisualizationNodeParams {
   std::string outputDir;
+  std::string prefixName;
 };
 
 struct PreprocessorNodeParams {
@@ -57,11 +54,9 @@ struct PostprocessorNodeParams {
   ai_core::AlgoPostprocParams postprocParams;
 };
 
-using NodeConstructParams = common_utils::DataPacket;
+void from_json(const nlohmann::json &j, ImagePackNodeParams &p);
 
-void from_json(const nlohmann::json &j, ImageReaderNodeParams &p);
-
-void from_json(const nlohmann::json &j, GenFrameNodeParams &p);
+void from_json(const nlohmann::json &j, MakeFrameInputNodeParams &p);
 
 void from_json(const nlohmann::json &j, VisionInferenceNodeParams &p);
 
@@ -74,6 +69,8 @@ void from_json(const nlohmann::json &j, PreprocessorNodeParams &p);
 void from_json(const nlohmann::json &j, InferEngineNodeParams &p);
 
 void from_json(const nlohmann::json &j, PostprocessorNodeParams &p);
+
+using NodeConstructParams = common_utils::DataPacket;
 
 template <typename ParamsType>
 void handleNodeParams(const nlohmann::json &nodeConfig,
@@ -97,8 +94,8 @@ using NodeParamHandler = void (*)(const nlohmann::json &, NodeConstructParams &,
 // convert logic to data to simplify code
 static const std::unordered_map<std::string, NodeParamHandler> s_paramHandlers =
     {
-        {"ImageReaderNode", &handleNodeParams<ImageReaderNodeParams>},
-        {"GenFrameNode", &handleNodeParams<GenFrameNodeParams>},
+        {"ImagePackNode", &handleNodeParams<ImagePackNodeParams>},
+        {"MakeFrameInputNode", &handleNodeParams<MakeFrameInputNodeParams>},
         {"VisionInferenceNode", &handleNodeParams<VisionInferenceNodeParams>},
         {"ResultSaverNode", &handleNodeParams<ResultSaverNodeParams>},
         {"VisualizationNode", &handleNodeParams<VisualizationNodeParams>},
