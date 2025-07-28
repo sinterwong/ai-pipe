@@ -2,7 +2,7 @@
 
 #include "logic_types/pipe_data_types.hpp"
 #include "vision_inference_node.hpp"
-
+#include <ai_core/algo_manager.hpp>
 #include <logger.hpp>
 #include <mexception.hpp>
 
@@ -32,13 +32,8 @@ void VisionInferenceNode::process(const PortDataMap &inputs,
                                 inputPortName + "' input.");
   }
 
-  if (!context->isValid()) {
-    LOG_ERRORS << "VisionInferenceNode: Pipeline context is invalid.";
-    throw InvalidValueException(
-        "VisionInferenceNode: Pipeline context is invalid.");
-  }
-
-  const auto &algoManager = context->getAlgoManager();
+  const auto &algoManager =
+      context->getResource<ai_core::dnn::AlgoManager>("algo_manager");
   if (!algoManager) {
     LOG_ERRORS
         << "VisionInferenceNode: AlgoManager is not set in pipeline context.";

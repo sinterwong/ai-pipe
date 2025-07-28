@@ -1,7 +1,7 @@
 #ifndef __NODE_REGISTRAR_HPP__
 #define __NODE_REGISTRAR_HPP__
 
-#include "node_base.hpp"
+#include "ai_pipe/node_base.hpp"
 #include <type_safe_factory.hpp>
 
 namespace ai_pipe {

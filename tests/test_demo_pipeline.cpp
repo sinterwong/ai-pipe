@@ -219,8 +219,8 @@ TEST(DemoPipelineTest, RunPipeline) {
   ASSERT_EQ(algoManager->registerAlgo(name, engine), InferErrorCode::SUCCESS);
   ASSERT_TRUE(algoManager->hasAlgo(name));
   ASSERT_NE(algoManager->getAlgo(name), nullptr);
-  context->setAlgoManager(algoManager);
-  ASSERT_TRUE(context->isValid());
+  context->setResource<ai_core::dnn::AlgoManager>("algo_manager", algoManager);
+  ASSERT_TRUE(context->hasResource("algo_manager"));
 
   ai_pipe::PipelineConfig pipelineConfig;
   pipelineConfig.graphConfigPath = graphConfigPath;

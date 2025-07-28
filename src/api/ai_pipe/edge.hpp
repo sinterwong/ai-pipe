@@ -10,8 +10,10 @@
  */
 #ifndef __PIPE_EDGE_HPP__
 #define __PIPE_EDGE_HPP__
-#include "node_base.hpp"
+
+#include "ai_pipe/node_base.hpp"
 #include <memory>
+
 namespace ai_pipe {
 struct Edge {
   std::shared_ptr<NodeBase> sourceNode;

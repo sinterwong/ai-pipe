@@ -11,7 +11,10 @@
 #ifndef __PIPE_PIPELINE_CONTEXT_HPP__
 #define __PIPE_PIPELINE_CONTEXT_HPP__
 
-#include <ai_core/algo_manager.hpp>
+#include <any>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace ai_pipe {
 class PipelineContext : public std::enable_shared_from_this<PipelineContext> {
@@ -24,20 +27,30 @@ public:
   PipelineContext(PipelineContext &&) = default;
   PipelineContext &operator=(PipelineContext &&) = default;
 
-  void setAlgoManager(std::shared_ptr<ai_core::dnn::AlgoManager> manager);
+  template <typename T>
+  void setResource(const std::string &name, std::shared_ptr<T> resource) {
+    mResources[name] = resource;
+  }
 
-  std::shared_ptr<ai_core::dnn::AlgoManager> getAlgoManager() const;
+  template <typename T>
+  std::shared_ptr<T> getResource(const std::string &name) const {
+    auto it = mResources.find(name);
+    if (it == mResources.end()) {
+      return nullptr;
+    }
+    try {
+      return std::any_cast<std::shared_ptr<T>>(it->second);
+    } catch (const std::bad_any_cast &) {
+      return nullptr;
+    }
+  }
 
-  bool isValid() const;
+  bool hasResource(const std::string &name) const {
+    return mResources.count(name) > 0;
+  }
 
 private:
-  // 所有成员内部线程安全
-  std::shared_ptr<ai_core::dnn::AlgoManager> algoManager_;
-
-  // TODO: 后续实现数据生产者和自定义共享资源
-  // std::unordered_map<std::string, std::any> customResources_;
-
-  // TODO: 暂时不需要锁，现有资源都是内部线程安全的
+  std::unordered_map<std::string, std::any> mResources;
   // std::mutex mutex_;
 };
 } // namespace ai_pipe

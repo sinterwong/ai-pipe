@@ -11,8 +11,8 @@
 #ifndef __PIPE_GRAPH_HPP__
 #define __PIPE_GRAPH_HPP__
 
-#include "edge.hpp"
-#include "node_base.hpp"
+#include "ai_pipe/edge.hpp"
+#include "ai_pipe/node_base.hpp"
 #include <unordered_map>
 
 namespace ai_pipe {

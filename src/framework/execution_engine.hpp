@@ -10,21 +10,17 @@
  */
 #ifndef __PIPE_EXECUTION_ENGINE_HPP__
 #define __PIPE_EXECUTION_ENGINE_HPP__
-#include <memory>
-#include <string>
-
 #include "graph.hpp"
 #include "pipe_types.hpp"
-
+#include <functional>
+#include <memory>
+#include <string>
 #include <thread_safe_queue.hpp>
 
 namespace ai_pipe {
 class ExecutionEngine {
 public:
-  ExecutionEngine()
-      : graph_(nullptr), threadPool_(nullptr),
-        pipelineState_(PipelineState::IDLE), activeTasks_(0), stopFlag_(false) {
-  }
+  ExecutionEngine();
 
   ~ExecutionEngine();
 
