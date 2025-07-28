@@ -33,7 +33,7 @@ jobs:
         DEST_DIR="${{ github.workspace }}/3rdparty/target/"
         OUTPUT_FILE="dependency.tgz"
         
-        RELEASE_URL="https://github.com/sinterwong/ai-workflow-sdk/releases/download/v0.2.3-alpha/dependency_Linux_x86_64.tgz"
+        RELEASE_URL="https://github.com/sinterwong/ai-pipe/releases/download/v0.2.3-alpha/dependency_Linux_x86_64.tgz"
         
         mkdir -p "$DEST_DIR"
         
@@ -68,7 +68,7 @@ jobs:
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
         -DCMAKE_INSTALL_PREFIX=${{ steps.strings.outputs.install-dir }}
         -DCMAKE_BUILD_TYPE=Release
-        -DBUILD_AI_SDK_TESTS=ON
+        -DBUILD_AI_PIPE_TESTS=ON
         -S ${{ github.workspace }}
 
     - name: Build
@@ -79,4 +79,4 @@ jobs:
 
     - name: Run GTests
       working-directory: ${{ steps.strings.outputs.install-dir }}
-      run: ./tests/ai_workflow_tests --gtest_filter=*.*
+      run: ./tests/ai_pipe_tests --gtest_filter=*.*

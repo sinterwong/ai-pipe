@@ -8,15 +8,13 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include <fstream>
-#include <memory>
-
+#include "pipeline_impl.hpp"
 #include "node_param_types.hpp"
 #include "node_registrar.hpp"
 #include "pipe_types.hpp"
-#include "pipeline_impl.hpp"
-
+#include <fstream>
 #include <logger.hpp>
+#include <memory>
 #include <nlohmann/json.hpp>
 
 namespace ai_pipe {

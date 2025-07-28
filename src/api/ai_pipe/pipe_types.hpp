@@ -13,10 +13,14 @@
 #define __PIPE_TYPES_HPP__
 
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <string>
 
-#include <data_packet.hpp>
-#include <thread_pool.hpp>
+namespace common_utils {
+struct DataPacket;
+struct thread_pool;
+} // namespace common_utils
 
 namespace ai_pipe {
 

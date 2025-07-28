@@ -8,10 +8,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include <algorithm>
-
 #include "graph.hpp"
-
+#include <algorithm>
 #include <logger.hpp>
 
 namespace ai_pipe {

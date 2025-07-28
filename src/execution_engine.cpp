@@ -8,13 +8,17 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include <memory>
-
 #include "execution_engine.hpp"
-
 #include <logger.hpp>
+#include <memory>
+#include <thread_pool.hpp>
 #include <thread_safe_queue.hpp>
+
 namespace ai_pipe {
+
+ExecutionEngine::ExecutionEngine()
+    : graph_(nullptr), threadPool_(nullptr),
+      pipelineState_(PipelineState::IDLE), activeTasks_(0), stopFlag_(false) {}
 
 ExecutionEngine::~ExecutionEngine() {
   // Ensure graceful shutdown if not already stopped

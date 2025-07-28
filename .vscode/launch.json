@@ -5,7 +5,7 @@
       "name": "C/C++: g++ build and debug active file",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/install/tests/ai_workflow_tests",
+      "program": "${workspaceFolder}/install/tests/ai_pipe_tests",
       "args": [
         "--gtest_filter=*.*"
       ],

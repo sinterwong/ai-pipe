@@ -13,8 +13,9 @@
 #include <string>
 #include <vector>
 
-#include "pipe_types.hpp"
-#include "pipeline_context.hpp"
+#include "ai_pipe/pipe_types.hpp"
+#include "ai_pipe/pipeline_context.hpp"
+
 namespace ai_pipe {
 
 class NodeBase {
