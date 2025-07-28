@@ -27,8 +27,8 @@ The pipeline module framework supports DAG-based logic construction, enabling th
 1. **Link Libraries:** Symbolically link manually compiled libraries to `/repo/3rdparty/target/${TARGET_OS}_${TARGET_ARCH}` (e.g., `/repo/3rdparty/target/Linux_x86_64/opencv`).
 2. **Manage Dependencies:** Use `/repo/load_3rdparty.cmake` to manage the loading of your libraries.
 3. You can download dependencies from the following links:
-    *   [Android_aarch64](https://github.com/sinterwong/ai-pipe/releases/download/v0.2.0-alpha/dependency_Android_aarch64.tgz)
-    *   [Linux_x86_64](https://github.com/sinterwong/ai-pipe/releases/download/v0.2.0-alpha/dependency_Linux_x86_64.tgz)
+    *   [Android_aarch64](https://github.com/sinterwong/ai-pipe/releases/download/v0.2.3-alpha/dependency_Android_aarch64.tgz)
+    *   [Linux_x86_64](https://github.com/sinterwong/ai-pipe/releases/download/v0.2.3-alpha/dependency_Linux_x86_64.tgz)
     *   decompress it to `/repo/3rdparty/target/${TARGET_OS}_${TARGET_ARCH}`
 
 ## Project Structure 🏗️
