@@ -1,4 +1,12 @@
 # ai-pipe
+<p align="center">
+  <img src="assets/icon/ai-pipe-logo2.jpeg" alt="ai-pipe Logo" width="500"> <br/>
+</p>
+
+<p align="center">
+  A lightweight pipeline framework based on DAG model.
+</p>
+
 The pipeline module framework supports DAG-based logic construction, enabling the direct creation of pipelines through configuration files once computing nodes are defined and registered. Plans include supporting additional platforms in the future.
 
 ## Features ✨
