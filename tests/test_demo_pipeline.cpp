@@ -1,7 +1,6 @@
 #include <filesystem>
 #include <fstream>
 
-#include "ai_pipe/builder.hpp"
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include "ai_pipe/types.hpp"

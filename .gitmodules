@@ -1,0 +1,12 @@
+[submodule "3rdparty/logger"]
+	path = 3rdparty/logger
+	url = https://github.com/sinterwong/logger.git
+  branch = master
+[submodule "3rdparty/googletest"]
+	path = 3rdparty/googletest
+	url = https://github.com/google/googletest.git
+	branch = main
+[submodule "3rdparty/benchmark"]
+	path = 3rdparty/benchmark
+	url = https://github.com/google/benchmark.git
+	branch = main

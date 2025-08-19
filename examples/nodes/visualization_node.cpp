@@ -1,7 +1,7 @@
 #include "visualization_node.hpp"
-#include "ai_pipe/exception.hpp"
 #include "ai_pipe/node_registrar.hpp"
 #include "data_types.hpp"
+#include "exception.hpp"
 #include <filesystem>
 #include <logger.hpp>
 #include <nlohmann/json.hpp>

@@ -1,7 +1,7 @@
 #include "result_saver_node.hpp"
-#include "ai_pipe/exception.hpp"
 #include "ai_pipe/node_registrar.hpp"
 #include "ai_pipe/types.hpp"
+#include "exception.hpp"
 #include <ai_core/algo_data_types.hpp>
 #include <filesystem>
 #include <logger.hpp>

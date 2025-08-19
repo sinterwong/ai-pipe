@@ -1,10 +1,10 @@
 
 #include "image_pack_node.hpp"
-#include "ai_pipe/exception.hpp"
 #include "ai_pipe/node_base.hpp"
 #include "ai_pipe/node_registrar.hpp"
 #include "common_types.hpp"
 #include "data_types.hpp"
+#include "exception.hpp"
 #include "time_utils.hpp"
 #include <logger.hpp>
 #include <nlohmann/json.hpp>

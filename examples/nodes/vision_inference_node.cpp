@@ -1,7 +1,7 @@
 #include "vision_inference_node.hpp"
-#include "ai_pipe/exception.hpp"
 #include "ai_pipe/node_registrar.hpp"
 #include "data_types.hpp"
+#include "exception.hpp"
 #include <ai_core/algo_manager.hpp>
 #include <logger.hpp>
 #include <nlohmann/json.hpp>

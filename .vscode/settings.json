@@ -20,6 +20,7 @@
     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     "-DBUILD_AI_PIPE_TESTS=ON",
     "-DBUILD_AI_PIPE_EXAMPLES=ON",
+    "-DBUILD_AI_PIPE_BENCHMARKS=ON",
   ],
   "cmake.options.statusBarVisibility": "compact",
   "cmake.buildDirectory": "${workspaceFolder}/build",

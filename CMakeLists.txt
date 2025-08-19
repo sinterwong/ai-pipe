@@ -15,6 +15,7 @@ INCLUDE(CMakePackageConfigHelpers)
 
 OPTION(BUILD_AI_PIPE_TESTS "Build with tests" ON)
 OPTION(BUILD_AI_PIPE_EXAMPLES "Build with examples" ON)
+OPTION(BUILD_AI_PIPE_BENCHMARKS "Build with examples" ON)
 
 MESSAGE(INFO "--------------------------------")
 MESSAGE(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")

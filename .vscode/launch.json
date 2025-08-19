@@ -14,7 +14,7 @@
       "environment": [
         {
           "name": "LD_LIBRARY_PATH",
-          "value": "${workspaceFolder}/install/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/dependency_lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/ai_core/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/logger/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/opencv/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/gtest/lib:${env:LD_LIBRARY_PATH}"
+          "value": "${workspaceFolder}/install/lib:${workspaceFolder}/install/lib:${workspaceFolder}/build/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/dependency_lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/ai_core/lib:${workspaceFolder}/3rdparty/target/Linux_x86_64/opencv/lib:${workspaceFolder}/build/3rdparty/logger/x86_64/lib:${env:LD_LIBRARY_PATH}"
         }
       ],
       "externalConsole": false,

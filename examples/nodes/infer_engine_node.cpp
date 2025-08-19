@@ -10,8 +10,8 @@
  */
 
 #include "infer_engine_node.hpp"
-#include "ai_pipe/exception.hpp"
 #include "ai_pipe/node_registrar.hpp"
+#include "exception.hpp"
 #include <logger.hpp>
 
 namespace ai_core {

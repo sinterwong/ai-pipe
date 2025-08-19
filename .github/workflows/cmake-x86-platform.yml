@@ -70,6 +70,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=Release
         -DBUILD_AI_PIPE_TESTS=ON
         -DBUILD_AI_PIPE_EXAMPLES=ON
+        -DBUILD_AI_PIPE_BENCHMARKS=ON
         -S ${{ github.workspace }}
 
     - name: Build
