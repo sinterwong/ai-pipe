@@ -9,9 +9,8 @@
  *
  */
 #include "pipeline_impl.hpp"
-#include "node_param_types.hpp"
-#include "node_registrar.hpp"
-#include "pipe_types.hpp"
+#include "ai_pipe/node_registrar.hpp"
+#include "ai_pipe/types.hpp"
 #include <fstream>
 #include <logger.hpp>
 #include <memory>
@@ -332,15 +331,17 @@ Graph Pipeline::Impl::buildGraphFromConfig(const std::string &configPath) {
     NodeConstructParams creationParams;
     creationParams.setParam("name", name);
 
-    auto it = s_paramHandlers.find(type);
-    if (it != s_paramHandlers.end()) {
-      it->second(nodeConfig, creationParams, name, type);
-    } else {
-      LOG_ERRORS << "Unknown node type in config: " << type;
-      throw std::runtime_error("Unknown node type: " + type);
+    if (!NodeParamParserFactory::instance().isRegistered(type)) {
+      LOG_ERRORS << "Node parameter parser for type " << type
+                 << " not registered.";
+      throw std::runtime_error("Node parameter parser for type " + type +
+                               " not registered.");
     }
 
-    auto node = NodeFactory::instance().create(type, creationParams);
+    auto parser = NodeParamParserFactory::instance().create(type);
+    parser->parse(nodeConfig, creationParams, name, type);
+
+    auto node = NodeCreatorFactory::instance().create(type, creationParams);
     if (!node) {
       LOG_ERRORS << "Failed to create node: " << name << " of type: " << type;
       throw std::runtime_error("Failed to create node: " + name);

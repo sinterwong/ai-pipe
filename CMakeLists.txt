@@ -14,6 +14,7 @@ INCLUDE(GNUInstallDirs)
 INCLUDE(CMakePackageConfigHelpers)
 
 OPTION(BUILD_AI_PIPE_TESTS "Build with tests" ON)
+OPTION(BUILD_AI_PIPE_EXAMPLES "Build with examples" ON)
 
 MESSAGE(INFO "--------------------------------")
 MESSAGE(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")
@@ -77,6 +78,11 @@ ADD_SUBDIRECTORY(src)
 IF(BUILD_AI_PIPE_TESTS)
     MESSAGE(INFO "--------------------------------")
     ADD_SUBDIRECTORY(tests)
+ENDIF()
+
+IF(BUILD_AI_PIPE_EXAMPLES)
+    MESSAGE(INFO "--------------------------------")
+    ADD_SUBDIRECTORY(examples)
 ENDIF()
 
 message(INFO "--------- Install Resource --------")

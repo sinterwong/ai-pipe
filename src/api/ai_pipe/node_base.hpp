@@ -13,8 +13,8 @@
 #include <string>
 #include <vector>
 
-#include "ai_pipe/pipe_types.hpp"
-#include "ai_pipe/pipeline_context.hpp"
+#include "ai_pipe/context.hpp"
+#include "ai_pipe/types.hpp"
 
 namespace ai_pipe {
 

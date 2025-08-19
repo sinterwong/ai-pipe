@@ -1,14 +1,11 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 
 AI_PIPE_EXTRACT_VERSION()
-PROJECT(ai_pipe VERSION ${AI_PIPE_VERSION})
+PROJECT(AIPipeSrc VERSION ${AI_PIPE_VERSION})
 
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-LOAD_OPENCV()
-LOAD_COMMON_UTILS()
 LOAD_LOGGER()
-LOAD_AI_CORE()
 
 # Public headers
 FILE(GLOB_RECURSE CURRENT_DIR_PUBLIC_HEAD ${CMAKE_CURRENT_SOURCE_DIR}/api/*.hpp) 
@@ -22,16 +19,12 @@ FILE(GLOB_RECURSE CURRENT_DIR_SRCS
 )
 
 SET(DEPENDENCY_INCLUDES
-	${PROJECT_INCLUDE_DIR} 
+	${PROJECT_INCLUDE_DIR}
 	${PROJECT_INCLUDE_DIR}/ai_pipe
-	${OpenCV_INCLUDE_DIRS} 
 )
 
 SET(DEPENDENCY_LIBS
-	ai_core::ai_core
-	common_utils::common_utils
 	logger::logger
-	${OpenCV_LIBS}
 )
 
 # Build Shared Library
@@ -52,6 +45,19 @@ TARGET_INCLUDE_DIRECTORIES(ai_pipe
 
 TARGET_LINK_LIBRARIES(ai_pipe PRIVATE ${DEPENDENCY_LIBS})
 
+# Generate the ai_pipe-config.cmake and ai_pipe-config-version.cmake files
+WRITE_BASIC_PACKAGE_VERSION_FILE(
+    "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+
+CONFIGURE_FILE(
+    "${CMAKE_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
+    @ONLY
+)
+
 INSTALL(FILES ${CURRENT_DIR_PUBLIC_HEAD}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ai_pipe
     COMPONENT dev
@@ -69,24 +75,6 @@ INSTALL(FILES ${CURRENT_DIR_PUBLIC_HEAD}
     COMPONENT dev
 )
 
-# Generate the ai_pipe-config.cmake and ai_pipe-config-version.cmake files
-WRITE_BASIC_PACKAGE_VERSION_FILE(
-    "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
-
-EXPORT(EXPORT ai_export_set
-    FILE "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-targets.cmake"
-    NAMESPACE ai_pipe::
-)
-
-CONFIGURE_FILE(
-    "${CMAKE_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
-    @ONLY
-)
-
 INSTALL(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
@@ -99,4 +87,9 @@ INSTALL(EXPORT ai_export_set
     NAMESPACE ai_pipe::
     DESTINATION ${CMAKE_INSTALL_DATADIR}
 	COMPONENT dev
+)
+
+EXPORT(EXPORT ai_export_set
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-targets.cmake"
+    NAMESPACE ai_pipe::
 )

@@ -1,11 +1,9 @@
-#include <filesystem>
-
-#include "ai_pipe/pipe_types.hpp"
+#include "ai_pipe/builder.hpp"
+#include "ai_pipe/context.hpp"
 #include "ai_pipe/pipeline.hpp"
-#include "ai_pipe/pipeline_builder.hpp"
-#include "ai_pipe/pipeline_context.hpp"
-
+#include "dummy_module.hpp"
 #include <ai_core/algo_manager.hpp>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <logger.hpp>
 #include <nlohmann/json.hpp>
