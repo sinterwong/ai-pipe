@@ -95,7 +95,7 @@ void ImagePackNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   ImageFrame imageFrame;
   imageFrame.colorType = mParams.colorType;
   imageFrame.data = convertBgrImageToColorType(imageBgr, mParams.colorType);
-  imageFrame.timestamp = common_utils::getCurrentTimestamp();
+  imageFrame.timestamp = utils::getCurrentTimestamp();
   imageFrame.frameId = mCounter;
 
   imageFramePacket->setParam<ImageFramePtr>(
@@ -106,7 +106,7 @@ void ImagePackNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   ImageFrame imageRawFrame;
   imageFrame.colorType = ColorType::BGR888;
   imageFrame.data = imageBgr;
-  imageFrame.timestamp = common_utils::getCurrentTimestamp();
+  imageFrame.timestamp = utils::getCurrentTimestamp();
   imageFrame.frameId = mCounter;
   imageFrameRawPacket->setParam<ImageFramePtr>(
       "image_data", std::make_shared<ImageFrame>(imageFrame));

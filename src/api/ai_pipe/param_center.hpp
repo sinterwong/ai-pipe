@@ -13,7 +13,7 @@
 
 #include <algorithm>
 #include <variant>
-namespace ai_pipe {
+namespace ai_pipe::common_utils {
 template <typename P> class ParamCenter {
 public:
   using Params = P;
@@ -31,6 +31,6 @@ public:
 private:
   Params params_;
 };
-} // namespace ai_pipe
+} // namespace ai_pipe::common_utils
 
 #endif

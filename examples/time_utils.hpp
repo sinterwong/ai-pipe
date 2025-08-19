@@ -19,7 +19,7 @@
 
 using namespace std::chrono_literals;
 
-namespace common_utils {
+namespace ai_pipe::examples::utils {
 
 /**
  * @brief 执行时间衡量
@@ -70,5 +70,5 @@ inline int64_t getCurrentTimestamp() {
              std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
-} // namespace common_utils
+} // namespace ai_pipe::examples::utils
 #endif

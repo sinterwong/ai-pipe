@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace common_utils {
+namespace ai_pipe::common_utils {
 using DataPacketId = uint64_t;
 
 struct DataPacket {
@@ -79,6 +79,6 @@ struct DataPacket {
     return it->second.type() == typeid(T);
   }
 };
-} // namespace common_utils
+} // namespace ai_pipe::common_utils
 
 #endif

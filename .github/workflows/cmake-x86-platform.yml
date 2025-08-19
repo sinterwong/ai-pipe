@@ -69,6 +69,7 @@ jobs:
         -DCMAKE_INSTALL_PREFIX=${{ steps.strings.outputs.install-dir }}
         -DCMAKE_BUILD_TYPE=Release
         -DBUILD_AI_PIPE_TESTS=ON
+        -DBUILD_AI_PIPE_EXAMPLES=ON
         -S ${{ github.workspace }}
 
     - name: Build
