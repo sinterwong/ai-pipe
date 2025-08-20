@@ -10,8 +10,9 @@
  */
 #ifndef __PIPE_PIPELINE_HPP__
 #define __PIPE_PIPELINE_HPP__
+#include "ai_pipe/config.hpp"
+#include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
-#include "ai_pipe/pipeline_context.hpp"
 #include <functional>
 #include <future>
 

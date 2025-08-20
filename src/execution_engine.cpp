@@ -114,8 +114,7 @@ bool ExecutionEngine::initialize(Graph *graph, uint8_t numWorkers) {
 
     PortInputQueues portQueues;
     for (const auto &portName : node->getExpectedInputPorts()) {
-      portQueues[portName] =
-          std::make_shared<common_utils::ThreadSafeQueue<PortDataPtr>>();
+      portQueues[portName] = std::make_shared<ThreadSafeQueue<PortDataPtr>>();
     }
     nodeInputQueues_[node] = std::move(portQueues);
   }

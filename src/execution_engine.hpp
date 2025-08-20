@@ -10,12 +10,13 @@
  */
 #ifndef __PIPE_EXECUTION_ENGINE_HPP__
 #define __PIPE_EXECUTION_ENGINE_HPP__
+#include "ai_pipe/types.hpp"
 #include "graph.hpp"
-#include "pipe_types.hpp"
+#include "thread_pool.hpp"
+#include "thread_safe_queue.hpp"
 #include <functional>
 #include <memory>
 #include <string>
-#include <thread_safe_queue.hpp>
 
 namespace ai_pipe {
 class ExecutionEngine {
@@ -69,8 +70,9 @@ private:
 
 private:
   // Per-node input queues: Node -> PortName -> Queue
-  using PortInputQueues = std::unordered_map<
-      std::string, std::shared_ptr<common_utils::ThreadSafeQueue<PortDataPtr>>>;
+  using PortInputQueues =
+      std::unordered_map<std::string,
+                         std::shared_ptr<ThreadSafeQueue<PortDataPtr>>>;
 
   Graph *graph_;
   std::shared_ptr<PipelineContext> curContext_;

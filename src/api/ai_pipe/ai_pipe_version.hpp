@@ -1,5 +1,5 @@
 /**
- * @file version.hpp
+ * @file ai_pipe_version.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -13,7 +13,7 @@
 
 // for cmake
 #define AI_PIPE_VER_MAJOR 0
-#define AI_PIPE_VER_MINOR 3
+#define AI_PIPE_VER_MINOR 4
 #define AI_PIPE_VER_PATCH 0
 
 #define AI_PIPE_VERSION                                                        \

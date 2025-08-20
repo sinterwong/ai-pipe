@@ -1,32 +1,20 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 PROJECT(Tests)
 
-LOAD_GTEST()
-LOAD_LOGGER()
-LOAD_AI_CORE()
-LOAD_COMMON_UTILS()
-LOAD_OPENCV()
-
-IF(TARGET_OS STREQUAL "Android")
-    LOAD_ANDROID_ENV()
-    LIST(APPEND ANDROID_JIN_LIBS mediandk)
-ENDIF()
-
 SET(DEPENDENCY_INCLUDES
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples
     ${PROJECT_INCLUDE_DIR}
-    ${GTEST_INCLUDE_DIRS}
 )
 
 SET(DEPENDENCY_LIBS
+    ai_pipe::ai_pipe_examples
     ai_pipe::ai_pipe
-    ai_core::ai_core
-    common_utils::common_utils
     logger::logger
+    GTest::gtest
+    GTest::gtest_main
     ${OpenCV_LIBS}
-    ${GTEST_LIBS}
-    ${ANDROID_JIN_LIBS}
 )
 
 FILE(GLOB CURRENT_DIR_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
