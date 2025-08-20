@@ -2,7 +2,6 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 SET(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 # Project setting
-INCLUDE(cmake/messagecolor.cmake)
 INCLUDE(cmake/utils.cmake)
 AI_PIPE_EXTRACT_VERSION()
 
@@ -13,9 +12,9 @@ SET(CMAKE_CXX_STANDARD 20)
 INCLUDE(GNUInstallDirs)
 INCLUDE(CMakePackageConfigHelpers)
 
-OPTION(BUILD_AI_PIPE_TESTS "Build with tests" ON)
-OPTION(BUILD_AI_PIPE_EXAMPLES "Build with examples" ON)
-OPTION(BUILD_AI_PIPE_BENCHMARKS "Build with examples" ON)
+OPTION(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
+OPTION(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
+OPTION(BUILD_AI_PIPE_BENCHMARKS "Build with examples" OFF)
 
 MESSAGE(INFO "--------------------------------")
 MESSAGE(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")

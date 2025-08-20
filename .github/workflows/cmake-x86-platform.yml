@@ -23,7 +23,7 @@ jobs:
           submodules: 'recursive'
           lfs: true
 
-    - name: Install GCC 13 and FFmpeg
+    - name: Install GCC 13
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-13 g++-13
@@ -38,11 +38,7 @@ jobs:
     - name: Set up test env
       run: |
         echo "LD_LIBRARY_PATH=${{ github.workspace }}/install/lib:\
-        ${{ github.workspace }}/3rdparty/target/Linux_x86_64/dependency_lib:\
-        ${{ github.workspace }}/3rdparty/target/Linux_x86_64/logger/lib:\
-        ${{ github.workspace }}/3rdparty/target/Linux_x86_64/gtest/lib:\
-        ${{ github.workspace }}/3rdparty/target/Linux_x86_64/opencv/lib:\
-        ${{ github.workspace }}/3rdparty/target/Linux_x86_64/ai_core/lib:\
+        ${{ github.workspace }}/build/3rdparty/logger/x86_64/lib:\
         ${{ github.workspace }}/install/lib:\
         $LD_LIBRARY_PATH" >> $GITHUB_ENV
 
