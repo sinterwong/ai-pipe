@@ -13,6 +13,7 @@
 
 #include "ai_pipe/node_base.hpp"
 #include "node_param_types.hpp"
+#include "type_safe_factory.hpp"
 
 namespace ai_pipe {
 namespace common_utils {

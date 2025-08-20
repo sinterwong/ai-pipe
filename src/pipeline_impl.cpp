@@ -11,7 +11,6 @@
 #include "pipeline_impl.hpp"
 #include "ai_pipe/node_registrar.hpp"
 #include "ai_pipe/types.hpp"
-#include "type_safe_factory.hpp"
 #include <fstream>
 #include <logger.hpp>
 #include <memory>
