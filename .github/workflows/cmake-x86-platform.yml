@@ -20,30 +20,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
+          submodules: 'recursive'
           lfs: true
 
     - name: Install GCC 13 and FFmpeg
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-13 g++-13
-        sudo apt-get install libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libdc1394-dev
-
-    - name: Download and extract dependencies
-      run: |
-        DEST_DIR="${{ github.workspace }}/3rdparty/target/"
-        OUTPUT_FILE="dependency.tgz"
-        
-        RELEASE_URL="https://github.com/sinterwong/ai-pipe/releases/download/v0.2.3-alpha/dependency_Linux_x86_64.tgz"
-        
-        mkdir -p "$DEST_DIR"
-        
-        echo "Downloading dependencies from GitHub Releases..."
-        curl -L "${RELEASE_URL}" -o "${OUTPUT_FILE}"
-        
-        echo "Extracting dependencies..."
-        tar -xzf "${OUTPUT_FILE}" -C "$DEST_DIR"
-        
-        echo "Dependencies installed."
 
     - name: Set reusable strings
       id: strings
