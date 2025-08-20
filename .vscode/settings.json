@@ -8,15 +8,9 @@
   "cmake.generator": "Ninja",
   "cmake.exportCompileCommandsFile": true,
   "cmake.environment": {
-    //   "PATH": "${env:PATH}",
-    "LD_LIBRARY_PATH": "${workspaceFolder}/3rdparty/target/Linux_x86_64/dependency_lib:${env:LD_LIBRARY_PATH}",
-    // "ANDROID_NDK": "/home/sinter/softwares/android-ndk-r27c"
+    "LD_LIBRARY_PATH": "${env:LD_LIBRARY_PATH}",
   },
   "cmake.configureArgs": [
-    // "-DCMAKE_TOOLCHAIN_FILE=/home/sinter/softwares/android-ndk-r27c/build/cmake/android.toolchain.cmake",
-    // "-DANDROID_ABI=arm64-v8a",
-    // "-DANDROID_PLATFORM=android-24",
-    // "-DANDROID_STL=c++_shared",
     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     "-DBUILD_AI_PIPE_TESTS=ON",
     "-DBUILD_AI_PIPE_EXAMPLES=ON",

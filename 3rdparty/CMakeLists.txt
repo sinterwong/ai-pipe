@@ -4,14 +4,14 @@ PROJECT(AIPipe3rdparty)
 FILE(MAKE_DIRECTORY ${PROJECT_INCLUDE_DIR})
 FILE(COPY nlohmann DESTINATION ${PROJECT_INCLUDE_DIR})
 
-SET(BUILD_SHARED_LIBS OFF)
-
 IF(NOT TARGET logger)
     MESSAGE(STATUS "logger target not found. Adding subdirectory...")
     ADD_SUBDIRECTORY(logger EXCLUDE_FROM_ALL)
 ELSE()
     MESSAGE(STATUS "logger target already exists. Skipping.")
 ENDIF()
+
+SET(BUILD_SHARED_LIBS OFF)
 
 IF(BUILD_AI_PIPE_TESTS)
     IF(NOT TARGET gtest)

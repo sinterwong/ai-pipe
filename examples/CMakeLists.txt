@@ -5,30 +5,22 @@ PROJECT(AIPipeExamples VERSION ${AI_PIPE_VERSION})
 
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-LOAD_OPENCV()
-LOAD_AI_CORE()
-
 FILE(GLOB_RECURSE CURRENT_DIR_SRCS 
 		${CMAKE_CURRENT_SOURCE_DIR}/*.cpp 
 		${CMAKE_CURRENT_SOURCE_DIR}/nodes/*.cpp 
-		${CMAKE_CURRENT_SOURCE_DIR}/tracker/*.cpp 
 )
 
 SET(DEPENDENCY_INCLUDES
 	${PROJECT_INCLUDE_DIR}
-	${OpenCV_INCLUDE_DIRS}
 )
 
 SET(DEPENDENCY_LIBS
 	ai_pipe::ai_pipe
-	ai_core::ai_core
 	logger::logger
-	${OpenCV_LIBS}
 )
 
 # Build Shared Library
 ADD_LIBRARY(ai_pipe_examples SHARED ${CURRENT_DIR_SRCS})
-
 
 ADD_LIBRARY(ai_pipe::ai_pipe_examples ALIAS ai_pipe_examples)
 

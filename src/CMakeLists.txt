@@ -25,8 +25,8 @@ SET(DEPENDENCY_LIBS
 	logger::logger
 )
 
-# Build Shared Library
-ADD_LIBRARY(ai_pipe ${CURRENT_DIR_SRCS})
+# Build Library
+ADD_LIBRARY(ai_pipe STATIC ${CURRENT_DIR_SRCS})
 
 ADD_LIBRARY(ai_pipe::ai_pipe ALIAS ai_pipe)
 

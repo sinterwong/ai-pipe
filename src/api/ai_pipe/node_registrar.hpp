@@ -12,10 +12,13 @@
 #define __NODE_REGISTRAR_HPP__
 
 #include "ai_pipe/node_base.hpp"
-#include "ai_pipe/type_safe_factory.hpp"
 #include "node_param_types.hpp"
 
 namespace ai_pipe {
+namespace common_utils {
+template <class BaseClass> class Factory;
+}
+
 using NodeParamParserFactory = common_utils::Factory<ParamParserBase>;
 using NodeCreatorFactory = common_utils::Factory<NodeBase>;
 
