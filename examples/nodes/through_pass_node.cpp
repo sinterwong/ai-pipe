@@ -1,8 +1,8 @@
 
 #include "through_pass_node.hpp"
-#include "ai_pipe/node_registrar.hpp"
 #include "ai_pipe/types.hpp"
 #include "exception.hpp"
+#include "node_registrar.hpp"
 #include <logger.hpp>
 #include <nlohmann/json.hpp>
 

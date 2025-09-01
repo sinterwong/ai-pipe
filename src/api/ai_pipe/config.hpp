@@ -12,15 +12,6 @@
 #ifndef _AI_PIPE_CONFIG_HPP__
 #define _AI_PIPE_CONFIG_HPP__
 
-#include <cstdint>
-#include <string>
-
-namespace ai_pipe {
-
-struct PipelineConfig {
-  std::string graphConfigPath;
-  uint8_t numWorkers = 4;
-};
-} // namespace ai_pipe
+namespace ai_pipe {} // namespace ai_pipe
 
 #endif // AI_PIPE_CONFIG_

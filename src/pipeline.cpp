@@ -32,15 +32,10 @@ Pipeline &Pipeline::operator=(Pipeline &&other) noexcept {
   return *this;
 }
 
-bool Pipeline::initialize(const PipelineConfig &config,
-                          std::shared_ptr<PipelineContext> context) {
-  return pImpl_->initialize(config, context);
-}
-
-bool Pipeline::initializeWithGraph(Graph &&graph,
-                                   std::shared_ptr<PipelineContext> context,
-                                   uint8_t numWorkers) {
-  return pImpl_->initializeWithGraph(std::move(graph), context, numWorkers);
+bool Pipeline::initialize(Graph &&graph,
+                          std::shared_ptr<PipelineContext> context,
+                          uint8_t numWorkers) {
+  return pImpl_->initialize(std::move(graph), context, numWorkers);
 }
 
 bool Pipeline::start() { return pImpl_->start(); }

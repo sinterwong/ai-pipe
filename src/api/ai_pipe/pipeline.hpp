@@ -10,7 +10,6 @@
  */
 #ifndef __PIPE_PIPELINE_HPP__
 #define __PIPE_PIPELINE_HPP__
-#include "ai_pipe/config.hpp"
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
 #include <functional>
@@ -28,12 +27,8 @@ public:
   Pipeline(Pipeline &&other) noexcept;
   Pipeline &operator=(Pipeline &&other) noexcept;
 
-  bool initialize(const PipelineConfig &config,
-                  std::shared_ptr<PipelineContext> context_);
-
-  bool initializeWithGraph(Graph &&graph,
-                           std::shared_ptr<PipelineContext> context,
-                           uint8_t numWorkers = 1);
+  bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
+                  uint8_t numWorkers = 1);
 
   bool start();
 
@@ -60,9 +55,6 @@ public:
   const Graph &getGraph() const;
 
   PipelineContext &getContext();
-
-private:
-  Graph buildGraphFromConfig(const std::string &configPath);
 
 private:
   class Impl;

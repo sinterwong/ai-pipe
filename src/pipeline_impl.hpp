@@ -26,12 +26,8 @@ public:
   Impl(Impl &&other) noexcept;
   Impl &operator=(Impl &&other) noexcept;
 
-  bool initialize(const PipelineConfig &config,
-                  std::shared_ptr<PipelineContext> context_);
-
-  bool initializeWithGraph(Graph &&graph,
-                           std::shared_ptr<PipelineContext> context,
-                           uint8_t numWorkers = 1);
+  bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
+                  uint8_t numWorkers = 1);
 
   bool start();
 
@@ -55,23 +51,20 @@ public:
                                                    const std::string &nodeName)>
                                     callback);
 
-  const Graph &getGraph() const { return *graph_; }
+  const Graph &getGraph() const { return *mGraph; }
 
-  PipelineContext &getContext() { return *context_; }
-
-private:
-  Graph buildGraphFromConfig(const std::string &configPath);
+  PipelineContext &getContext() { return *mContext; }
 
 private:
-  std::unique_ptr<Graph> graph_;
-  std::unique_ptr<ExecutionEngine> executionEngine_;
-  std::atomic<PipelineState> state_;
+  std::unique_ptr<Graph> mGraph;
+  std::unique_ptr<ExecutionEngine> mExecutionEngine;
+  std::atomic<PipelineState> mState;
 
-  std::shared_ptr<PipelineContext> context_;
+  std::shared_ptr<PipelineContext> mContext;
 
   std::function<void(const std::string &errorMsg, const std::string &nodeName)>
-      onPipelineError_;
-  std::function<void(const PortDataMap &finalResults)> onPipelineResult_;
+      mOnPipelineError;
+  std::function<void(const PortDataMap &finalResults)> mOnPipelineResult;
 };
 } // namespace ai_pipe
 

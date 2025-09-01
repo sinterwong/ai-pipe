@@ -1,6 +1,8 @@
 #include "ai_pipe/context.hpp"
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/pipeline.hpp"
-#include "dummy_module.hpp"
+#include "nodes/through_pass_node.hpp"
+#include "pipeline_builder.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <logger.hpp>
@@ -28,15 +30,43 @@ protected:
 };
 
 TEST_F(ThroughPassPipeTest, Normal) {
-  const std::string graphConfigPath = confDir / "through_pass_pipe.json";
   ai_pipe::Pipeline pipeline;
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  int numWorkers = 4;
+  ai_pipe::Graph graph;
+  auto node1 = std::make_shared<ai_pipe::examples::ThroughPassNode>(
+      "ThroughPass01", ai_pipe::examples::ThroughPassNodeParams{});
+  auto node2 = std::make_shared<ai_pipe::examples::ThroughPassNode>(
+      "ThroughPass02", ai_pipe::examples::ThroughPassNodeParams{});
+  auto node3 = std::make_shared<ai_pipe::examples::ThroughPassNode>(
+      "ThroughPass03", ai_pipe::examples::ThroughPassNodeParams{});
+  auto node4 = std::make_shared<ai_pipe::examples::ThroughPassNode>(
+      "ThroughPass04", ai_pipe::examples::ThroughPassNodeParams{});
+  auto node5 = std::make_shared<ai_pipe::examples::ThroughPassNode>(
+      "ThroughPass05", ai_pipe::examples::ThroughPassNodeParams{});
 
-  ai_pipe::PipelineConfig pipelineConfig;
-  pipelineConfig.graphConfigPath = graphConfigPath;
-  pipelineConfig.numWorkers = 4;
+  graph.addNode(node1);
+  graph.addNode(node2);
+  graph.addNode(node3);
+  graph.addNode(node4);
+  graph.addNode(node5);
 
-  ASSERT_TRUE(pipeline.initialize(pipelineConfig, context));
+  graph.addEdge("ThroughPass01", "output", "ThroughPass02", "input");
+  graph.addEdge("ThroughPass02", "output", "ThroughPass03", "input");
+  graph.addEdge("ThroughPass03", "output", "ThroughPass04", "input");
+  graph.addEdge("ThroughPass03", "output", "ThroughPass05", "input");
+
+  ASSERT_TRUE(pipeline.initialize(std::move(graph), context, numWorkers));
+  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
+}
+
+TEST_F(ThroughPassPipeTest, NormalWithJson) {
+  const std::string graphConfigPath = confDir / "through_pass_pipe.json";
+  auto context = std::make_shared<ai_pipe::PipelineContext>();
+  int numWorkers = 4;
+  auto pipeline = ai_pipe::examples::PipelineBuilder::buildPipelineFromConfig(
+      graphConfigPath, context, numWorkers);
+
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
 
   ai_pipe::PortDataMap inputs;
