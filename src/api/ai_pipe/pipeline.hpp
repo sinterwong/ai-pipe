@@ -43,6 +43,8 @@ public:
 
   PipelineState getState() const;
 
+  EngineState getEngineState() const;
+
   std::unordered_map<std::string, NodeExecutionState> getNodeStates() const;
 
   void setPipelineResultCallback(
