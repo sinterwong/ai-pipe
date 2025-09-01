@@ -28,8 +28,9 @@ public:
   Pipeline(Pipeline &&other) noexcept;
   Pipeline &operator=(Pipeline &&other) noexcept;
 
-  bool initialize(const PipelineConfig &config,
-                  std::shared_ptr<PipelineContext> context_);
+  bool initialize(const std::string &graphConfigPath,
+                  std::shared_ptr<PipelineContext> context,
+                  uint8_t numWorkers = 1);
 
   bool initializeWithGraph(Graph &&graph,
                            std::shared_ptr<PipelineContext> context,
@@ -60,9 +61,6 @@ public:
   const Graph &getGraph() const;
 
   PipelineContext &getContext();
-
-private:
-  Graph buildGraphFromConfig(const std::string &configPath);
 
 private:
   class Impl;
