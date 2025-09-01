@@ -1,5 +1,5 @@
 /**
- * @file execution_engine.hpp
+ * @file default_execution_engine.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -8,51 +8,55 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __PIPE_EXECUTION_ENGINE_HPP__
-#define __PIPE_EXECUTION_ENGINE_HPP__
-#include "ai_pipe/types.hpp"
-#include "graph.hpp"
+#ifndef AI_PIPE_EXECUTION_ENGINE_HPP
+#define AI_PIPE_EXECUTION_ENGINE_HPP
+
+#include "execution_engine_base.hpp"
 #include "thread_pool.hpp"
 #include "thread_safe_queue.hpp"
+#include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace ai_pipe {
-class ExecutionEngine {
+class DefaultExecutionEngine : public IExecutionEngine {
 public:
-  ExecutionEngine();
+  DefaultExecutionEngine();
 
-  ~ExecutionEngine();
+  ~DefaultExecutionEngine();
 
-  ExecutionEngine(const ExecutionEngine &) = delete;
-  ExecutionEngine &operator=(const ExecutionEngine &) = delete;
+  DefaultExecutionEngine(const DefaultExecutionEngine &) = delete;
+  DefaultExecutionEngine &operator=(const DefaultExecutionEngine &) = delete;
 
-  ExecutionEngine(ExecutionEngine &&);
-  ExecutionEngine &operator=(ExecutionEngine &&);
+  DefaultExecutionEngine(DefaultExecutionEngine &&);
+  DefaultExecutionEngine &operator=(DefaultExecutionEngine &&);
 
 public:
-  bool initialize(Graph *graph, uint8_t numWorkers = 4);
+  bool initialize(Graph *graph, uint8_t numWorkers = 4) override;
 
   bool execute(const PortDataMap &initialInputs, bool waitForCompletion = true,
-               std::shared_ptr<PipelineContext> context = nullptr);
+               std::shared_ptr<PipelineContext> context = nullptr) override;
 
-  void stopExecutionAsync();
+  void stopExecutionAsync() override;
 
-  void stopExecutionSync();
+  void stopExecutionSync() override;
 
-  void reset();
+  void reset() override;
 
-  EngineState getState() const;
+  EngineState getState() const override;
 
   void setPipelineResultCallback(
-      std::function<void(const PortDataMap &finalResults)> callback);
+      std::function<void(const PortDataMap &finalResults)> callback) override;
 
   void setPipelineErrorCallback(std::function<void(const std::string &errorMsg,
                                                    const std::string &nodeName)>
-                                    callback);
+                                    callback) override;
 
-  std::unordered_map<std::string, NodeExecutionState> getNodeStates() const;
+  std::unordered_map<std::string, NodeExecutionState>
+  getNodeStates() const override;
 
   void propagateOutputAndScheduleDownstream(
       const std::shared_ptr<NodeBase> &sourceNode, const PortDataMap &outputs);
