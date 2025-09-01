@@ -11,7 +11,7 @@
 #ifndef __PIPE_PIPELINE_IMPL_HPP__
 #define __PIPE_PIPELINE_IMPL_HPP__
 
-#include "execution_engine.hpp"
+#include "execution_engine_base.hpp"
 #include "pipeline.hpp"
 
 namespace ai_pipe {
@@ -59,7 +59,7 @@ public:
 
 private:
   std::unique_ptr<Graph> mGraph;
-  std::unique_ptr<ExecutionEngine> mExecutionEngine;
+  std::unique_ptr<IExecutionEngine> mExecutionEngine;
   std::atomic<PipelineState> mState;
 
   std::shared_ptr<PipelineContext> mContext;
