@@ -2,6 +2,7 @@
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include "nodes/through_pass_node.hpp"
+#include "pipeline_builder.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <logger.hpp>
@@ -55,17 +56,17 @@ TEST_F(ThroughPassPipeTest, Normal) {
   graph.addEdge("ThroughPass03", "output", "ThroughPass04", "input");
   graph.addEdge("ThroughPass03", "output", "ThroughPass05", "input");
 
-  ASSERT_TRUE(
-      pipeline.initializeWithGraph(std::move(graph), context, numWorkers));
+  ASSERT_TRUE(pipeline.initialize(std::move(graph), context, numWorkers));
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
 }
 
 TEST_F(ThroughPassPipeTest, NormalWithJson) {
   const std::string graphConfigPath = confDir / "through_pass_pipe.json";
-  ai_pipe::Pipeline pipeline;
   auto context = std::make_shared<ai_pipe::PipelineContext>();
   int numWorkers = 4;
-  ASSERT_TRUE(pipeline.initialize(graphConfigPath, context, numWorkers));
+  auto pipeline = ai_pipe::examples::PipelineBuilder::buildPipelineFromConfig(
+      graphConfigPath, context, numWorkers);
+
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
 
   ai_pipe::PortDataMap inputs;

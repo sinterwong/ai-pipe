@@ -8,13 +8,33 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include "ai_pipe/builder.hpp"
-#include "ai_pipe/node_registrar.hpp"
+#include "pipeline_builder.hpp"
+#include "node_registrar.hpp"
 #include <fstream>
 #include <logger.hpp>
 #include <nlohmann/json.hpp>
 
-namespace ai_pipe {
+namespace ai_pipe::examples {
+
+Pipeline
+PipelineBuilder::buildPipelineFromConfig(const std::string &graphConfigPath,
+                                         std::shared_ptr<PipelineContext> ctx,
+                                         uint8_t numWorkers) {
+  LOG_INFOS << "Pipeline::Impl initializing with config: " << graphConfigPath
+            << ", numWorkers: " << (int)numWorkers;
+  Pipeline pipeline;
+  Graph graph = buildGraphFromConfig(graphConfigPath);
+  if (graph.hasCycle()) {
+    LOG_ERRORS << "PipelineBuilder: Graph contains a cycle. Pipeline "
+                  "initialization failed.";
+    throw std::runtime_error("Graph contains a cycle.");
+  }
+  if (graph.getNodes().empty()) {
+    LOG_WARNINGS << "PipelineBuilder: Graph is empty after loading config.";
+  }
+  pipeline.initialize(std::move(graph), ctx, numWorkers);
+  return pipeline;
+}
 
 Graph PipelineBuilder::buildGraphFromConfig(const std::string &configPath) {
   LOG_INFOS << "Building graph from config: " << configPath;
@@ -98,4 +118,4 @@ Graph PipelineBuilder::buildGraphFromConfig(const std::string &configPath) {
   return newGraph;
 }
 
-} // namespace ai_pipe
+} // namespace ai_pipe::examples

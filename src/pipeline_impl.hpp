@@ -26,13 +26,8 @@ public:
   Impl(Impl &&other) noexcept;
   Impl &operator=(Impl &&other) noexcept;
 
-  bool initialize(const std::string &graphConfigPath,
-                  std::shared_ptr<PipelineContext> context,
+  bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
                   uint8_t numWorkers = 1);
-
-  bool initializeWithGraph(Graph &&graph,
-                           std::shared_ptr<PipelineContext> context,
-                           uint8_t numWorkers = 1);
 
   bool start();
 

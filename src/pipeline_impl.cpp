@@ -9,7 +9,6 @@
  *
  */
 #include "pipeline_impl.hpp"
-#include "ai_pipe/builder.hpp"
 #include "ai_pipe/types.hpp"
 #include <logger.hpp>
 #include <memory>
@@ -67,64 +66,9 @@ Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
   return *this;
 }
 
-bool Pipeline::Impl::initialize(const std::string &graphConfigPath,
+bool Pipeline::Impl::initialize(Graph &&graph,
                                 std::shared_ptr<PipelineContext> ctx,
                                 uint8_t numWorkers) {
-  LOG_INFOS << "Pipeline::Impl initializing with config: " << graphConfigPath
-            << ", numWorkers: " << (int)numWorkers;
-  try {
-    mContext = ctx ? std::move(ctx) : std::make_shared<PipelineContext>();
-
-    // Build graph from the configuration file
-    mGraph = std::make_unique<Graph>(
-        PipelineBuilder::buildGraphFromConfig(graphConfigPath));
-
-    mExecutionEngine = std::make_unique<ExecutionEngine>();
-
-    if (mGraph->hasCycle()) {
-      LOG_ERRORS
-          << "Pipeline::Impl: Graph contains a cycle. Initialization failed.";
-      mState = PipelineState::ERROR;
-      return false;
-    }
-    if (mGraph->getNodes().empty()) {
-      LOG_WARNINGS << "Pipeline::Impl: Graph is empty after loading config.";
-    }
-
-    // Initialize the execution engine with the graph and number of workers
-    if (!mExecutionEngine->initialize(mGraph.get(), numWorkers)) {
-      LOG_ERRORS << "Pipeline::Impl: Failed to initialize execution engine.";
-      mState = PipelineState::ERROR;
-      return false;
-    }
-
-    // Set callbacks on the execution engine
-    mExecutionEngine->setPipelineResultCallback(
-        [this](const PortDataMap &results) {
-          if (this->mOnPipelineResult) {
-            this->mOnPipelineResult(results);
-          }
-        });
-    mExecutionEngine->setPipelineErrorCallback(
-        [this](const std::string &errorMsg, const std::string &nodeName) {
-          if (this->mOnPipelineError) {
-            this->mOnPipelineError(errorMsg, nodeName);
-          }
-        });
-
-    mState = PipelineState::IDLE;
-    LOG_INFOS << "Pipeline::Impl: Initialized successfully.";
-    return true;
-  } catch (const std::exception &e) {
-    LOG_ERRORS << "Pipeline::Impl initialization failed: " << e.what();
-    mState = PipelineState::ERROR;
-    return false;
-  }
-}
-
-bool Pipeline::Impl::initializeWithGraph(Graph &&graph,
-                                         std::shared_ptr<PipelineContext> ctx,
-                                         uint8_t numWorkers) {
   LOG_INFOS << "Pipeline::Impl initializing with provided graph, numWorkers: "
             << (int)numWorkers;
   mGraph = std::make_unique<Graph>(std::move(graph));
