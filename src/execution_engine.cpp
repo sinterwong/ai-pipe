@@ -99,8 +99,7 @@ bool ExecutionEngine::initialize(Graph *graph, uint8_t numWorkers) {
 
   std::lock_guard<std::mutex> lock(engineMutex_);
   graph_ = graph;
-  threadPool_ = std::make_unique<ThreadPool>();
-  threadPool_->start(numWorkers);
+  threadPool_ = std::make_unique<ThreadPool>(numWorkers);
 
   sinkNodes_.clear();
   nodeStates_.clear();

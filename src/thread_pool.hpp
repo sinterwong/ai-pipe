@@ -1,10 +1,9 @@
 /**
- * @file ThreadPool.hpp
+ * @file thread_pool.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
- * @version 0.1
- * @date 2022-05-16
- *
+ * @brief A simple thread pool implementation.
+ * @version 0.2
+ * @date 2025-09-01
  * @copyright Copyright (c) 2022
  *
  */
@@ -12,6 +11,7 @@
 #ifndef AI_PIPE_SIMPLE_THREAD_POOL_HPP
 #define AI_PIPE_SIMPLE_THREAD_POOL_HPP
 
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <future>
@@ -19,184 +19,81 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
 namespace ai_pipe {
-
-class task {
-public:
-  task() = default;
-
-  template <typename Func> task(Func &&f) : ptr_(new wrapper{std::move(f)}){};
-
-  void operator()() { ptr_->call(); }
-
-  task(task &&) noexcept = default;
-  task &operator=(task &&) noexcept = default;
-
-  task(const task &) = delete;
-  task &operator=(const task &) = delete;
-
-  bool valid() const { return ptr_ != nullptr; }
-
-private:
-  class wrapper_base {
-  public:
-    virtual void call() = 0;
-    virtual ~wrapper_base() {}
-  };
-
-  template <typename Func> class wrapper : public wrapper_base {
-  public:
-    wrapper(Func &&func) : f_(std::move(func)) {}
-    virtual void call() override { f_(); };
-
-  private:
-    Func f_;
-  };
-
-  std::unique_ptr<wrapper_base> ptr_;
-};
 
 class ThreadPool {
 public:
-  explicit ThreadPool(size_t max_queue_size = 1024)
-      : max_queue_size_(max_queue_size), state_(State::STOPPED) {}
+  explicit ThreadPool(size_t numThreads, size_t maxQueueSize = 1024)
+      : m_maxQueueSize(maxQueueSize), m_state(State::RUNNING) {
+    m_threads.reserve(numThreads);
+    for (size_t i = 0; i < numThreads; ++i) {
+      m_threads.emplace_back(&ThreadPool::worker, this);
+    }
+  }
 
   ~ThreadPool() { stop(); }
 
-  enum class State { STOPPED, RUNNING, STOPPING };
-
-  void start(size_t n) {
-    if (state_.exchange(State::RUNNING) != State::STOPPED) {
-      return;
-    }
-
-    threads_.reserve(n);
-    for (size_t i = 0; i < n; ++i) {
-      threads_.emplace_back(&ThreadPool::worker, this);
-    }
-  }
-
-  void stop() {
-    State expected = State::RUNNING;
-    if (!state_.compare_exchange_strong(expected, State::STOPPING)) {
-      return;
-    }
-
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      state_ = State::STOPPING;
-    }
-    not_empty_.notify_all();
-    not_full_.notify_all();
-
-    for (auto &thread : threads_) {
-      if (thread.joinable()) {
-        thread.join();
-      }
-    }
-
-    threads_.clear();
-
-    std::queue<task> empty;
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      std::swap(task_queue_, empty);
-      state_ = State::STOPPED;
-    }
-  }
+  ThreadPool(const ThreadPool &) = delete;
+  ThreadPool &operator=(const ThreadPool &) = delete;
+  ThreadPool(ThreadPool &&) = delete;
+  ThreadPool &operator=(ThreadPool &&) = delete;
 
   template <typename F, typename... Args>
   auto submit(F &&f,
               Args &&...args) -> std::future<std::invoke_result_t<F, Args...>> {
-    using return_type = std::invoke_result_t<F, Args...>;
+    using ReturnType = std::invoke_result_t<F, Args...>;
 
-    if (state_ != State::RUNNING) {
-      throw std::runtime_error("ThreadPool is not running");
+    if (m_state != State::RUNNING) {
+      throw std::runtime_error(
+          "ThreadPool is not running, cannot submit task.");
     }
 
-    auto task = std::make_shared<std::packaged_task<return_type()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+    auto bindFunc = [f = std::forward<F>(f),
+                     ... args = std::forward<Args>(args)]() mutable {
+      return std::invoke(std::forward<decltype(f)>(f),
+                         std::forward<decltype(args)>(args)...);
+    };
 
-    std::future<return_type> result = task->get_future();
+    auto packagedTask =
+        std::make_shared<std::packaged_task<ReturnType()>>(std::move(bindFunc));
+    std::future<ReturnType> result = packagedTask->get_future();
 
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (!not_full_.wait_for(lock, std::chrono::seconds(5), [this] {
-            return state_ != State::RUNNING ||
-                   task_queue_.size() < max_queue_size_;
-          })) {
-        throw std::runtime_error("Queue is full");
-      }
-
-      if (state_ != State::RUNNING) {
-        throw std::runtime_error("ThreadPool is stopping");
-      }
-
-      task_queue_.emplace([task]() { (*task)(); });
-    }
-    not_empty_.notify_one();
-
-    return result;
-  }
-
-  template <typename F>
-  auto submit(F &&f) -> std::future<std::invoke_result_t<F>> {
-    using return_type = std::invoke_result_t<F>;
-
-    if (state_ != State::RUNNING) {
-      throw std::runtime_error("ThreadPool is not running");
-    }
-
-    auto task =
-        std::make_shared<std::packaged_task<return_type()>>(std::forward<F>(f));
-    std::future<return_type> result = task->get_future();
-
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (!not_full_.wait_for(lock, std::chrono::seconds(5), [this] {
-            return state_ != State::RUNNING ||
-                   task_queue_.size() < max_queue_size_;
-          })) {
-        throw std::runtime_error("Queue is full");
-      }
-
-      if (state_ != State::RUNNING) {
-        throw std::runtime_error("ThreadPool is stopping");
-      }
-
-      task_queue_.emplace([task]() { (*task)(); });
-    }
-    not_empty_.notify_one();
+    enqueueTask([packagedTask]() { (*packagedTask)(); });
 
     return result;
   }
 
 private:
+  enum class State { RUNNING, STOPPING, STOPPED };
+
   void worker() {
     while (true) {
-      task current_task;
+      std::function<void()> currentTask;
       {
-        std::unique_lock<std::mutex> lock(mutex_);
-        not_empty_.wait(lock, [this] {
-          return state_ != State::RUNNING || !task_queue_.empty();
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_notEmpty.wait(lock, [this] {
+          return m_state != State::RUNNING || !m_taskQueue.empty();
         });
 
-        if (state_ != State::RUNNING && task_queue_.empty()) {
+        if (m_state != State::RUNNING && m_taskQueue.empty()) {
           return;
         }
 
-        current_task = std::move(task_queue_.front());
-        task_queue_.pop();
+        currentTask = std::move(m_taskQueue.front());
+        m_taskQueue.pop();
       }
-      not_full_.notify_one();
+
+      m_notFull.notify_one();
 
       try {
-        if (current_task.valid()) {
-          current_task();
+        if (currentTask) {
+          currentTask();
         }
       } catch (const std::exception &e) {
         std::cerr << "Task execution failed: " << e.what() << std::endl;
@@ -206,13 +103,57 @@ private:
     }
   }
 
-  const size_t max_queue_size_;
-  std::atomic<State> state_;
-  std::vector<std::thread> threads_;
-  std::queue<task> task_queue_;
-  std::mutex mutex_;
-  std::condition_variable not_full_;
-  std::condition_variable not_empty_;
+  void stop() {
+    State expected = State::RUNNING;
+    if (!m_state.compare_exchange_strong(expected, State::STOPPING)) {
+      return;
+    }
+
+    m_notEmpty.notify_all();
+    m_notFull.notify_all();
+
+    for (auto &thread : m_threads) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+
+    m_threads.clear();
+    std::queue<std::function<void()>> emptyQueue;
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_taskQueue.swap(emptyQueue);
+      m_state = State::STOPPED;
+    }
+  }
+
+  void enqueueTask(std::function<void()> task) {
+    {
+      std::unique_lock<std::mutex> lock(m_mutex);
+      if (!m_notFull.wait_for(lock, std::chrono::seconds(5), [this] {
+            return m_state != State::RUNNING ||
+                   m_taskQueue.size() < m_maxQueueSize;
+          })) {
+        throw std::runtime_error("Task queue is full, submission timed out.");
+      }
+
+      if (m_state != State::RUNNING) {
+        throw std::runtime_error("ThreadPool is stopping, cannot submit task.");
+      }
+
+      m_taskQueue.emplace(std::move(task));
+    }
+    m_notEmpty.notify_one();
+  }
+
+  const size_t m_maxQueueSize;
+  std::atomic<State> m_state;
+  std::vector<std::thread> m_threads;
+  std::queue<std::function<void()>> m_taskQueue;
+  std::mutex m_mutex;
+  std::condition_variable m_notFull;
+  std::condition_variable m_notEmpty;
 };
+
 } // namespace ai_pipe
-#endif
+#endif // AI_PIPE_SIMPLE_THREAD_POOL_HPP
