@@ -17,7 +17,7 @@
 namespace ai_pipe {
 Pipeline::Impl::Impl()
     : mGraph(nullptr), mExecutionEngine(nullptr), mContext(nullptr),
-      mState(PipelineState::IDLE) {
+      mState(PipelineState::UNINITIALIZED) {
   LOG_INFOS << "Pipeline::Impl default constructed.";
 }
 
@@ -42,7 +42,6 @@ Pipeline::Impl::Impl(Impl &&other) noexcept
       mContext(std::move(other.mContext)), mState(other.mState.load()),
       mOnPipelineError(std::move(other.mOnPipelineError)),
       mOnPipelineResult(std::move(other.mOnPipelineResult)) {
-  other.mState = PipelineState::STOPPED; // Or IDLE, depending on semantics
   LOG_INFOS << "Pipeline::Impl move constructed.";
 }
 
@@ -56,11 +55,9 @@ Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
     mGraph = std::move(other.mGraph);
     mExecutionEngine = std::move(other.mExecutionEngine);
     mContext = std::move(other.mContext);
-    mState = other.mState.load();
+    mState.store(other.mState.load());
     mOnPipelineError = std::move(other.mOnPipelineError);
     mOnPipelineResult = std::move(other.mOnPipelineResult);
-
-    other.mState = PipelineState::STOPPED; // Or IDLE
   }
   LOG_INFOS << "Pipeline::Impl move assigned.";
   return *this;
@@ -132,12 +129,18 @@ bool Pipeline::Impl::stop() {
 
   mExecutionEngine->stopExecutionSync();
 
-  mState = PipelineState::STOPPED;
+  mState = PipelineState::IDLE;
   LOG_INFOS << "Pipeline::Impl: Stopped successfully.";
   return true;
 }
 
 PipelineState Pipeline::Impl::getState() const { return mState.load(); }
+
+EngineState Pipeline::Impl::getEngineState() const {
+  if (!mExecutionEngine)
+    return EngineState::IDLE;
+  return mExecutionEngine->getState();
+}
 
 std::unordered_map<std::string, NodeExecutionState>
 Pipeline::Impl::getNodeStates() const {
@@ -168,6 +171,7 @@ void Pipeline::Impl::setPipelineErrorCallback(
   if (mExecutionEngine) {
     mExecutionEngine->setPipelineErrorCallback(
         [this](const std::string &errorMsg, const std::string &nodeName) {
+          mState = PipelineState::ERROR;
           if (this->mOnPipelineError) {
             this->mOnPipelineError(errorMsg, nodeName);
           }
@@ -186,7 +190,7 @@ void Pipeline::Impl::reset() {
 
   mOnPipelineResult = nullptr;
   mOnPipelineError = nullptr;
-  mState = PipelineState::IDLE;
+  mState = PipelineState::UNINITIALIZED;
   LOG_INFOS << "Pipeline::Impl: Reset complete. Ready for re-initialization.";
 }
 

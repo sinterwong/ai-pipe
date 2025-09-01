@@ -17,74 +17,70 @@
 namespace ai_pipe {
 
 ExecutionEngine::ExecutionEngine()
-    : graph_(nullptr), threadPool_(nullptr),
-      pipelineState_(PipelineState::IDLE), activeTasks_(0), stopFlag_(false) {}
+    : mGraph(nullptr), mThreadPool(nullptr), mEngineState(EngineState::IDLE),
+      mActiveTasks(0), mStopFlag(false) {}
 
 ExecutionEngine::~ExecutionEngine() {
   // Ensure graceful shutdown if not already stopped
-  if (pipelineState_ == PipelineState::RUNNING ||
-      pipelineState_ == PipelineState::STOPPING) {
+  if (mEngineState == EngineState::RUNNING) {
     stopExecutionSync();
   }
 }
 
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) {
-  if (pipelineState_ == PipelineState::RUNNING ||
-      pipelineState_ == PipelineState::STOPPING) {
+  if (mEngineState == EngineState::RUNNING) {
     stopExecutionSync();
   }
 
-  std::lock_guard<std::mutex> lock(other.engineMutex_);
-  std::lock_guard<std::mutex> self_lock(engineMutex_, std::adopt_lock);
-  std::lock_guard<std::mutex> other_lock(other.engineMutex_, std::adopt_lock);
+  std::lock_guard<std::mutex> lock(other.mEngineMutex);
+  std::lock_guard<std::mutex> self_lock(mEngineMutex, std::adopt_lock);
+  std::lock_guard<std::mutex> other_lock(other.mEngineMutex, std::adopt_lock);
 
-  graph_ = other.graph_;
-  threadPool_ = std::move(other.threadPool_);
-  pipelineState_.store(other.pipelineState_.load(), std::memory_order_relaxed);
-  nodeStates_ = std::move(other.nodeStates_);
-  nodeInputQueues_ = std::move(other.nodeInputQueues_);
-  nodeMutexes_ = std::move(other.nodeMutexes_);
-  activeTasks_.store(other.activeTasks_.load(), std::memory_order_relaxed);
-  stopFlag_.store(other.stopFlag_.load(), std::memory_order_relaxed);
+  mGraph = other.mGraph;
+  mThreadPool = std::move(other.mThreadPool);
+  mEngineState.store(other.mEngineState.load(), std::memory_order_relaxed);
+  mNodeStates = std::move(other.mNodeStates);
+  mNodeInputQueues = std::move(other.mNodeInputQueues);
+  mNodeMutexes = std::move(other.mNodeMutexes);
+  mActiveTasks.store(other.mActiveTasks.load(), std::memory_order_relaxed);
+  mStopFlag.store(other.mStopFlag.load(), std::memory_order_relaxed);
 
-  other.graph_ = nullptr;
-  other.threadPool_.reset();
-  other.pipelineState_ = PipelineState::STOPPED;
-  other.nodeStates_.clear();
-  other.nodeInputQueues_.clear();
-  other.nodeMutexes_.clear();
-  other.activeTasks_ = 0;
-  other.stopFlag_ = true;
+  other.mGraph = nullptr;
+  other.mThreadPool.reset();
+  other.mEngineState = EngineState::STOPPED;
+  other.mNodeStates.clear();
+  other.mNodeInputQueues.clear();
+  other.mNodeMutexes.clear();
+  other.mActiveTasks = 0;
+  other.mStopFlag = true;
 }
 
 ExecutionEngine &ExecutionEngine::operator=(ExecutionEngine &&other) {
   if (this != &other) {
-    if (pipelineState_ == PipelineState::RUNNING ||
-        pipelineState_ == PipelineState::STOPPING) {
+    if (mEngineState == EngineState::RUNNING) {
       stopExecutionSync();
     }
-    std::lock(engineMutex_, other.engineMutex_);
-    std::lock_guard<std::mutex> self_lock(engineMutex_, std::adopt_lock);
-    std::lock_guard<std::mutex> other_lock(other.engineMutex_, std::adopt_lock);
+    std::lock(mEngineMutex, other.mEngineMutex);
+    std::lock_guard<std::mutex> self_lock(mEngineMutex, std::adopt_lock);
+    std::lock_guard<std::mutex> other_lock(other.mEngineMutex, std::adopt_lock);
 
-    graph_ = other.graph_;
-    threadPool_ = std::move(other.threadPool_);
-    pipelineState_.store(other.pipelineState_.load(),
-                         std::memory_order_relaxed);
-    nodeStates_ = std::move(other.nodeStates_);
-    nodeInputQueues_ = std::move(other.nodeInputQueues_);
-    nodeMutexes_ = std::move(other.nodeMutexes_);
-    activeTasks_.store(other.activeTasks_.load(), std::memory_order_relaxed);
-    stopFlag_.store(other.stopFlag_.load(), std::memory_order_relaxed);
+    mGraph = other.mGraph;
+    mThreadPool = std::move(other.mThreadPool);
+    mEngineState.store(other.mEngineState.load(), std::memory_order_relaxed);
+    mNodeStates = std::move(other.mNodeStates);
+    mNodeInputQueues = std::move(other.mNodeInputQueues);
+    mNodeMutexes = std::move(other.mNodeMutexes);
+    mActiveTasks.store(other.mActiveTasks.load(), std::memory_order_relaxed);
+    mStopFlag.store(other.mStopFlag.load(), std::memory_order_relaxed);
 
-    other.graph_ = nullptr;
-    other.threadPool_.reset();
-    other.pipelineState_ = PipelineState::STOPPED;
-    other.nodeStates_.clear();
-    other.nodeInputQueues_.clear();
-    other.nodeMutexes_.clear();
-    other.activeTasks_ = 0;
-    other.stopFlag_ = true;
+    other.mGraph = nullptr;
+    other.mThreadPool.reset();
+    other.mEngineState = EngineState::STOPPED;
+    other.mNodeStates.clear();
+    other.mNodeInputQueues.clear();
+    other.mNodeMutexes.clear();
+    other.mActiveTasks = 0;
+    other.mStopFlag = true;
 
     return *this;
   }
@@ -97,35 +93,35 @@ bool ExecutionEngine::initialize(Graph *graph, uint8_t numWorkers) {
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(engineMutex_);
-  graph_ = graph;
-  threadPool_ = std::make_unique<ThreadPool>(numWorkers);
+  std::lock_guard<std::mutex> lock(mEngineMutex);
+  mGraph = graph;
+  mThreadPool = std::make_unique<ThreadPool>(numWorkers);
 
-  sinkNodes_.clear();
-  nodeStates_.clear();
-  nodeInputQueues_.clear();
-  nodeMutexes_.clear();
+  mSinkNodes.clear();
+  mNodeStates.clear();
+  mNodeInputQueues.clear();
+  mNodeMutexes.clear();
 
-  for (const auto &node : graph_->getNodes()) {
-    nodeStates_[node] = std::make_unique<std::atomic<NodeExecutionState>>(
+  for (const auto &node : mGraph->getNodes()) {
+    mNodeStates[node] = std::make_unique<std::atomic<NodeExecutionState>>(
         NodeExecutionState::WAITING);
-    nodeMutexes_[node] = std::make_unique<std::mutex>();
+    mNodeMutexes[node] = std::make_unique<std::mutex>();
 
     PortInputQueues portQueues;
     for (const auto &portName : node->getExpectedInputPorts()) {
       portQueues[portName] = std::make_shared<ThreadSafeQueue<PortDataPtr>>();
     }
-    nodeInputQueues_[node] = std::move(portQueues);
+    mNodeInputQueues[node] = std::move(portQueues);
   }
 
-  activeTasks_ = 0;
-  stopFlag_ = false;
-  pipelineState_ = PipelineState::IDLE;
+  mActiveTasks = 0;
+  mStopFlag = false;
+  mEngineState = EngineState::IDLE;
 
   // Identify sink nodes
-  for (const auto &node : graph_->getNodes()) {
-    if (graph_->getOutDegree(node) == 0) {
-      sinkNodes_.push_back(node);
+  for (const auto &node : mGraph->getNodes()) {
+    if (mGraph->getOutDegree(node) == 0) {
+      mSinkNodes.push_back(node);
       LOG_INFOS << "ExecutionEngine: Identified sink node: " << node->getName();
     }
   }
@@ -136,42 +132,36 @@ bool ExecutionEngine::initialize(Graph *graph, uint8_t numWorkers) {
 bool ExecutionEngine::execute(const PortDataMap &initialInputs,
                               bool waitForCompletion,
                               std::shared_ptr<PipelineContext> context) {
-  curContext_ = context;
-  std::unique_lock<std::mutex> lock(engineMutex_);
-  if (pipelineState_ == PipelineState::RUNNING) {
+  mCurContext = context;
+  std::unique_lock<std::mutex> lock(mEngineMutex);
+  if (mEngineState == EngineState::RUNNING) {
     LOG_ERRORS
         << "ExecutionEngine: Already running. Cannot start new execution.";
-    curContext_ = nullptr;
+    mCurContext = nullptr;
     return false;
   }
 
-  if (pipelineState_ == PipelineState::STOPPING) {
-    LOG_ERRORS
-        << "ExecutionEngine: Currently stopping. Cannot start new execution.";
-    curContext_ = nullptr;
-    return false;
-  }
-  if (!graph_ || !threadPool_) {
+  if (!mGraph || !mThreadPool) {
     LOG_ERRORS << "ExecutionEngine: Not initialized.";
-    curContext_ = nullptr;
+    mCurContext = nullptr;
     return false;
   }
 
   LOG_INFOS << "ExecutionEngine: Starting execution.";
 
-  pipelineState_ = PipelineState::RUNNING;
-  stopFlag_ = false;
-  activeTasks_ = 0;
+  mEngineState = EngineState::RUNNING;
+  mStopFlag = false;
+  mActiveTasks = 0;
 
-  { // Scope for finalResultsMutex_ lock
-    std::lock_guard<std::mutex> final_results_lock(finalResultsMutex_);
-    accumulatedFinalResults_.clear();
+  { // Scope for mFinalResultsMutex lock
+    std::lock_guard<std::mutex> final_results_lock(mFinalResultsMutex);
+    mAccumulatedFinalResults.clear();
   }
 
-  for (const auto &node : graph_->getNodes()) {
-    nodeStates_[node]->store(NodeExecutionState::WAITING,
+  for (const auto &node : mGraph->getNodes()) {
+    mNodeStates[node]->store(NodeExecutionState::WAITING,
                              std::memory_order_relaxed);
-    for (const auto &pair : nodeInputQueues_[node]) {
+    for (const auto &pair : mNodeInputQueues[node]) {
       pair.second->clear();
     }
   }
@@ -179,74 +169,73 @@ bool ExecutionEngine::execute(const PortDataMap &initialInputs,
   lock.unlock();
 
   if (!distributeInitialInputs(initialInputs)) {
-    std::lock_guard<std::mutex> endLock(engineMutex_);
-    pipelineState_ = PipelineState::ERROR;
+    std::lock_guard<std::mutex> endLock(mEngineMutex);
+    mEngineState = EngineState::ERROR;
     LOG_ERRORS << "ExecutionEngine: Failed to distribute initial inputs.";
-    curContext_ = nullptr;
+    mCurContext = nullptr;
     return false;
   }
 
   if (waitForCompletion) {
-    std::unique_lock<std::mutex> completionLock(engineMutex_);
-    completionCondition_.wait(completionLock, [this] {
-      return activeTasks_ == 0 || stopFlag_.load(std::memory_order_acquire);
+    std::unique_lock<std::mutex> completionLock(mEngineMutex);
+    mCompletionCondition.wait(completionLock, [this] {
+      return mActiveTasks == 0 || mStopFlag.load(std::memory_order_acquire);
     });
     completionLock.unlock();
 
-    std::lock_guard<std::mutex> finalStateLock(engineMutex_);
-    if (stopFlag_.load(std::memory_order_acquire) &&
-        pipelineState_ != PipelineState::STOPPED) {
-      pipelineState_ = PipelineState::STOPPED;
+    std::lock_guard<std::mutex> finalStateLock(mEngineMutex);
+    if (mStopFlag.load(std::memory_order_acquire) &&
+        mEngineState != EngineState::STOPPED) {
+      mEngineState = EngineState::STOPPED;
       LOG_ERRORS << "ExecutionEngine: Execution was stopped.";
-    } else if (activeTasks_ == 0 && pipelineState_ == PipelineState::RUNNING) {
-      pipelineState_ = PipelineState::IDLE; // Successful completion
+    } else if (mActiveTasks == 0 && mEngineState == EngineState::RUNNING) {
+      mEngineState = EngineState::IDLE; // Successful completion
       LOG_INFOS << "ExecutionEngine: Execution completed successfully.";
-    } else if (pipelineState_ != PipelineState::ERROR &&
-               pipelineState_ != PipelineState::STOPPED) {
-      if (pipelineState_ != PipelineState::ERROR)
-        pipelineState_ = PipelineState::ERROR; // Default to error if stuck
+    } else if (mEngineState != EngineState::ERROR &&
+               mEngineState != EngineState::STOPPED) {
+      if (mEngineState != EngineState::ERROR)
+        mEngineState = EngineState::ERROR; // Default to error if stuck
       LOG_ERRORS << "ExecutionEngine: Execution finished with activeTasks="
-                 << activeTasks_
-                 << " and state=" << static_cast<int>(pipelineState_.load());
+                 << mActiveTasks
+                 << " and state=" << static_cast<int>(mEngineState.load());
     }
-    bool result = pipelineState_ == PipelineState::IDLE;
-    curContext_ = nullptr;
+    bool result = mEngineState == EngineState::IDLE;
+    mCurContext = nullptr;
     return result;
   }
-  curContext_ = nullptr;
+  mCurContext = nullptr;
   return true;
 }
 
 void ExecutionEngine::stopExecutionAsync() {
   LOG_INFOS << "ExecutionEngine: stopExecutionAsync called.";
   bool expected = false;
-  if (stopFlag_.compare_exchange_strong(expected, true,
+  if (mStopFlag.compare_exchange_strong(expected, true,
                                         std::memory_order_acq_rel)) {
-    std::lock_guard<std::mutex> lock(engineMutex_);
-    if (pipelineState_ == PipelineState::RUNNING) {
-      pipelineState_ = PipelineState::STOPPING;
+    std::lock_guard<std::mutex> lock(mEngineMutex);
+    if (mEngineState == EngineState::RUNNING) {
+      mEngineState = EngineState::STOPPED;
     }
-    completionCondition_.notify_all();
+    mCompletionCondition.notify_all();
   }
 }
 
 void ExecutionEngine::stopExecutionSync() {
   LOG_INFOS << "ExecutionEngine: stopExecutionSync called.";
   stopExecutionAsync();
-  std::unique_lock<std::mutex> lock(engineMutex_);
-  if (pipelineState_ == PipelineState::STOPPING ||
-      pipelineState_ == PipelineState::RUNNING) {
-    completionCondition_.wait(lock, [this] {
-      return activeTasks_ == 0 || pipelineState_ == PipelineState::STOPPED ||
-             pipelineState_ == PipelineState::ERROR;
+  std::unique_lock<std::mutex> lock(mEngineMutex);
+  if (mEngineState == EngineState::RUNNING) {
+    mCompletionCondition.wait(lock, [this] {
+      return mActiveTasks == 0 || mEngineState == EngineState::STOPPED ||
+             mEngineState == EngineState::ERROR;
     });
   }
   // ensure final state is STOPPED if it was stopping.
-  if (pipelineState_ == PipelineState::STOPPING) {
-    pipelineState_ = PipelineState::STOPPED;
+  if (mEngineState == EngineState::RUNNING) {
+    mEngineState = EngineState::STOPPED;
   }
   LOG_INFOS << "ExecutionEngine: Execution fully stopped. Active tasks: "
-            << activeTasks_;
+            << mActiveTasks;
 }
 
 void ExecutionEngine::reset() {
@@ -255,33 +244,33 @@ void ExecutionEngine::reset() {
   // ensure any ongoing execution is stopped
   stopExecutionSync();
 
-  std::lock_guard<std::mutex> lock(engineMutex_);
-  for (const auto &node : graph_->getNodes()) {
-    if (nodeStates_.count(node)) {
-      nodeStates_[node]->store(NodeExecutionState::WAITING,
+  std::lock_guard<std::mutex> lock(mEngineMutex);
+  for (const auto &node : mGraph->getNodes()) {
+    if (mNodeStates.count(node)) {
+      mNodeStates[node]->store(NodeExecutionState::WAITING,
                                std::memory_order_relaxed);
     }
-    if (nodeInputQueues_.count(node)) {
-      for (const auto &pair : nodeInputQueues_.at(node)) {
+    if (mNodeInputQueues.count(node)) {
+      for (const auto &pair : mNodeInputQueues.at(node)) {
         pair.second->clear();
       }
     }
   }
-  activeTasks_ = 0;
-  stopFlag_ = false;
-  pipelineState_ = PipelineState::IDLE;
+  mActiveTasks = 0;
+  mStopFlag = false;
+  mEngineState = EngineState::IDLE;
   LOG_INFOS << "ExecutionEngine: Reset complete.";
 }
 
-PipelineState ExecutionEngine::getState() const {
-  return pipelineState_.load(std::memory_order_acquire);
+EngineState ExecutionEngine::getState() const {
+  return mEngineState.load(std::memory_order_acquire);
 }
 
 std::unordered_map<std::string, NodeExecutionState>
 ExecutionEngine::getNodeStates() const {
   std::unordered_map<std::string, NodeExecutionState> result;
-  // std::lock_guard<std::mutex> lock(engineMutex_);
-  for (const auto &[nodePtr, stateAtomicPtr] : nodeStates_) {
+  // std::lock_guard<std::mutex> lock(mEngineMutex);
+  for (const auto &[nodePtr, stateAtomicPtr] : mNodeStates) {
     if (nodePtr && stateAtomicPtr) {
       result[nodePtr->getName()] =
           stateAtomicPtr->load(std::memory_order_acquire);
@@ -293,8 +282,8 @@ ExecutionEngine::getNodeStates() const {
 bool ExecutionEngine::distributeInitialInputs(
     const PortDataMap &initialInputs) {
   bool hasScheduledSomething = false;
-  for (const auto &node : graph_->getNodes()) {
-    if (graph_->getInDegree(node) == 0) {
+  for (const auto &node : mGraph->getNodes()) {
+    if (mGraph->getInDegree(node) == 0) {
       // Check if this source node needs one of the initial inputs
       if (initialInputs.count(node->getName())) {
         const auto dataPacket = initialInputs.at(node->getName());
@@ -302,8 +291,8 @@ bool ExecutionEngine::distributeInitialInputs(
         if (!expectedPorts.empty()) {
           // FIXME: Feed to first port
           const std::string &targetPortName = expectedPorts[0];
-          if (nodeInputQueues_[node].count(targetPortName)) {
-            nodeInputQueues_[node][targetPortName]->push(dataPacket);
+          if (mNodeInputQueues[node].count(targetPortName)) {
+            mNodeInputQueues[node][targetPortName]->push(dataPacket);
             LOG_INFOS << "ExecutionEngine: Distributed initial input to "
                       << node->getName() << ":" << targetPortName;
             hasScheduledSomething = true;
@@ -341,8 +330,8 @@ bool ExecutionEngine::distributeInitialInputs(
   // No inputs, no auto-start source nodes
   if (initialInputs.empty() && !hasScheduledSomething) {
     bool foundAnySourceNode = false;
-    for (const auto &node : graph_->getNodes()) {
-      if (graph_->getInDegree(node) == 0) {
+    for (const auto &node : mGraph->getNodes()) {
+      if (mGraph->getInDegree(node) == 0) {
         foundAnySourceNode = true;
         break;
       }
@@ -358,20 +347,20 @@ bool ExecutionEngine::distributeInitialInputs(
 }
 
 void ExecutionEngine::tryScheduleNode(const std::shared_ptr<NodeBase> &node) {
-  if (stopFlag_.load(std::memory_order_acquire))
+  if (mStopFlag.load(std::memory_order_acquire))
     return;
 
   NodeExecutionState currentState =
-      nodeStates_[node]->load(std::memory_order_acquire);
+      mNodeStates[node]->load(std::memory_order_acquire);
   if (currentState != NodeExecutionState::WAITING) {
     return;
   }
 
   // Lock this specific node's mutex for the check-and-schedule logic
-  std::lock_guard<std::mutex> nodeLock(*(nodeMutexes_[node]));
+  std::lock_guard<std::mutex> nodeLock(*(mNodeMutexes[node]));
 
   // Re-check state after acquiring lock, in case it changed
-  currentState = nodeStates_[node]->load(std::memory_order_relaxed);
+  currentState = mNodeStates[node]->load(std::memory_order_relaxed);
   if (currentState != NodeExecutionState::WAITING) {
     return;
   }
@@ -379,7 +368,7 @@ void ExecutionEngine::tryScheduleNode(const std::shared_ptr<NodeBase> &node) {
   // Check if all input port queues have data
   bool allInputsReady = true;
   auto expectedPorts = node->getExpectedInputPorts();
-  if (expectedPorts.empty() && graph_->getInDegree(node) > 0) {
+  if (expectedPorts.empty() && mGraph->getInDegree(node) > 0) {
     // This node expects no named inputs, but has graph predecessors.
     // This specific scenario needs careful handling of how data flows from
     // unnamed ports. For now, assume if getExpectedInputPorts is empty, it's
@@ -387,7 +376,7 @@ void ExecutionEngine::tryScheduleNode(const std::shared_ptr<NodeBase> &node) {
     // control dependency). If it has in-degree > 0 and no named input ports,
     // it's ambiguous how it gets data. Let's assume for now it's only ready
     // if in-degree is 0.
-    if (graph_->getInDegree(node) > 0) {
+    if (mGraph->getInDegree(node) > 0) {
       // It has parents but no way to receive data via named ports
       LOG_INFOS << "Debug: Node " << node->getName()
                 << " has in-degree but no expected input ports. Cannot "
@@ -396,8 +385,8 @@ void ExecutionEngine::tryScheduleNode(const std::shared_ptr<NodeBase> &node) {
     }
   } else {
     for (const auto &portName : expectedPorts) {
-      if (!nodeInputQueues_[node].count(portName) ||
-          nodeInputQueues_[node][portName]->empty()) {
+      if (!mNodeInputQueues[node].count(portName) ||
+          mNodeInputQueues[node][portName]->empty()) {
         allInputsReady = false;
         break;
       }
@@ -405,34 +394,34 @@ void ExecutionEngine::tryScheduleNode(const std::shared_ptr<NodeBase> &node) {
   }
 
   if (allInputsReady) {
-    if (nodeStates_[node]->compare_exchange_strong(
+    if (mNodeStates[node]->compare_exchange_strong(
             currentState, // currentState is WAITING here
             NodeExecutionState::READY, std::memory_order_acq_rel,
             std::memory_order_acquire)) {
-      activeTasks_++;
+      mActiveTasks++;
       LOG_INFOS << "ExecutionEngine: Node " << node->getName()
-                << " is READY. Active tasks: " << activeTasks_;
-      threadPool_->submit(&ExecutionEngine::executeNodeTask, this, node,
-                          curContext_);
+                << " is READY. Active tasks: " << mActiveTasks;
+      mThreadPool->submit(&ExecutionEngine::executeNodeTask, this, node,
+                          mCurContext);
     }
   }
 }
 
 void ExecutionEngine::executeNodeTask(
     std::shared_ptr<NodeBase> node, std::shared_ptr<PipelineContext> context) {
-  if (stopFlag_.load(std::memory_order_acquire)) {
-    nodeStates_[node]->store(NodeExecutionState::WAITING,
+  if (mStopFlag.load(std::memory_order_acquire)) {
+    mNodeStates[node]->store(NodeExecutionState::WAITING,
                              std::memory_order_release); // Or a CANCELLED state
-    activeTasks_--;
+    mActiveTasks--;
     checkCompletionAndNotify();
     LOG_INFOS << "ExecutionEngine: Node " << node->getName()
               << " execution cancelled due to stop flag. Active tasks: "
-              << activeTasks_;
+              << mActiveTasks;
     return;
   }
 
   NodeExecutionState expectedReady = NodeExecutionState::READY;
-  if (!nodeStates_[node]->compare_exchange_strong(
+  if (!mNodeStates[node]->compare_exchange_strong(
           expectedReady, NodeExecutionState::EXECUTING,
           std::memory_order_acq_rel, std::memory_order_acquire)) {
     // Another thread might have tried to cancel it, or it wasn't READY
@@ -440,21 +429,21 @@ void ExecutionEngine::executeNodeTask(
     LOG_INFOS << "ExecutionEngine: Node " << node->getName()
               << " was not READY for execution. State: "
               << static_cast<int>(expectedReady) << ". Aborting task.";
-    // activeTasks_ was incremented when set to READY. If it's not executed,
+    // mActiveTasks was incremented when set to READY. If it's not executed,
     // it should be decremented. However, if it's already EXECUTING by another
     // thread (shouldn't happen with nodeMutex), or COMPLETED/FAILED, then
-    // activeTasks_ would be handled by that path. This situation implies a
+    // mActiveTasks would be handled by that path. This situation implies a
     // logic flaw or a race not fully covered. For safety, if it wasn't set to
-    // EXECUTING by this call, we might not own the activeTasks_ decrement
+    // EXECUTING by this call, we might not own the mActiveTasks decrement
     // here. The original submitter that set it to READY is responsible. But
     // since we are here, it means this task was submitted. The CAS failed,
     // meaning the state changed from READY. If it changed to EXECUTING by
     // this very thread, fine. If it changed by something else (e.g. reset,
     // stop), that's different. The current logic: READY -> submit -> (here)
     // READY to EXECUTING. If CAS fails, it means it's no longer READY. It
-    // could be STOPPED, WAITING (if reset). We only decrement activeTasks if
+    // could be STOPPED, WAITING (if reset). We only decrement mActiveTasks if
     // we are sure this task won't proceed.
-    activeTasks_--; // It was marked READY, activeTasks incremented, but won't
+    mActiveTasks--; // It was marked READY, mActiveTasks incremented, but won't
                     // execute now.
     checkCompletionAndNotify();
     return;
@@ -468,13 +457,13 @@ void ExecutionEngine::executeNodeTask(
   try {
     // Prepare inputs (pop from queues) - this part needs the node's mutex
     {
-      std::lock_guard<std::mutex> node_lock(*(nodeMutexes_[node]));
+      std::lock_guard<std::mutex> node_lock(*(mNodeMutexes[node]));
       for (const auto &port_name : node->getExpectedInputPorts()) {
         // Assume queue is not empty because tryScheduleNode checked
         // However, a pop could fail if queue becomes empty due to external
         // clear (e.g. reset) For simplicity, we assume try_pop succeeds. A
         // robust version would handle failure.
-        auto dataItem = nodeInputQueues_[node][port_name]->try_pop();
+        auto dataItem = mNodeInputQueues[node][port_name]->try_pop();
         if (dataItem.has_value()) {
           inputs[port_name] = dataItem.value();
         } else {
@@ -496,32 +485,32 @@ void ExecutionEngine::executeNodeTask(
   } catch (const std::exception &e) {
     LOG_ERRORS << "ExecutionEngine: Node " << node->getName()
                << " execution failed with exception: " << e.what();
-    if (onErrorCallback_) {
-      onErrorCallback_(e.what(), node->getName());
+    if (mOnErrorCallback) {
+      mOnErrorCallback(e.what(), node->getName());
     }
     success = false;
   } catch (...) {
     LOG_ERRORS << "ExecutionEngine: Node " << node->getName()
                << " execution failed with unknown exception.";
-    if (onErrorCallback_) {
-      onErrorCallback_("Unknown exception during node processing",
+    if (mOnErrorCallback) {
+      mOnErrorCallback("Unknown exception during node processing",
                        node->getName());
     }
     success = false;
   }
 
-  if (stopFlag_.load(std::memory_order_acquire)) {
-    nodeStates_[node]->store(NodeExecutionState::WAITING,
+  if (mStopFlag.load(std::memory_order_acquire)) {
+    mNodeStates[node]->store(NodeExecutionState::WAITING,
                              std::memory_order_release); // Or CANCELLED
     LOG_INFOS << "ExecutionEngine: Node " << node->getName()
               << " processing interrupted by stop flag.";
   } else if (success) {
-    nodeStates_[node]->store(NodeExecutionState::COMPLETED,
+    mNodeStates[node]->store(NodeExecutionState::COMPLETED,
                              std::memory_order_release);
     LOG_INFOS << "ExecutionEngine: Node " << node->getName() << " COMPLETED.";
     // Check if this node is a sink node
     bool isSinkNode = false;
-    for (const auto &sinkNodePtr : sinkNodes_) {
+    for (const auto &sinkNodePtr : mSinkNodes) {
       if (sinkNodePtr == node) {
         isSinkNode = true;
         break;
@@ -530,35 +519,35 @@ void ExecutionEngine::executeNodeTask(
     if (isSinkNode) {
       LOG_INFOS << "ExecutionEngine: Node " << node->getName()
                 << " is a sink node. Collecting results.";
-      std::lock_guard<std::mutex> finalResultsLock(finalResultsMutex_);
+      std::lock_guard<std::mutex> finalResultsLock(mFinalResultsMutex);
       for (const auto &pair : outputs) {
         std::string resultKey = node->getName() + ":" + pair.first;
-        accumulatedFinalResults_[resultKey] = pair.second;
+        mAccumulatedFinalResults[resultKey] = pair.second;
         LOG_INFOS << "ExecutionEngine: Added final result with key: "
                   << resultKey;
       }
     }
     propagateOutputAndScheduleDownstream(node, outputs);
   } else {
-    nodeStates_[node]->store(NodeExecutionState::FAILED,
+    mNodeStates[node]->store(NodeExecutionState::FAILED,
                              std::memory_order_release);
     LOG_ERRORS << "ExecutionEngine: Node " << node->getName() << " FAILED.";
-    // set global stopFlag_ on first failure:
+    // set global mStopFlag on first failure:
     stopExecutionAsync();
   }
 
-  activeTasks_--;
+  mActiveTasks--;
   LOG_INFOS << "ExecutionEngine: Node " << node->getName()
-            << " task finished. Active tasks: " << activeTasks_;
+            << " task finished. Active tasks: " << mActiveTasks;
   checkCompletionAndNotify();
 }
 
 void ExecutionEngine::propagateOutputAndScheduleDownstream(
     const std::shared_ptr<NodeBase> &sourceNode, const PortDataMap &outputs) {
-  if (stopFlag_.load(std::memory_order_acquire))
+  if (mStopFlag.load(std::memory_order_acquire))
     return;
 
-  auto outgoingEdges = graph_->getOutgoingEdges(sourceNode);
+  auto outgoingEdges = mGraph->getOutgoingEdges(sourceNode);
   for (const auto &edge : outgoingEdges) {
     if (outputs.count(edge.sourcePort)) {
       // This is a shared_ptr
@@ -566,9 +555,9 @@ void ExecutionEngine::propagateOutputAndScheduleDownstream(
       auto destNode = edge.destNode;
       auto destPort = edge.destPort;
 
-      if (nodeInputQueues_.count(destNode) &&
-          nodeInputQueues_[destNode].count(destPort)) {
-        nodeInputQueues_[destNode][destPort]->push(dataToPropagate);
+      if (mNodeInputQueues.count(destNode) &&
+          mNodeInputQueues[destNode].count(destPort)) {
+        mNodeInputQueues[destNode][destPort]->push(dataToPropagate);
         LOG_INFOS << "ExecutionEngine: Propagated output from "
                   << sourceNode->getName() << ":" << edge.sourcePort << " to "
                   << destNode->getName() << ":" << destPort;
@@ -582,49 +571,48 @@ void ExecutionEngine::propagateOutputAndScheduleDownstream(
 }
 
 void ExecutionEngine::checkCompletionAndNotify() {
-  if (activeTasks_ == 0) { // Could also check stopFlag_ here
+  if (mActiveTasks == 0) { // Could also check mStopFlag here
     LOG_INFOS << "ExecutionEngine: All active tasks seem to be completed or "
                  "pipeline is stopping.";
-    // If pipelineState_ is RUNNING and activeTasks_ becomes 0, it means
-    // successful completion of the current workload. If pipelineState_ is
+    // If mEngineState is RUNNING and mActiveTasks becomes 0, it means
+    // successful completion of the current workload. If mEngineState is
     // STOPPING, this signals that all tasks have indeed finished.
-    PipelineState currentPipelineState =
-        pipelineState_.load(std::memory_order_acquire);
+    EngineState currentPipelineState =
+        mEngineState.load(std::memory_order_acquire);
 
     // Check if it's a successful completion and the callback is set
-    if (currentPipelineState == PipelineState::RUNNING &&
-        !stopFlag_.load(std::memory_order_acquire) && onResultCallback_) {
+    if (currentPipelineState == EngineState::RUNNING &&
+        !mStopFlag.load(std::memory_order_acquire) && mOnResultCallback) {
 
       PortDataMap resultsToSend;
-      { // Scope for finalResultsMutex_ lock
-        std::lock_guard<std::mutex> final_results_lock(finalResultsMutex_);
-        resultsToSend = accumulatedFinalResults_;
+      { // Scope for mFinalResultsMutex lock
+        std::lock_guard<std::mutex> final_results_lock(mFinalResultsMutex);
+        resultsToSend = mAccumulatedFinalResults;
       }
-      LOG_INFOS << "ExecutionEngine: Invoking onResultCallback_ with "
+      LOG_INFOS << "ExecutionEngine: Invoking mOnResultCallback with "
                 << resultsToSend.size() << " final results.";
-      onResultCallback_(resultsToSend);
+      mOnResultCallback(resultsToSend);
     }
 
     // Notify any waiting threads (e.g., in execute or stopExecutionSync)
-    if (currentPipelineState == PipelineState::RUNNING ||
-        currentPipelineState == PipelineState::STOPPING) {
+    if (currentPipelineState == EngineState::RUNNING) {
       // Note: We only notify. The `execute` or `stopExecutionSync` methods
-      // waiting on completionCondition_ will re-check conditions and update
-      // pipelineState_ properly under engineMutex_.
-      completionCondition_.notify_all();
+      // waiting on mCompletionCondition will re-check conditions and update
+      // mEngineState properly under mEngineMutex.
+      mCompletionCondition.notify_all();
     }
   }
 }
 
 void ExecutionEngine::setPipelineResultCallback(
     std::function<void(const PortDataMap &finalResults)> callback) {
-  onResultCallback_ = std::move(callback);
+  mOnResultCallback = std::move(callback);
 }
 
 void ExecutionEngine::setPipelineErrorCallback(
     std::function<void(const std::string &errorMsg,
                        const std::string &nodeName)>
         callback) {
-  onErrorCallback_ = std::move(callback);
+  mOnErrorCallback = std::move(callback);
 }
 } // namespace ai_pipe

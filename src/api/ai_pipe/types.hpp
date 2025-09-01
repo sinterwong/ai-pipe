@@ -34,13 +34,14 @@ enum class NodeExecutionState {
   FAILED     // 执行失败
 };
 
-enum class PipelineState {
+enum class EngineState {
   IDLE, // 空闲
   RUNNING,
-  STOPPING,
   STOPPED,
   ERROR
 };
+
+enum class PipelineState { UNINITIALIZED, IDLE, RUNNING, STOPPING, ERROR };
 } // namespace ai_pipe
 
 #endif

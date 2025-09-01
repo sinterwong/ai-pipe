@@ -43,7 +43,7 @@ public:
 
   void reset();
 
-  PipelineState getState() const;
+  EngineState getState() const;
 
   void setPipelineResultCallback(
       std::function<void(const PortDataMap &finalResults)> callback);
@@ -74,36 +74,36 @@ private:
       std::unordered_map<std::string,
                          std::shared_ptr<ThreadSafeQueue<PortDataPtr>>>;
 
-  Graph *graph_;
-  std::shared_ptr<PipelineContext> curContext_;
-  std::unique_ptr<ThreadPool> threadPool_;
-  std::atomic<PipelineState> pipelineState_;
+  Graph *mGraph;
+  std::shared_ptr<PipelineContext> mCurContext;
+  std::unique_ptr<ThreadPool> mThreadPool;
+  std::atomic<EngineState> mEngineState;
 
   std::unordered_map<std::shared_ptr<NodeBase>,
                      std::unique_ptr<std::atomic<NodeExecutionState>>>
-      nodeStates_;
+      mNodeStates;
   std::unordered_map<std::shared_ptr<NodeBase>, PortInputQueues>
-      nodeInputQueues_;
+      mNodeInputQueues;
   std::unordered_map<std::shared_ptr<NodeBase>, std::unique_ptr<std::mutex>>
-      nodeMutexes_;
+      mNodeMutexes;
 
   // number of tasks either executing or ready to be scheduled
-  std::atomic<int> activeTasks_;
+  std::atomic<int> mActiveTasks;
 
   // signal to stop all processing
-  std::atomic<bool> stopFlag_;
+  std::atomic<bool> mStopFlag;
 
   // general mutex for engine state, initialization, and completion condition
-  mutable std::mutex engineMutex_;
-  std::condition_variable completionCondition_;
+  mutable std::mutex mEngineMutex;
+  std::condition_variable mCompletionCondition;
 
-  std::function<void(const PortDataMap &finalResults)> onResultCallback_;
+  std::function<void(const PortDataMap &finalResults)> mOnResultCallback;
   std::function<void(const std::string &errorMsg, const std::string &nodeName)>
-      onErrorCallback_;
+      mOnErrorCallback;
 
-  std::vector<std::shared_ptr<NodeBase>> sinkNodes_;
-  PortDataMap accumulatedFinalResults_;
-  std::mutex finalResultsMutex_;
+  std::vector<std::shared_ptr<NodeBase>> mSinkNodes;
+  PortDataMap mAccumulatedFinalResults;
+  std::mutex mFinalResultsMutex;
 };
 } // namespace ai_pipe
 

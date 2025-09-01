@@ -58,6 +58,49 @@ TEST_F(ThroughPassPipeTest, Normal) {
 
   ASSERT_TRUE(pipeline.initialize(std::move(graph), context, numWorkers));
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
+  ASSERT_TRUE(pipeline.start());
+  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::RUNNING);
+
+  ai_pipe::PortDataMap inputs;
+  auto imagePathData = std::make_shared<ai_pipe::PortData>();
+  imagePathData->setParam<std::string>("input", "");
+  inputs["ThroughPass01"] = imagePathData;
+
+  bool resultReceived = false;
+  bool errorOccurred = false;
+  std::string lastErrorMsg;
+
+  pipeline.setPipelineResultCallback(
+      [&](const ai_pipe::PortDataMap &finalResults) {
+        resultReceived = true;
+        ASSERT_TRUE(finalResults.count("ThroughPass04:output"));
+        ASSERT_TRUE(finalResults.count("ThroughPass05:output"));
+      });
+
+  pipeline.setPipelineErrorCallback(
+      [&](const std::string &errorMsg, const std::string &nodeName) {
+        errorOccurred = true;
+        lastErrorMsg = "Pipeline error in node '" + nodeName + "': " + errorMsg;
+        std::cerr << lastErrorMsg << std::endl;
+      });
+
+  auto retFuture = pipeline.feedDataAndGetResultFuture(inputs);
+
+  std::future_status status = retFuture.wait_for(std::chrono::seconds(10));
+  ASSERT_EQ(status, std::future_status::ready)
+      << "Pipeline execution timed out.";
+
+  bool success = retFuture.get();
+  ASSERT_TRUE(success);
+
+  ASSERT_TRUE(resultReceived) << "Pipeline result callback was not invoked.";
+  ASSERT_FALSE(errorOccurred)
+      << "Pipeline error callback was invoked: " << lastErrorMsg;
+
+  ASSERT_TRUE(pipeline.stop());
+  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
+  pipeline.reset();
+  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::UNINITIALIZED);
 }
 
 TEST_F(ThroughPassPipeTest, NormalWithJson) {
@@ -113,8 +156,8 @@ TEST_F(ThroughPassPipeTest, NormalWithJson) {
       << "Pipeline error callback was invoked: " << lastErrorMsg;
 
   ASSERT_TRUE(pipeline.stop());
-  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::STOPPED);
-  pipeline.reset();
   ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::IDLE);
+  pipeline.reset();
+  ASSERT_EQ(pipeline.getState(), ai_pipe::PipelineState::UNINITIALIZED);
 }
 } // namespace testing_algo_infer_pipeline

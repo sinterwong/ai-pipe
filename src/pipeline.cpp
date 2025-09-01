@@ -55,6 +55,10 @@ Pipeline::feedDataAndGetResultFuture(const PortDataMap &initialInputs) {
 
 PipelineState Pipeline::getState() const { return pImpl_->getState(); }
 
+EngineState Pipeline::getEngineState() const {
+  return pImpl_->getEngineState();
+}
+
 std::unordered_map<std::string, NodeExecutionState>
 Pipeline::getNodeStates() const {
   return pImpl_->getNodeStates();
