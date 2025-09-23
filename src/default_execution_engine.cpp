@@ -354,7 +354,7 @@ bool DefaultExecutionEngine::distributeInitialInputs(
 }
 
 void DefaultExecutionEngine::tryScheduleNode(
-    const std::shared_ptr<NodeBase> &node) {
+    const std::shared_ptr<ILogicNode> &node) {
   if (mStopFlag.load(std::memory_order_acquire))
     return;
 
@@ -416,7 +416,8 @@ void DefaultExecutionEngine::tryScheduleNode(
 }
 
 void DefaultExecutionEngine::executeNodeTask(
-    std::shared_ptr<NodeBase> node, std::shared_ptr<PipelineContext> context) {
+    std::shared_ptr<ILogicNode> node,
+    std::shared_ptr<PipelineContext> context) {
   if (mStopFlag.load(std::memory_order_acquire)) {
     mNodeStates[node]->store(NodeExecutionState::WAITING,
                              std::memory_order_release); // Or a CANCELLED state
@@ -554,7 +555,7 @@ void DefaultExecutionEngine::executeNodeTask(
 }
 
 void DefaultExecutionEngine::propagateOutputAndScheduleDownstream(
-    const std::shared_ptr<NodeBase> &sourceNode, const PortDataMap &outputs) {
+    const std::shared_ptr<ILogicNode> &sourceNode, const PortDataMap &outputs) {
   if (mStopFlag.load(std::memory_order_acquire))
     return;
 

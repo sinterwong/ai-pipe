@@ -24,7 +24,7 @@ struct ThroughPassNodeParams {
 
 void from_json(const nlohmann::json &j, ThroughPassNodeParams &p);
 
-class ThroughPassNode : public NodeBase {
+class ThroughPassNode : public ILogicNode {
 public:
   ThroughPassNode(const std::string &name, const ThroughPassNodeParams &params);
   ~ThroughPassNode() override = default;

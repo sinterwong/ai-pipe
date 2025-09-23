@@ -27,32 +27,32 @@ public:
   Graph(Graph &&) = default;
   Graph &operator=(Graph &&) = default;
 
-  bool addNode(const std::shared_ptr<NodeBase> &node);
+  bool addNode(const std::shared_ptr<ILogicNode> &node);
 
-  std::shared_ptr<NodeBase> getNode(const std::string &name) const;
+  std::shared_ptr<ILogicNode> getNode(const std::string &name) const;
 
-  const std::vector<std::shared_ptr<NodeBase>> &getNodes() const;
+  const std::vector<std::shared_ptr<ILogicNode>> &getNodes() const;
 
   bool addEdge(const std::string &sourceNodeName, const std::string &sourcePort,
                const std::string &destNodeName, const std::string &destPort);
 
   const std::vector<Edge> &getEdges() const;
 
-  int getInDegree(const std::shared_ptr<NodeBase> &node) const;
+  int getInDegree(const std::shared_ptr<ILogicNode> &node) const;
 
-  int getOutDegree(const std::shared_ptr<NodeBase> &node) const;
+  int getOutDegree(const std::shared_ptr<ILogicNode> &node) const;
 
-  const std::vector<std::shared_ptr<NodeBase>> &
-  getOutgoingNeighbors(const std::shared_ptr<NodeBase> &node) const;
+  const std::vector<std::shared_ptr<ILogicNode>> &
+  getOutgoingNeighbors(const std::shared_ptr<ILogicNode> &node) const;
 
-  const std::vector<std::shared_ptr<NodeBase>> &
-  getIncomingNeighbors(const std::shared_ptr<NodeBase> &node) const;
-
-  std::vector<Edge>
-  getIncomingEdges(const std::shared_ptr<NodeBase> &destNode) const;
+  const std::vector<std::shared_ptr<ILogicNode>> &
+  getIncomingNeighbors(const std::shared_ptr<ILogicNode> &node) const;
 
   std::vector<Edge>
-  getOutgoingEdges(const std::shared_ptr<NodeBase> &sourceNode) const;
+  getIncomingEdges(const std::shared_ptr<ILogicNode> &destNode) const;
+
+  std::vector<Edge>
+  getOutgoingEdges(const std::shared_ptr<ILogicNode> &sourceNode) const;
 
   bool hasCycle() const;
 
@@ -60,22 +60,22 @@ public:
 
 private:
   bool hasCycleDFS(
-      const std::shared_ptr<NodeBase> &node,
-      std::unordered_map<std::shared_ptr<NodeBase>, int> &visitStatus) const;
+      const std::shared_ptr<ILogicNode> &node,
+      std::unordered_map<std::shared_ptr<ILogicNode>, int> &visitStatus) const;
 
 private:
-  std::vector<std::shared_ptr<NodeBase>> nodes_;
+  std::vector<std::shared_ptr<ILogicNode>> nodes_;
   std::vector<Edge> edges_;
 
-  std::unordered_map<std::string, std::shared_ptr<NodeBase>> nodeMap_;
+  std::unordered_map<std::string, std::shared_ptr<ILogicNode>> nodeMap_;
 
-  std::unordered_map<std::shared_ptr<NodeBase>,
-                     std::vector<std::shared_ptr<NodeBase>>>
+  std::unordered_map<std::shared_ptr<ILogicNode>,
+                     std::vector<std::shared_ptr<ILogicNode>>>
       adjListOut_;
-  std::unordered_map<std::shared_ptr<NodeBase>,
-                     std::vector<std::shared_ptr<NodeBase>>>
+  std::unordered_map<std::shared_ptr<ILogicNode>,
+                     std::vector<std::shared_ptr<ILogicNode>>>
       adjListIn_;
-  std::unordered_map<std::shared_ptr<NodeBase>, int> inDegree_;
+  std::unordered_map<std::shared_ptr<ILogicNode>, int> inDegree_;
 };
 
 } // namespace ai_pipe

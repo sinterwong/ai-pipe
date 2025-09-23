@@ -13,7 +13,7 @@
 #include <logger.hpp>
 
 namespace ai_pipe {
-bool Graph::addNode(const std::shared_ptr<NodeBase> &node) {
+bool Graph::addNode(const std::shared_ptr<ILogicNode> &node) {
   if (!node) {
     LOG_ERRORS << "Tried to add a null node to the graph";
     return false;
@@ -33,7 +33,7 @@ bool Graph::addNode(const std::shared_ptr<NodeBase> &node) {
   return true;
 }
 
-std::shared_ptr<NodeBase> Graph::getNode(const std::string &name) const {
+std::shared_ptr<ILogicNode> Graph::getNode(const std::string &name) const {
   auto it = nodeMap_.find(name);
   if (it != nodeMap_.end()) {
     return it->second;
@@ -41,7 +41,7 @@ std::shared_ptr<NodeBase> Graph::getNode(const std::string &name) const {
   return nullptr;
 }
 
-const std::vector<std::shared_ptr<NodeBase>> &Graph::getNodes() const {
+const std::vector<std::shared_ptr<ILogicNode>> &Graph::getNodes() const {
   return nodes_;
 }
 
@@ -121,7 +121,7 @@ bool Graph::addEdge(const std::string &sourceNodeName,
 
 const std::vector<Edge> &Graph::getEdges() const { return edges_; }
 
-int Graph::getInDegree(const std::shared_ptr<NodeBase> &node) const {
+int Graph::getInDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
     LOG_ERRORS << "Node is null";
     throw std::runtime_error("Node is null");
@@ -136,7 +136,7 @@ int Graph::getInDegree(const std::shared_ptr<NodeBase> &node) const {
   return 0;
 }
 
-int Graph::getOutDegree(const std::shared_ptr<NodeBase> &node) const {
+int Graph::getOutDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
     LOG_ERRORS << "Node is null";
     throw std::runtime_error("Node is null");
@@ -151,9 +151,9 @@ int Graph::getOutDegree(const std::shared_ptr<NodeBase> &node) const {
   }
 }
 
-const std::vector<std::shared_ptr<NodeBase>> &
-Graph::getOutgoingNeighbors(const std::shared_ptr<NodeBase> &node) const {
-  static const std::vector<std::shared_ptr<NodeBase>> emptyNeighbors;
+const std::vector<std::shared_ptr<ILogicNode>> &
+Graph::getOutgoingNeighbors(const std::shared_ptr<ILogicNode> &node) const {
+  static const std::vector<std::shared_ptr<ILogicNode>> emptyNeighbors;
   if (!node) {
     return emptyNeighbors;
   }
@@ -164,9 +164,9 @@ Graph::getOutgoingNeighbors(const std::shared_ptr<NodeBase> &node) const {
   return emptyNeighbors;
 }
 
-const std::vector<std::shared_ptr<NodeBase>> &
-Graph::getIncomingNeighbors(const std::shared_ptr<NodeBase> &node) const {
-  static const std::vector<std::shared_ptr<NodeBase>> emptyNeighbors;
+const std::vector<std::shared_ptr<ILogicNode>> &
+Graph::getIncomingNeighbors(const std::shared_ptr<ILogicNode> &node) const {
+  static const std::vector<std::shared_ptr<ILogicNode>> emptyNeighbors;
   if (!node) {
     return emptyNeighbors;
   }
@@ -178,7 +178,7 @@ Graph::getIncomingNeighbors(const std::shared_ptr<NodeBase> &node) const {
 }
 
 std::vector<Edge>
-Graph::getIncomingEdges(const std::shared_ptr<NodeBase> &destNode) const {
+Graph::getIncomingEdges(const std::shared_ptr<ILogicNode> &destNode) const {
   std::vector<Edge> incomingEdges;
   for (const auto &edge : edges_) {
     if (edge.destNode == destNode) {
@@ -189,7 +189,7 @@ Graph::getIncomingEdges(const std::shared_ptr<NodeBase> &destNode) const {
 }
 
 std::vector<Edge>
-Graph::getOutgoingEdges(const std::shared_ptr<NodeBase> &sourceNode) const {
+Graph::getOutgoingEdges(const std::shared_ptr<ILogicNode> &sourceNode) const {
   std::vector<Edge> outgoingEdges;
   for (const auto &edge : edges_) {
     if (edge.sourceNode == sourceNode) {
@@ -201,7 +201,7 @@ Graph::getOutgoingEdges(const std::shared_ptr<NodeBase> &sourceNode) const {
 
 bool Graph::hasCycle() const {
   // 0: unvisited, 1: visiting (in recursion stack), 2: visited
-  std::unordered_map<std::shared_ptr<NodeBase>, int> visitStatus;
+  std::unordered_map<std::shared_ptr<ILogicNode>, int> visitStatus;
   for (const auto &node_sp : nodes_) {
     if (visitStatus[node_sp] == 0) {
       if (hasCycleDFS(node_sp, visitStatus)) {
@@ -222,8 +222,8 @@ void Graph::clear() {
 }
 
 bool Graph::hasCycleDFS(
-    const std::shared_ptr<NodeBase> &node,
-    std::unordered_map<std::shared_ptr<NodeBase>, int> &visitStatus) const {
+    const std::shared_ptr<ILogicNode> &node,
+    std::unordered_map<std::shared_ptr<ILogicNode>, int> &visitStatus) const {
   // Mark as visiting (in recursion stack)
   visitStatus[node] = 1;
 

@@ -21,7 +21,7 @@ template <class BaseClass> class Factory;
 }
 
 using NodeParamParserFactory = common_utils::Factory<ParamParserBase>;
-using NodeCreatorFactory = common_utils::Factory<NodeBase>;
+using NodeCreatorFactory = common_utils::Factory<ILogicNode>;
 
 #define AI_PIPE_REGISTER_NODE(NodeType, NodeParamType)                         \
   [[maybe_unused]]                                                             \
@@ -29,7 +29,7 @@ using NodeCreatorFactory = common_utils::Factory<NodeBase>;
       NodeCreatorFactory::instance().registerCreator(                          \
           #NodeType,                                                           \
           [](const ai_pipe::NodeConstructParams &params)                       \
-              -> std::shared_ptr<ai_pipe::NodeBase> {                          \
+              -> std::shared_ptr<ai_pipe::ILogicNode> {                        \
             auto nodeName = params.getParam<std::string>("name");              \
             auto nodeSpecificParams =                                          \
                 params.getParam<NodeParamType>("node_specific_params");        \
