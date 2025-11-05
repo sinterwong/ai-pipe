@@ -9,6 +9,7 @@
  *
  */
 #include "default_execution_engine.hpp"
+#include "execution_engine_factory.hpp"
 #include <logger.hpp>
 #include <memory>
 #include <thread_pool.hpp>
@@ -628,3 +629,6 @@ void DefaultExecutionEngine::setPipelineErrorCallback(
   mOnErrorCallback = std::move(callback);
 }
 } // namespace ai_pipe
+
+// Register DefaultExecutionEngine to the factory
+AI_PIPE_REGISTER_ENGINE(DefaultExecutionEngine, ai_pipe::DefaultExecutionEngine)

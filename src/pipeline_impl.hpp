@@ -59,7 +59,7 @@ public:
 
 private:
   std::unique_ptr<Graph> mGraph;
-  std::unique_ptr<IExecutionEngine> mExecutionEngine;
+  std::shared_ptr<IExecutionEngine> mExecutionEngine;
   std::atomic<PipelineState> mState;
 
   std::shared_ptr<PipelineContext> mContext;

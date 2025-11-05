@@ -10,10 +10,9 @@
  */
 #include "pipeline_impl.hpp"
 #include "ai_pipe/types.hpp"
-#include "default_execution_engine.hpp"
+#include "execution_engine_factory.hpp"
 #include <logger.hpp>
 #include <memory>
-#include <nlohmann/json.hpp>
 
 namespace ai_pipe {
 Pipeline::Impl::Impl()
@@ -71,8 +70,8 @@ bool Pipeline::Impl::initialize(Graph &&graph,
             << (int)numWorkers;
   mGraph = std::make_unique<Graph>(std::move(graph));
 
-  // TODO: Use the factory of ExecutionEngine
-  mExecutionEngine = std::make_unique<DefaultExecutionEngine>();
+  // Use the factory of ExecutionEngine
+  mExecutionEngine = createExecutionEngine();
   mContext = ctx ? std::move(ctx) : std::make_shared<PipelineContext>();
 
   if (mGraph->hasCycle()) {
@@ -189,8 +188,8 @@ void Pipeline::Impl::reset() {
   }
   mGraph = std::make_unique<Graph>();
   mContext = std::make_shared<PipelineContext>();
-  // TODO: Use the factory of ExecutionEngine
-  mExecutionEngine = std::make_unique<DefaultExecutionEngine>();
+  // Use the factory of ExecutionEngine
+  mExecutionEngine = createExecutionEngine();
 
   mOnPipelineResult = nullptr;
   mOnPipelineError = nullptr;
