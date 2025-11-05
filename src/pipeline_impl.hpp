@@ -27,7 +27,7 @@ public:
   Impl &operator=(Impl &&other) noexcept;
 
   bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
-                  uint8_t numWorkers = 1);
+                  const PipelineConfig &config);
 
   bool start();
 

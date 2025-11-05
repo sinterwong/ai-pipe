@@ -11,15 +11,20 @@
 
 #ifndef AI_PIPE_EXAMPLE_PIPELINE_BUILDER_HPP
 #define AI_PIPE_EXAMPLE_PIPELINE_BUILDER_HPP
+#include "ai_pipe/config.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include <string>
+#include <tuple>
 
 namespace ai_pipe::examples {
 
 class PipelineBuilder {
 public:
   static Graph buildGraphFromConfig(const std::string &configPath);
+
+  static std::tuple<Graph, PipelineConfig>
+  buildGraphAndConfigFromFile(const std::string &configPath);
 
   static Pipeline
   buildPipelineFromConfig(const std::string &configPath,

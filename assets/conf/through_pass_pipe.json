@@ -1,5 +1,9 @@
 {
     "graph_name": "YoloInferPipeline",
+    "pipeline": {
+        "engine_type": "DefaultExecutionEngine",
+        "num_workers": 4
+    },
     "nodes": [
         {
             "name": "ThroughPass01",
