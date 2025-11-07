@@ -25,7 +25,7 @@ SET(DEPENDENCY_LIBS
 )
 
 # Build Library
-ADD_LIBRARY(ai_pipe STATIC ${CURRENT_DIR_SRCS})
+ADD_LIBRARY(ai_pipe SHARED ${CURRENT_DIR_SRCS})
 
 ADD_LIBRARY(ai_pipe::ai_pipe ALIAS ai_pipe)
 
