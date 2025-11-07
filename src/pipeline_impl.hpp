@@ -27,7 +27,7 @@ public:
   Impl &operator=(Impl &&other) noexcept;
 
   bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
-                  uint8_t numWorkers = 1);
+                  const PipelineConfig &config);
 
   bool start();
 
@@ -59,7 +59,7 @@ public:
 
 private:
   std::unique_ptr<Graph> mGraph;
-  std::unique_ptr<IExecutionEngine> mExecutionEngine;
+  std::shared_ptr<IExecutionEngine> mExecutionEngine;
   std::atomic<PipelineState> mState;
 
   std::shared_ptr<PipelineContext> mContext;

@@ -18,10 +18,10 @@
 
 namespace ai_pipe {
 
-class NodeBase {
+class ILogicNode {
 public:
-  NodeBase(const std::string name) : name_(name) {}
-  virtual ~NodeBase() {}
+  ILogicNode(const std::string name) : name_(name) {}
+  virtual ~ILogicNode() {}
 
   const std::string &getName() const { return name_; }
 

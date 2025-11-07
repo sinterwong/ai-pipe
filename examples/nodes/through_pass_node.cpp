@@ -15,7 +15,7 @@ void from_json(const nlohmann::json &j, ThroughPassNodeParams &p) {
 
 ThroughPassNode::ThroughPassNode(const std::string &name,
                                  const ThroughPassNodeParams &params)
-    : NodeBase(name), mParams(params) {}
+    : ILogicNode(name), mParams(params) {}
 
 void ThroughPassNode::process(const PortDataMap &inputs, PortDataMap &outputs,
                               std::shared_ptr<PipelineContext> context) {

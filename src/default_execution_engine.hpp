@@ -59,7 +59,8 @@ public:
   getNodeStates() const override;
 
   void propagateOutputAndScheduleDownstream(
-      const std::shared_ptr<NodeBase> &sourceNode, const PortDataMap &outputs);
+      const std::shared_ptr<ILogicNode> &sourceNode,
+      const PortDataMap &outputs);
 
   void checkCompletionAndNotify();
 
@@ -67,9 +68,9 @@ private:
   // 分发输入数据到起始节点
   bool distributeInitialInputs(const PortDataMap &initialInputs);
 
-  void tryScheduleNode(const std::shared_ptr<NodeBase> &node);
+  void tryScheduleNode(const std::shared_ptr<ILogicNode> &node);
 
-  void executeNodeTask(std::shared_ptr<NodeBase> node,
+  void executeNodeTask(std::shared_ptr<ILogicNode> node,
                        std::shared_ptr<PipelineContext> context);
 
 private:
@@ -83,12 +84,12 @@ private:
   std::unique_ptr<ThreadPool> mThreadPool;
   std::atomic<EngineState> mEngineState;
 
-  std::unordered_map<std::shared_ptr<NodeBase>,
+  std::unordered_map<std::shared_ptr<ILogicNode>,
                      std::unique_ptr<std::atomic<NodeExecutionState>>>
       mNodeStates;
-  std::unordered_map<std::shared_ptr<NodeBase>, PortInputQueues>
+  std::unordered_map<std::shared_ptr<ILogicNode>, PortInputQueues>
       mNodeInputQueues;
-  std::unordered_map<std::shared_ptr<NodeBase>, std::unique_ptr<std::mutex>>
+  std::unordered_map<std::shared_ptr<ILogicNode>, std::unique_ptr<std::mutex>>
       mNodeMutexes;
 
   // number of tasks either executing or ready to be scheduled
@@ -105,7 +106,7 @@ private:
   std::function<void(const std::string &errorMsg, const std::string &nodeName)>
       mOnErrorCallback;
 
-  std::vector<std::shared_ptr<NodeBase>> mSinkNodes;
+  std::vector<std::shared_ptr<ILogicNode>> mSinkNodes;
   PortDataMap mAccumulatedFinalResults;
   std::mutex mFinalResultsMutex;
 };

@@ -10,10 +10,9 @@
  */
 #include "pipeline_impl.hpp"
 #include "ai_pipe/types.hpp"
-#include "default_execution_engine.hpp"
+#include "execution_engine_factory.hpp"
 #include <logger.hpp>
 #include <memory>
-#include <nlohmann/json.hpp>
 
 namespace ai_pipe {
 Pipeline::Impl::Impl()
@@ -66,13 +65,14 @@ Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
 
 bool Pipeline::Impl::initialize(Graph &&graph,
                                 std::shared_ptr<PipelineContext> ctx,
-                                uint8_t numWorkers) {
-  LOG_INFOS << "Pipeline::Impl initializing with provided graph, numWorkers: "
-            << (int)numWorkers;
+                                const PipelineConfig &config) {
+  LOG_INFOS << "Pipeline::Impl initializing with provided graph, engineType: "
+            << config.engineType
+            << ", numWorkers: " << (int)config.numWorkers;
   mGraph = std::make_unique<Graph>(std::move(graph));
 
-  // TODO: Use the factory of ExecutionEngine
-  mExecutionEngine = std::make_unique<DefaultExecutionEngine>();
+  // Use the factory of ExecutionEngine with specified type
+  mExecutionEngine = createExecutionEngine(config.engineType);
   mContext = ctx ? std::move(ctx) : std::make_shared<PipelineContext>();
 
   if (mGraph->hasCycle()) {
@@ -82,7 +82,7 @@ bool Pipeline::Impl::initialize(Graph &&graph,
     return false;
   }
 
-  if (!mExecutionEngine->initialize(mGraph.get(), numWorkers)) {
+  if (!mExecutionEngine->initialize(mGraph.get(), config.numWorkers)) {
     LOG_ERRORS << "Pipeline::Impl: Failed to initialize execution engine.";
     mState = PipelineState::ERROR;
     return false;
@@ -189,8 +189,8 @@ void Pipeline::Impl::reset() {
   }
   mGraph = std::make_unique<Graph>();
   mContext = std::make_shared<PipelineContext>();
-  // TODO: Use the factory of ExecutionEngine
-  mExecutionEngine = std::make_unique<DefaultExecutionEngine>();
+  // Use the factory of ExecutionEngine
+  mExecutionEngine = createExecutionEngine();
 
   mOnPipelineResult = nullptr;
   mOnPipelineError = nullptr;

@@ -47,5 +47,5 @@ ai-pipe/
 - [x] Design and implement native pipeline module
 - [x] Build CI
 - [x] Implement pipeline builder in examples
-- [ ] Support Execution Engine registration mechanism
+- [x] Support Execution Engine registration mechanism
 - [ ] Implement an engine with a frame-skipping type backpressure mechanism

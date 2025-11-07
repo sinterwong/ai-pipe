@@ -10,6 +10,7 @@
  */
 #ifndef __PIPE_PIPELINE_HPP__
 #define __PIPE_PIPELINE_HPP__
+#include "ai_pipe/config.hpp"
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
 #include <functional>
@@ -27,8 +28,27 @@ public:
   Pipeline(Pipeline &&other) noexcept;
   Pipeline &operator=(Pipeline &&other) noexcept;
 
+  /**
+   * @brief Initialize the pipeline with a graph and configuration
+   * @param graph The computation graph
+   * @param context Pipeline context for shared state
+   * @param config Pipeline configuration including engine type and workers
+   * @return true if initialization succeeds, false otherwise
+   */
   bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
-                  uint8_t numWorkers = 1);
+                  const PipelineConfig &config = PipelineConfig());
+
+  /**
+   * @brief Initialize the pipeline (legacy interface)
+   * @param graph The computation graph
+   * @param context Pipeline context for shared state
+   * @param numWorkers Number of worker threads (defaults to 1)
+   * @return true if initialization succeeds, false otherwise
+   * @note This is a legacy interface. Use the PipelineConfig version for new
+   * code.
+   */
+  bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
+                  uint8_t numWorkers);
 
   bool start();
 
