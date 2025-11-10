@@ -1,26 +1,26 @@
-# ExecutionEngine Factory 使用指南
+# ExecutionEngine Factory Usage Guide
 
-## 概述
+## Overview
 
-ExecutionEngine Factory 是 ai-pipe 的核心扩展机制，允许用户注册和使用不同的执行引擎实现。通过配置文件或代码，您可以轻松切换不同的执行引擎，而无需修改核心代码。
+The ExecutionEngine Factory is a core extension mechanism of ai-pipe, allowing users to register and use different execution engine implementations. You can easily switch between different execution engines through configuration files or code without modifying the core code.
 
-## 架构设计
+## Architecture Design
 
-### 工厂模式
-ai-pipe 采用统一的工厂模式管理组件：
-- **NodeFactory**: 管理计算节点的创建
-- **ExecutionEngineFactory**: 管理执行引擎的创建
+### Factory Pattern
+ai-pipe uses a unified factory pattern to manage components:
+- **NodeFactory**: Manages the creation of computation nodes
+- **ExecutionEngineFactory**: Manages the creation of execution engines
 
-### 核心组件
+### Core Components
 
-1. **IExecutionEngine**: 执行引擎接口
-2. **ExecutionEngineFactory**: 引擎工厂单例
-3. **AI_PIPE_REGISTER_ENGINE**: 注册宏
-4. **PipelineConfig**: 配置结构
+1. **IExecutionEngine**: Execution engine interface
+2. **ExecutionEngineFactory**: Engine factory singleton
+3. **AI_PIPE_REGISTER_ENGINE**: Registration macro
+4. **PipelineConfig**: Configuration structure
 
-## 注册新的 ExecutionEngine
+## Registering a New ExecutionEngine
 
-### 步骤 1: 实现 IExecutionEngine 接口
+### Step 1: Implement the IExecutionEngine Interface
 
 ```cpp
 // my_custom_engine.hpp
@@ -64,7 +64,7 @@ private:
 #endif
 ```
 
-### 步骤 2: 注册到工厂
+### Step 2: Register with the Factory
 
 ```cpp
 // my_custom_engine.cpp
@@ -77,17 +77,17 @@ MyCustomEngine::MyCustomEngine() {
   // Implementation
 }
 
-// ... 实现其他接口方法 ...
+// ... implement other interface methods ...
 
 } // namespace my_project
 
-// 注册引擎到工厂
+// Register the engine with the factory
 AI_PIPE_REGISTER_ENGINE(MyCustomEngine, my_project::MyCustomEngine)
 ```
 
-## 通过配置文件使用
+## Usage via Configuration File
 
-### JSON 配置格式
+### JSON Configuration Format
 
 ```json
 {
@@ -113,13 +113,13 @@ AI_PIPE_REGISTER_ENGINE(MyCustomEngine, my_project::MyCustomEngine)
 }
 ```
 
-### 配置说明
+### Configuration Description
 
-- **pipeline** (可选): Pipeline 配置节
-  - **engine_type** (可选): 执行引擎类型名称，默认为 "DefaultExecutionEngine"
-  - **num_workers** (可选): 工作线程数，默认为 1
+- **pipeline** (optional): Pipeline configuration section
+  - **engine_type** (optional): Execution engine type name, defaults to "DefaultExecutionEngine"
+  - **num_workers** (optional): Number of worker threads, defaults to 1
 
-### 使用 PipelineBuilder
+### Using PipelineBuilder
 
 ```cpp
 #include "pipeline_builder.hpp"
@@ -127,20 +127,20 @@ AI_PIPE_REGISTER_ENGINE(MyCustomEngine, my_project::MyCustomEngine)
 using namespace ai_pipe;
 using namespace ai_pipe::examples;
 
-// 从配置文件构建 Pipeline (自动读取 engine_type)
+// Build the Pipeline from a configuration file (automatically reads engine_type)
 auto pipeline = PipelineBuilder::buildPipelineFromConfig(
     "config/my_pipeline.json",
     std::make_shared<PipelineContext>()
 );
 
-// 启动并运行
+// Start and run
 pipeline.start();
 pipeline.feedDataAsync(initialInputs);
 ```
 
-## 通过代码使用
+## Usage via Code
 
-### 方式 1: 使用 PipelineConfig
+### Method 1: Using PipelineConfig
 
 ```cpp
 #include "ai_pipe/pipeline.hpp"
@@ -148,12 +148,12 @@ pipeline.feedDataAsync(initialInputs);
 
 using namespace ai_pipe;
 
-// 创建配置
+// Create a configuration
 PipelineConfig config;
 config.engineType = "MyCustomEngine";
 config.numWorkers = 4;
 
-// 初始化 Pipeline
+// Initialize the Pipeline
 Pipeline pipeline;
 Graph graph = buildYourGraph();
 auto context = std::make_shared<PipelineContext>();
@@ -161,45 +161,45 @@ auto context = std::make_shared<PipelineContext>();
 pipeline.initialize(std::move(graph), context, config);
 ```
 
-### 方式 2: 直接创建引擎
+### Method 2: Creating the Engine Directly
 
 ```cpp
 #include "execution_engine_factory.hpp"
 
 using namespace ai_pipe;
 
-// 创建特定类型的引擎
+// Create a specific type of engine
 auto engine = createExecutionEngine("MyCustomEngine");
 
-// 或者使用默认引擎
+// Or use the default engine
 auto defaultEngine = createExecutionEngine();
 ```
 
-### 方式 3: 向后兼容的方式
+### Method 3: Backward-Compatible Approach
 
 ```cpp
-// 使用旧的 API（默认使用 DefaultExecutionEngine）
+// Use the old API (defaults to DefaultExecutionEngine)
 pipeline.initialize(std::move(graph), context, 4);  // numWorkers = 4
 ```
 
-## 内置执行引擎
+## Built-in Execution Engines
 
 ### DefaultExecutionEngine
 
-默认的执行引擎，提供基本的并行执行能力。
+The default execution engine, providing basic parallel execution capabilities.
 
-**特性:**
-- 线程池并行执行
-- 数据流驱动调度
-- 节点状态管理
-- 错误处理和回调
+**Features:**
+- Thread pool for parallel execution
+- Dataflow-driven scheduling
+- Node state management
+- Error handling and callbacks
 
-**适用场景:**
-- 一般的 DAG 流水线
-- 节点执行时间较均匀
-- 数据量适中
+**Applicable Scenarios:**
+- General DAG pipelines
+- Relatively uniform node execution times
+- Moderate data volumes
 
-**配置示例:**
+**Configuration Example:**
 ```json
 {
   "pipeline": {
@@ -209,25 +209,25 @@ pipeline.initialize(std::move(graph), context, 4);  // numWorkers = 4
 }
 ```
 
-## 高级用法
+## Advanced Usage
 
-### 自定义引擎参数
+### Custom Engine Parameters
 
-如果您的引擎需要额外参数，可以扩展 EngineConstructParams:
+If your engine requires additional parameters, you can extend `EngineConstructParams`:
 
 ```cpp
 #include "execution_engine_factory.hpp"
 
-// 创建参数
+// Create parameters
 EngineConstructParams params;
 params.setParam("buffer_size", 1024);
 params.setParam("timeout_ms", 5000);
 
-// 使用参数创建引擎
+// Create the engine with parameters
 auto engine = createExecutionEngine("MyCustomEngine", params);
 ```
 
-然后在注册宏中处理参数：
+Then handle the parameters in the registration macro:
 
 ```cpp
 #define AI_PIPE_REGISTER_ENGINE_WITH_PARAMS(EngineType, EngineClass)          \
@@ -246,16 +246,16 @@ auto engine = createExecutionEngine("MyCustomEngine", params);
   }
 ```
 
-### 运行时查询可用引擎
+### Querying Available Engines at Runtime
 
 ```cpp
-// 检查引擎是否已注册
+// Check if an engine is registered
 if (ExecutionEngineFactory::instance().isRegistered("MyCustomEngine")) {
     std::cout << "MyCustomEngine is available" << std::endl;
 }
 ```
 
-## 示例：实现带背压机制的引擎
+## Example: Implementing an Engine with Backpressure
 
 ```cpp
 // backpressure_engine.hpp
@@ -266,13 +266,13 @@ public:
   bool execute(const PortDataMap &initialInputs,
                bool waitForCompletion,
                std::shared_ptr<PipelineContext> context) override {
-    // 检查队列大小
+    // Check queue size
     if (inputQueue_.size() >= maxQueueSize_) {
-      // 应用背压：丢弃或等待
+      // Apply backpressure: drop or wait
       return false;
     }
 
-    // 正常执行
+    // Normal execution
     return executeInternal(initialInputs, waitForCompletion, context);
   }
 
@@ -281,11 +281,11 @@ private:
   std::queue<PortDataMap> inputQueue_;
 };
 
-// 注册
+// Registration
 AI_PIPE_REGISTER_ENGINE(BackpressureEngine, BackpressureEngine)
 ```
 
-配置使用：
+Configuration for usage:
 ```json
 {
   "pipeline": {
@@ -295,39 +295,39 @@ AI_PIPE_REGISTER_ENGINE(BackpressureEngine, BackpressureEngine)
 }
 ```
 
-## 最佳实践
+## Best Practices
 
-1. **命名约定**: 引擎类型名称使用 PascalCase，例如 "DefaultExecutionEngine"
-2. **线程安全**: 确保您的引擎实现是线程安全的
-3. **错误处理**: 适当使用 setPipelineErrorCallback 报告错误
-4. **资源管理**: 在 stopExecutionSync() 中正确清理资源
-5. **日志记录**: 使用 LOG_INFOS/LOG_ERRORS 记录关键事件
-6. **测试**: 为新引擎编写单元测试和集成测试
+1. **Naming Convention**: Use PascalCase for engine type names, e.g., "DefaultExecutionEngine"
+2. **Thread Safety**: Ensure your engine implementation is thread-safe
+3. **Error Handling**: Use `setPipelineErrorCallback` appropriately to report errors
+4. **Resource Management**: Clean up resources correctly in `stopExecutionSync()`
+5. **Logging**: Use `LOG_INFOS`/`LOG_ERRORS` to record key events
+6. **Testing**: Write unit and integration tests for new engines
 
-## 故障排查
+## Troubleshooting
 
-### 引擎未注册错误
+### "Engine Not Registered" Error
 
 ```
 Factory error: Class 'MyEngine' not registered for base type 'IExecutionEngine'
 ```
 
-**解决方案:**
-1. 确保使用了 `AI_PIPE_REGISTER_ENGINE` 宏
-2. 确保引擎实现文件被编译并链接
-3. 检查引擎名称拼写是否正确
+**Solutions:**
+1. Ensure the `AI_PIPE_REGISTER_ENGINE` macro is used
+2. Ensure the engine implementation file is compiled and linked
+3. Check for correct spelling of the engine name
 
-### 配置文件不生效
+### Configuration File Not Taking Effect
 
-**检查清单:**
-1. JSON 格式是否正确
-2. "pipeline" 节是否正确嵌套
-3. "engine_type" 拼写是否正确
-4. 使用 `buildPipelineFromConfig` 而不是手动解析
+**Checklist:**
+1. Is the JSON format correct?
+2. Is the "pipeline" section nested correctly?
+3. Is "engine_type" spelled correctly?
+4. Are you using `buildPipelineFromConfig` instead of manual parsing?
 
-## 参考资料
+## References
 
-- [IExecutionEngine 接口文档](../src/execution_engine_base.hpp)
-- [DefaultExecutionEngine 实现](../src/default_execution_engine.hpp)
-- [Factory 模式实现](../src/api/ai_pipe/type_safe_factory.hpp)
-- [示例配置文件](../assets/conf/through_pass_pipe_with_engine.json)
+- [IExecutionEngine Interface Documentation](../src/execution_engine_base.hpp)
+- [DefaultExecutionEngine Implementation](../src/default_execution_engine.hpp)
+- [Factory Pattern Implementation](../src/api/ai_pipe/type_safe_factory.hpp)
+- [Example Configuration File](../assets/conf/through_pass_pipe_with_engine.json)

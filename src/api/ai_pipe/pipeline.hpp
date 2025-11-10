@@ -80,7 +80,7 @@ public:
 
 private:
   class Impl;
-  std::unique_ptr<Impl> pImpl_;
+  std::unique_ptr<Impl> m_pImpl;
 };
 } // namespace ai_pipe
 

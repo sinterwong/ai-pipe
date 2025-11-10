@@ -54,14 +54,14 @@ public:
           "ThreadPool is not running, cannot submit task.");
     }
 
-    auto bindFunc = [f = std::forward<F>(f),
-                     ... args = std::forward<Args>(args)]() mutable {
+    auto bind_func = [f = std::forward<F>(f),
+                      ... args = std::forward<Args>(args)]() mutable {
       return std::invoke(std::forward<decltype(f)>(f),
                          std::forward<decltype(args)>(args)...);
     };
 
     auto packagedTask =
-        std::make_shared<std::packaged_task<ReturnType()>>(std::move(bindFunc));
+        std::make_shared<std::packaged_task<ReturnType()>>(std::move(bind_func));
     std::future<ReturnType> result = packagedTask->get_future();
 
     enqueueTask([packagedTask]() { (*packagedTask)(); });
@@ -74,7 +74,7 @@ private:
 
   void worker() {
     while (true) {
-      std::function<void()> currentTask;
+      std::function<void()> task;
       {
         std::unique_lock<std::mutex> lock(m_mutex);
         m_notEmpty.wait(lock, [this] {
@@ -85,15 +85,15 @@ private:
           return;
         }
 
-        currentTask = std::move(m_taskQueue.front());
+        task = std::move(m_taskQueue.front());
         m_taskQueue.pop();
       }
 
       m_notFull.notify_one();
 
       try {
-        if (currentTask) {
-          currentTask();
+        if (task) {
+          task();
         }
       } catch (const std::exception &e) {
         std::cerr << "Task execution failed: " << e.what() << std::endl;
@@ -119,10 +119,10 @@ private:
     }
 
     m_threads.clear();
-    std::queue<std::function<void()>> emptyQueue;
+    std::queue<std::function<void()>> empty_queue;
     {
       std::lock_guard<std::mutex> lock(m_mutex);
-      m_taskQueue.swap(emptyQueue);
+      m_taskQueue.swap(empty_queue);
       m_state = State::STOPPED;
     }
   }

@@ -53,20 +53,20 @@ public:
                                                    const std::string &nodeName)>
                                     callback);
 
-  const Graph &getGraph() const { return *mGraph; }
+  const Graph &getGraph() const { return *m_graph; }
 
-  PipelineContext &getContext() { return *mContext; }
+  PipelineContext &getContext() { return *m_context; }
 
 private:
-  std::unique_ptr<Graph> mGraph;
-  std::shared_ptr<IExecutionEngine> mExecutionEngine;
-  std::atomic<PipelineState> mState;
+  std::unique_ptr<Graph> m_graph;
+  std::shared_ptr<IExecutionEngine> m_executionEngine;
+  std::atomic<PipelineState> m_state;
 
-  std::shared_ptr<PipelineContext> mContext;
+  std::shared_ptr<PipelineContext> m_context;
 
   std::function<void(const std::string &errorMsg, const std::string &nodeName)>
-      mOnPipelineError;
-  std::function<void(const PortDataMap &finalResults)> mOnPipelineResult;
+      m_onPipelineError;
+  std::function<void(const PortDataMap &finalResults)> m_onPipelineResult;
 };
 } // namespace ai_pipe
 

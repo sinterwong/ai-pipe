@@ -65,7 +65,12 @@ public:
   void checkCompletionAndNotify();
 
 private:
-  // 分发输入数据到起始节点
+  /**
+   * @brief Distributes initial inputs to the starting nodes.
+   *
+   * @param initialInputs The initial data to be fed into the pipeline.
+   * @return true if the inputs were distributed successfully, false otherwise.
+   */
   bool distributeInitialInputs(const PortDataMap &initialInputs);
 
   void tryScheduleNode(const std::shared_ptr<ILogicNode> &node);
@@ -79,36 +84,36 @@ private:
       std::unordered_map<std::string,
                          std::shared_ptr<ThreadSafeQueue<PortDataPtr>>>;
 
-  Graph *mGraph;
-  std::shared_ptr<PipelineContext> mCurContext;
-  std::unique_ptr<ThreadPool> mThreadPool;
-  std::atomic<EngineState> mEngineState;
+  Graph *m_graph;
+  std::shared_ptr<PipelineContext> m_curContext;
+  std::unique_ptr<ThreadPool> m_threadPool;
+  std::atomic<EngineState> m_engineState;
 
   std::unordered_map<std::shared_ptr<ILogicNode>,
                      std::unique_ptr<std::atomic<NodeExecutionState>>>
-      mNodeStates;
+      m_nodeStates;
   std::unordered_map<std::shared_ptr<ILogicNode>, PortInputQueues>
-      mNodeInputQueues;
+      m_nodeInputQueues;
   std::unordered_map<std::shared_ptr<ILogicNode>, std::unique_ptr<std::mutex>>
-      mNodeMutexes;
+      m_nodeMutexes;
 
   // number of tasks either executing or ready to be scheduled
-  std::atomic<int> mActiveTasks;
+  std::atomic<int> m_activeTasks;
 
   // signal to stop all processing
-  std::atomic<bool> mStopFlag;
+  std::atomic<bool> m_stopFlag;
 
   // general mutex for engine state, initialization, and completion condition
-  mutable std::mutex mEngineMutex;
-  std::condition_variable mCompletionCondition;
+  mutable std::mutex m_engineMutex;
+  std::condition_variable m_completionCondition;
 
-  std::function<void(const PortDataMap &finalResults)> mOnResultCallback;
+  std::function<void(const PortDataMap &finalResults)> m_onResultCallback;
   std::function<void(const std::string &errorMsg, const std::string &nodeName)>
-      mOnErrorCallback;
+      m_onErrorCallback;
 
-  std::vector<std::shared_ptr<ILogicNode>> mSinkNodes;
-  PortDataMap mAccumulatedFinalResults;
-  std::mutex mFinalResultsMutex;
+  std::vector<std::shared_ptr<ILogicNode>> m_sinkNodes;
+  PortDataMap m_accumulatedFinalResults;
+  std::mutex m_finalResultsMutex;
 };
 } // namespace ai_pipe
 
