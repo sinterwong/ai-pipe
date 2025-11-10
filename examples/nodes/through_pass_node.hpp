@@ -36,7 +36,7 @@ public:
   std::vector<std::string> getExpectedOutputPorts() const override;
 
 private:
-  ThroughPassNodeParams mParams;
+  ThroughPassNodeParams m_params;
 };
 } // namespace ai_pipe::examples
 

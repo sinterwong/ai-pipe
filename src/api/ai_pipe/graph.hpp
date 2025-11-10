@@ -21,7 +21,7 @@ public:
   Graph() = default;
   ~Graph() = default;
 
-  // 允许 move 但禁止 copy
+  // Allow move, disable copy
   Graph(const Graph &) = delete;
   Graph &operator=(const Graph &) = delete;
   Graph(Graph &&) = default;
@@ -64,18 +64,18 @@ private:
       std::unordered_map<std::shared_ptr<ILogicNode>, int> &visitStatus) const;
 
 private:
-  std::vector<std::shared_ptr<ILogicNode>> nodes_;
-  std::vector<Edge> edges_;
+  std::vector<std::shared_ptr<ILogicNode>> m_nodes;
+  std::vector<Edge> m_edges;
 
-  std::unordered_map<std::string, std::shared_ptr<ILogicNode>> nodeMap_;
+  std::unordered_map<std::string, std::shared_ptr<ILogicNode>> m_nodeMap;
 
   std::unordered_map<std::shared_ptr<ILogicNode>,
                      std::vector<std::shared_ptr<ILogicNode>>>
-      adjListOut_;
+      m_adjListOut;
   std::unordered_map<std::shared_ptr<ILogicNode>,
                      std::vector<std::shared_ptr<ILogicNode>>>
-      adjListIn_;
-  std::unordered_map<std::shared_ptr<ILogicNode>, int> inDegree_;
+      m_adjListIn;
+  std::unordered_map<std::shared_ptr<ILogicNode>, int> m_inDegree;
 };
 
 } // namespace ai_pipe

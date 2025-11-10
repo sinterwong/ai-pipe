@@ -13,20 +13,20 @@
 #include <logger.hpp>
 
 namespace ai_pipe {
-Pipeline::Pipeline() : pImpl_(std::make_unique<Impl>()) {
+Pipeline::Pipeline() : m_pImpl(std::make_unique<Impl>()) {
   LOG_INFOS << "Pipeline default constructed.";
 }
 
 Pipeline::~Pipeline() { LOG_INFOS << "Pipeline destructed."; }
 
 Pipeline::Pipeline(Pipeline &&other) noexcept
-    : pImpl_(std::move(other.pImpl_)) {
+    : m_pImpl(std::move(other.m_pImpl)) {
   LOG_INFOS << "Pipeline move constructed.";
 }
 
 Pipeline &Pipeline::operator=(Pipeline &&other) noexcept {
   if (this != &other) {
-    pImpl_ = std::move(other.pImpl_);
+    m_pImpl = std::move(other.m_pImpl);
   }
   LOG_INFOS << "Pipeline move assigned.";
   return *this;
@@ -35,7 +35,7 @@ Pipeline &Pipeline::operator=(Pipeline &&other) noexcept {
 bool Pipeline::initialize(Graph &&graph,
                           std::shared_ptr<PipelineContext> context,
                           const PipelineConfig &config) {
-  return pImpl_->initialize(std::move(graph), context, config);
+  return m_pImpl->initialize(std::move(graph), context, config);
 }
 
 bool Pipeline::initialize(Graph &&graph,
@@ -43,49 +43,49 @@ bool Pipeline::initialize(Graph &&graph,
                           uint8_t numWorkers) {
   PipelineConfig config;
   config.numWorkers = numWorkers;
-  return pImpl_->initialize(std::move(graph), context, config);
+  return m_pImpl->initialize(std::move(graph), context, config);
 }
 
-bool Pipeline::start() { return pImpl_->start(); }
+bool Pipeline::start() { return m_pImpl->start(); }
 
-bool Pipeline::stop() { return pImpl_->stop(); }
+bool Pipeline::stop() { return m_pImpl->stop(); }
 
-void Pipeline::reset() { pImpl_->reset(); }
+void Pipeline::reset() { m_pImpl->reset(); }
 
 bool Pipeline::feedDataAsync(const PortDataMap &initialInputs) {
-  return pImpl_->feedDataAsync(initialInputs);
+  return m_pImpl->feedDataAsync(initialInputs);
 }
 
 std::future<bool>
 Pipeline::feedDataAndGetResultFuture(const PortDataMap &initialInputs) {
-  return pImpl_->feedDataAndGetResultFuture(initialInputs);
+  return m_pImpl->feedDataAndGetResultFuture(initialInputs);
 }
 
-PipelineState Pipeline::getState() const { return pImpl_->getState(); }
+PipelineState Pipeline::getState() const { return m_pImpl->getState(); }
 
 EngineState Pipeline::getEngineState() const {
-  return pImpl_->getEngineState();
+  return m_pImpl->getEngineState();
 }
 
 std::unordered_map<std::string, NodeExecutionState>
 Pipeline::getNodeStates() const {
-  return pImpl_->getNodeStates();
+  return m_pImpl->getNodeStates();
 }
 
 void Pipeline::setPipelineResultCallback(
     std::function<void(const PortDataMap &finalResults)> callback) {
-  pImpl_->setPipelineResultCallback(std::move(callback));
+  m_pImpl->setPipelineResultCallback(std::move(callback));
 }
 
 void Pipeline::setPipelineErrorCallback(
     std::function<void(const std::string &errorMsg,
                        const std::string &nodeName)>
         callback) {
-  pImpl_->setPipelineErrorCallback(std::move(callback));
+  m_pImpl->setPipelineErrorCallback(std::move(callback));
 }
 
-const Graph &Pipeline::getGraph() const { return pImpl_->getGraph(); }
+const Graph &Pipeline::getGraph() const { return m_pImpl->getGraph(); }
 
-PipelineContext &Pipeline::getContext() { return pImpl_->getContext(); }
+PipelineContext &Pipeline::getContext() { return m_pImpl->getContext(); }
 
 } // namespace ai_pipe
