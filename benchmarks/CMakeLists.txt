@@ -1,24 +1,49 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
-PROJECT(Benchmarks)
+cmake_minimum_required(VERSION 3.16)
 
-SET(DEPENDENCY_INCLUDES
+project(Benchmarks)
+
+# Benchmark source files
+set(BENCHMARK_SOURCES
+    main.cc
+    through_pass.cpp
+)
+
+# Prefix paths
+list(TRANSFORM BENCHMARK_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+
+# Dependency configuration
+set(DEPENDENCY_INCLUDES
     ${OpenCV_INCLUDE_DIRS}
     ${PROJECT_INCLUDE_DIR}
 )
 
-SET(DEPENDENCY_LIBS
+set(DEPENDENCY_LIBS
     logger::logger
-    benchmark::benchmark 
+    benchmark::benchmark
 )
 
-FILE(GLOB CURRENT_DIR_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
+# Configure benchmark output directory
+file(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/benchmarks)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/benchmarks)
 
-MESSAGE(STATUS "Benchmark SOURCES: ${CURRENT_DIR_SRCS}")
+# Build benchmark executable
+add_executable(ai_pipe_benchmarks ${BENCHMARK_SOURCES})
 
-FILE(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/benchmarks)
-SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/benchmarks)
+# Set target properties
+set_target_properties(ai_pipe_benchmarks PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
 
-ADD_EXECUTABLE(ai_pipe_benchmarks ${CURRENT_DIR_SRCS})
-TARGET_INCLUDE_DIRECTORIES(ai_pipe_benchmarks PRIVATE ${DEPENDENCY_INCLUDES})
-TARGET_LINK_LIBRARIES(ai_pipe_benchmarks PRIVATE ${DEPENDENCY_LIBS})
-INSTALL(TARGETS ai_pipe_benchmarks DESTINATION benchmarks)
+# Configure include directories
+target_include_directories(ai_pipe_benchmarks PRIVATE ${DEPENDENCY_INCLUDES})
+
+# Link dependencies
+target_link_libraries(ai_pipe_benchmarks PRIVATE ${DEPENDENCY_LIBS})
+
+# Install benchmark executable
+install(TARGETS ai_pipe_benchmarks
+    DESTINATION benchmarks
+    COMPONENT benchmark
+)

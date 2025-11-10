@@ -1,38 +1,52 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16)
 
-PROJECT(AIPipeExamples VERSION ${AI_PIPE_VERSION})
+project(AIPipeExamples VERSION ${AI_PIPE_VERSION})
 
-SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-FILE(GLOB_RECURSE CURRENT_DIR_SRCS 
-		${CMAKE_CURRENT_SOURCE_DIR}/*.cpp 
-		${CMAKE_CURRENT_SOURCE_DIR}/nodes/*.cpp 
+# Source files
+set(SOURCE_FILES
+    pipeline_builder.cpp
+    nodes/through_pass_node.cpp
 )
 
-SET(DEPENDENCY_INCLUDES
-	${PROJECT_INCLUDE_DIR}
+# Prefix paths
+list(TRANSFORM SOURCE_FILES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+
+# Dependency configuration
+set(DEPENDENCY_INCLUDES
+    ${PROJECT_INCLUDE_DIR}
 )
 
-SET(DEPENDENCY_LIBS
-	ai_pipe::ai_pipe
-	logger::logger
+set(DEPENDENCY_LIBS
+    ai_pipe::ai_pipe
+    logger::logger
 )
 
-# Build Shared Library
-ADD_LIBRARY(ai_pipe_examples SHARED ${CURRENT_DIR_SRCS})
+# Build shared library
+add_library(ai_pipe_examples SHARED ${SOURCE_FILES})
 
-ADD_LIBRARY(ai_pipe::ai_pipe_examples ALIAS ai_pipe_examples)
+add_library(ai_pipe::ai_pipe_examples ALIAS ai_pipe_examples)
 
-TARGET_INCLUDE_DIRECTORIES(ai_pipe_examples 
-	PRIVATE
-		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-		${DEPENDENCY_INCLUDES}
+# Set target properties
+set_target_properties(ai_pipe_examples PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${AI_PIPE_VERSION_MAJOR}
 )
 
-TARGET_LINK_LIBRARIES(ai_pipe_examples PRIVATE ${DEPENDENCY_LIBS})
+# Configure include directories
+target_include_directories(ai_pipe_examples
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        ${DEPENDENCY_INCLUDES}
+)
 
-INSTALL(TARGETS ai_pipe_examples
-    EXPORT ai_export_set
+# Link dependencies
+target_link_libraries(ai_pipe_examples PRIVATE ${DEPENDENCY_LIBS})
+
+# Install library
+install(TARGETS ai_pipe_examples
+    EXPORT ai_pipe_export_set
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT lib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT lib
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT bin

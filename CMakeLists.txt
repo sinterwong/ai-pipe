@@ -1,89 +1,112 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
-SET(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+cmake_minimum_required(VERSION 3.16)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Project setting
-INCLUDE(cmake/utils.cmake)
-AI_PIPE_EXTRACT_VERSION()
+include(cmake/utils.cmake)
+ai_pipe_extract_version()
 
-PROJECT(AIPipe VERSION ${AI_PIPE_VERSION} LANGUAGES CXX)
+project(AIPipe
+    VERSION ${AI_PIPE_VERSION}
+    LANGUAGES CXX
+    DESCRIPTION "AI Pipeline framework for building modular AI applications"
+)
 
-SET(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-INCLUDE(GNUInstallDirs)
-INCLUDE(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-OPTION(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
-OPTION(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
-OPTION(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
+# Build options
+option(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
+option(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
+option(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
 
-MESSAGE(INFO "--------------------------------")
-MESSAGE(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")
-MESSAGE(STATUS "Build with tests: ${BUILD_AI_PIPE_TESTS}")
-MESSAGE(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
-MESSAGE(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
+# Display build configuration
+message(STATUS "================================")
+message(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")
+message(STATUS "Build with tests: ${BUILD_AI_PIPE_TESTS}")
+message(STATUS "Build with examples: ${BUILD_AI_PIPE_EXAMPLES}")
+message(STATUS "Build with benchmarks: ${BUILD_AI_PIPE_BENCHMARKS}")
+message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
-IF(MSVC)
-    ADD_COMPILE_OPTIONS(/utf-8)
-ENDIF()
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
-IF(CMAKE_TOOLCHAIN_FILE)
-    MESSAGE(STATUS "CMAKE_TOOLCHAIN_FILE: ${CMAKE_TOOLCHAIN_FILE}")
-ENDIF()
+if(CMAKE_TOOLCHAIN_FILE)
+    message(STATUS "CMAKE_TOOLCHAIN_FILE: ${CMAKE_TOOLCHAIN_FILE}")
+endif()
 
-# Set default build to debug
-IF(NOT CMAKE_BUILD_TYPE)
-    SET(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose Release, Debug, RelWithDebInfo or MinSizeRel" FORCE)
-ENDIF()
+# Set default build type
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING
+        "Choose Release, Debug, RelWithDebInfo or MinSizeRel" FORCE)
+endif()
 
-IF(NOT TARGET_OS)
-    SET(TARGET_OS ${CMAKE_SYSTEM_NAME})
-ENDIF()
+if(NOT TARGET_OS)
+    set(TARGET_OS ${CMAKE_SYSTEM_NAME})
+endif()
 
-IF(NOT TARGET_ARCH)
-    SET(TARGET_ARCH ${CMAKE_SYSTEM_PROCESSOR})
-ENDIF()
+if(NOT TARGET_ARCH)
+    set(TARGET_ARCH ${CMAKE_SYSTEM_PROCESSOR})
+endif()
 
-MESSAGE(STATUS "Your target os : ${TARGET_OS}")
-MESSAGE(STATUS "Your target arch : ${TARGET_ARCH}")
+message(STATUS "Target OS: ${TARGET_OS}")
+message(STATUS "Target architecture: ${TARGET_ARCH}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-MESSAGE(STATUS "Build type: " ${CMAKE_BUILD_TYPE})
+# Load 3rdparty dependencies
+message(STATUS "================================")
+message(STATUS "Loading 3rdparty libraries...")
+include(cmake/load_3rdparty.cmake)
 
-# Set compilation options
-MESSAGE(INFO "--------------------------------")
-INCLUDE(cmake/load_3rdparty.cmake)
-MESSAGE(INFO "Loading 3rdparty libraries")
+# Configure output directories
+set(PROJECT_OUTPUT_DIR ${PROJECT_BINARY_DIR}/${TARGET_ARCH})
+set(PROJECT_INCLUDE_DIR ${PROJECT_OUTPUT_DIR}/include)
 
-SET(PROJECT_OUTPUT_DIR  ${PROJECT_BINARY_DIR}/${TARGET_ARCH})
-SET(PROJECT_INCLUDE_DIR ${PROJECT_OUTPUT_DIR}/include)
+file(MAKE_DIRECTORY ${PROJECT_INCLUDE_DIR})
+file(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin)
 
-FILE(MAKE_DIRECTORY ${PROJECT_INCLUDE_DIR})
-FILE(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin)
+message(STATUS "System architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+message(STATUS "Output path: ${PROJECT_OUTPUT_DIR}")
 
-MESSAGE("-- system arch:  ${CMAKE_SYSTEM_PROCESSOR}")
-MESSAGE("-- output path:  ${PROJECT_OUTPUT_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/lib)
 
-SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin)
-SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/lib)
-SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/lib)
+# Build subdirectories
+message(STATUS "================================")
+message(STATUS "Building 3rdparty libraries...")
+add_subdirectory(3rdparty)
 
-# Build 3rdparty
-MESSAGE(INFO "3rdparty libraries has loaded.")
-MESSAGE(INFO "--------------------------------")
-ADD_SUBDIRECTORY(3rdparty)
+message(STATUS "================================")
+message(STATUS "Building AIPipe library...")
+add_subdirectory(src)
 
-# Build application
-MESSAGE(INFO "--------------------------------")
-ADD_SUBDIRECTORY(src)
+if(BUILD_AI_PIPE_TESTS)
+    message(STATUS "================================")
+    message(STATUS "Building tests...")
+    add_subdirectory(tests)
+endif()
 
-IF(BUILD_AI_PIPE_TESTS)
-    MESSAGE(INFO "--------------------------------")
-    ADD_SUBDIRECTORY(tests)
-ENDIF()
+if(BUILD_AI_PIPE_EXAMPLES)
+    message(STATUS "================================")
+    message(STATUS "Building examples...")
+    add_subdirectory(examples)
+endif()
 
-IF(BUILD_AI_PIPE_EXAMPLES)
-    MESSAGE(INFO "--------------------------------")
-    ADD_SUBDIRECTORY(examples)
-ENDIF()
+if(BUILD_AI_PIPE_BENCHMARKS)
+    message(STATUS "================================")
+    message(STATUS "Building benchmarks...")
+    add_subdirectory(benchmarks)
+endif()
 
-message(INFO "--------- Install Resource --------")
+message(STATUS "================================")
+message(STATUS "Installing resources...")
 add_subdirectory(assets)
+
+message(STATUS "================================")
+message(STATUS "CMake configuration completed successfully!")
