@@ -1,124 +1,160 @@
-# Specialized libraries can be compiled separately, softinked to the 3RDPARTY_DIR, and then handled independently.
-SET(3RDPARTY_ROOT ${PROJECT_SOURCE_DIR}/3rdparty)
-SET(3RDPARTY_DIR ${PROJECT_SOURCE_DIR}/3rdparty/target/${TARGET_OS}_${TARGET_ARCH})
-MESSAGE(STATUS "3RDPARTY_DIR: ${3RDPARTY_DIR}")
+# Modern 3rdparty library loading functions
+# Specialized libraries can be compiled separately, softlinked to the 3RDPARTY_DIR,
+# and then handled independently.
 
-MACRO(LOAD_OPENCV)
-    SET(OPENCV_HOME ${3RDPARTY_DIR}/opencv)
-    
-    IF (TARGET_OS STREQUAL "Android")
-        SET(OpenCV_INCLUDE_DIRS ${OPENCV_HOME}/jni/include)
-        SET(OpenCV_LIBRARY_DIRS ${OPENCV_HOME}/staticlibs/${ANDROID_ABI})
-        SET(OpenCV_3RDPARTY_LIBRARY_DIRS ${OPENCV_HOME}/3rdparty/libs/${ANDROID_ABI})
+set(3RDPARTY_ROOT ${PROJECT_SOURCE_DIR}/3rdparty)
+set(3RDPARTY_DIR ${PROJECT_SOURCE_DIR}/3rdparty/target/${TARGET_OS}_${TARGET_ARCH})
+message(STATUS "3RDPARTY_DIR: ${3RDPARTY_DIR}")
 
-        FILE(GLOB OpenCV_LIBS
+# Load OpenCV library
+function(load_opencv)
+    set(OPENCV_HOME ${3RDPARTY_DIR}/opencv)
+
+    if(TARGET_OS STREQUAL "Android")
+        set(OpenCV_INCLUDE_DIRS ${OPENCV_HOME}/jni/include PARENT_SCOPE)
+        set(OpenCV_LIBRARY_DIRS ${OPENCV_HOME}/staticlibs/${ANDROID_ABI})
+        set(OpenCV_3RDPARTY_LIBRARY_DIRS ${OPENCV_HOME}/3rdparty/libs/${ANDROID_ABI})
+
+        file(GLOB opencv_libs
             "${OpenCV_LIBRARY_DIRS}/*.a"
             "${OpenCV_3RDPARTY_LIBRARY_DIRS}/*.a"
         )
-        MESSAGE(STATUS "Opencv libraries: ${OpenCV_LIBS}")
-    ELSEIF(TARGET_OS STREQUAL "Windows")
-        SET(OpenCV_LIBRARY_DIR ${OPENCV_HOME}/build)
-        LIST(APPEND CMAKE_PREFIX_PATH ${OpenCV_LIBRARY_DIR})
-        FIND_PACKAGE(OpenCV)
+        set(OpenCV_LIBS ${opencv_libs} PARENT_SCOPE)
+        message(STATUS "OpenCV libraries: ${opencv_libs}")
 
-        IF(OpenCV_INCLUDE_DIRS)
-            MESSAGE(STATUS "Opencv library status:")
-            MESSAGE(STATUS "Opencv include path: ${OpenCV_INCLUDE_DIRS}")
-            MESSAGE(STATUS "Opencv libraries dir: ${OpenCV_LIBRARY_DIR}")
-            MESSAGE(STATUS "Opencv libraries: ${OpenCV_LIBS}")
-        ELSE()
-            MESSAGE(FATAL_ERROR "OpenCV not found!")
-        ENDIF()
-    
-        LINK_DIRECTORIES(
-            ${OpenCV_LIBRARY_DIR}
+    elseif(TARGET_OS STREQUAL "Windows")
+        set(OpenCV_LIBRARY_DIR ${OPENCV_HOME}/build)
+        list(APPEND CMAKE_PREFIX_PATH ${OpenCV_LIBRARY_DIR})
+        find_package(OpenCV REQUIRED)
+
+        if(OpenCV_FOUND)
+            message(STATUS "OpenCV library status:")
+            message(STATUS "  Include path: ${OpenCV_INCLUDE_DIRS}")
+            message(STATUS "  Libraries dir: ${OpenCV_LIBRARY_DIR}")
+            message(STATUS "  Libraries: ${OpenCV_LIBS}")
+
+            set(OpenCV_INCLUDE_DIRS ${OpenCV_INCLUDE_DIRS} PARENT_SCOPE)
+            set(OpenCV_LIBS ${OpenCV_LIBS} PARENT_SCOPE)
+        else()
+            message(FATAL_ERROR "OpenCV not found!")
+        endif()
+
+    else()
+        # Linux and other platforms
+        set(OpenCV_LIBRARY_DIR ${OPENCV_HOME}/lib)
+        list(APPEND CMAKE_PREFIX_PATH ${OpenCV_LIBRARY_DIR}/cmake)
+        find_package(OpenCV CONFIG REQUIRED
+            COMPONENTS core imgproc highgui video videoio imgcodecs calib3d)
+
+        if(OpenCV_FOUND)
+            message(STATUS "OpenCV library status:")
+            message(STATUS "  Include path: ${OpenCV_INCLUDE_DIRS}")
+            message(STATUS "  Libraries dir: ${OpenCV_LIBRARY_DIR}")
+            message(STATUS "  Libraries: ${OpenCV_LIBS}")
+
+            set(OpenCV_INCLUDE_DIRS ${OpenCV_INCLUDE_DIRS} PARENT_SCOPE)
+            set(OpenCV_LIBS ${OpenCV_LIBS} PARENT_SCOPE)
+        else()
+            message(FATAL_ERROR "OpenCV not found!")
+        endif()
+    endif()
+endfunction()
+
+# Load Google Test library
+function(load_gtest)
+    set(GTEST_HOME ${3RDPARTY_DIR}/gtest)
+    message(STATUS "GTEST_HOME: ${GTEST_HOME}")
+
+    set(GTEST_INCLUDE_DIRS "${GTEST_HOME}/include" PARENT_SCOPE)
+    set(GTEST_LIB_DIR "${GTEST_HOME}/lib")
+
+    # Create imported targets if they don't exist
+    if(NOT TARGET GTest::gtest)
+        add_library(GTest::gtest UNKNOWN IMPORTED)
+        set_target_properties(GTest::gtest PROPERTIES
+            IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgtest.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${GTEST_HOME}/include"
         )
+    endif()
 
-    ELSE()
-        SET(OpenCV_LIBRARY_DIR ${OPENCV_HOME}/lib)
-        LIST(APPEND CMAKE_PREFIX_PATH ${OpenCV_LIBRARY_DIR}/cmake)
-        FIND_PACKAGE(OpenCV CONFIG REQUIRED COMPONENTS core imgproc highgui video videoio imgcodecs calib3d)
-        
-        IF(OpenCV_INCLUDE_DIRS)
-            MESSAGE(STATUS "Opencv library status:")
-            MESSAGE(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
-            MESSAGE(STATUS "    libraries dir: ${OpenCV_LIBRARY_DIR}")
-            MESSAGE(STATUS "    libraries: ${OpenCV_LIBS}")
-        ELSE()
-            MESSAGE(FATAL_ERROR "OpenCV not found!")
-        ENDIF()
-    
-        LINK_DIRECTORIES(
-            ${OpenCV_LIBRARY_DIR}
+    if(NOT TARGET GTest::gmock)
+        add_library(GTest::gmock UNKNOWN IMPORTED)
+        set_target_properties(GTest::gmock PROPERTIES
+            IMPORTED_LOCATION "${GTEST_LIB_DIR}/libgmock.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${GTEST_HOME}/include"
         )
-    ENDIF()
-ENDMACRO()
+    endif()
+endfunction()
 
-MACRO(LOAD_GTEST)
-    SET(GTEST_HOME ${3RDPARTY_DIR}/gtest)
-    MESSAGE(STATUS "GTEST_HOME: ${GTEST_HOME}")
+# Load yaml-cpp library
+function(load_yaml)
+    set(YAML_HOME ${3RDPARTY_DIR}/yaml-cpp)
 
-    SET(GTEST_INCLUDE_DIRS "${GTEST_HOME}/include")
-    SET(GTEST_LIB_DIR "${GTEST_HOME}/lib")
+    if(TARGET_OS STREQUAL "Android")
+        list(APPEND CMAKE_FIND_ROOT_PATH ${YAML_HOME}/lib/cmake)
+    else()
+        list(APPEND CMAKE_PREFIX_PATH ${YAML_HOME}/lib/cmake)
+    endif()
 
-    SET(GTEST_LIBS
-        gtest
-        gmock
-    )
-    LINK_DIRECTORIES(${GTEST_LIB_DIR})
-ENDMACRO()
+    find_package(yaml-cpp REQUIRED)
 
-MACRO(LOAD_YAML)
-    SET(YAML_HOME ${3RDPARTY_DIR}/yaml-cpp)
-    IF (TARGET_OS STREQUAL "Android")
-        SET(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${YAML_HOME}/lib/cmake)
-    ELSE()
-        LIST(APPEND CMAKE_PREFIX_PATH ${YAML_HOME}/lib/cmake)
-    ENDIF()
-    FIND_PACKAGE(yaml-cpp)
+    if(NOT yaml-cpp_FOUND)
+        message(FATAL_ERROR "yaml-cpp not found!")
+    endif()
 
-    IF(NOT yaml-cpp_FOUND)
-        MESSAGE(FATAL_ERROR "yaml-cpp not found!")
-    ENDIF()
-ENDMACRO()
+    message(STATUS "yaml-cpp found successfully")
+endfunction()
 
-MACRO(LOAD_LOGGER)
-    SET(LOGGER_HOME ${3RDPARTY_DIR}/logger)
-    IF (TARGET_OS STREQUAL "Android")
-        SET(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${LOGGER_HOME}/share/logger)
-    ELSE()
-        LIST(APPEND CMAKE_PREFIX_PATH ${LOGGER_HOME}/share/logger)
-    ENDIF()
+# Load logger library
+function(load_logger)
+    set(LOGGER_HOME ${3RDPARTY_DIR}/logger)
 
-    FIND_PACKAGE(logger)
+    if(TARGET_OS STREQUAL "Android")
+        list(APPEND CMAKE_FIND_ROOT_PATH ${LOGGER_HOME}/share/logger)
+    else()
+        list(APPEND CMAKE_PREFIX_PATH ${LOGGER_HOME}/share/logger)
+    endif()
 
-    IF(NOT logger_FOUND)
-        MESSAGE(FATAL_ERROR "logger not found!")
-    ENDIF()
-ENDMACRO()
+    find_package(logger REQUIRED)
 
-MACRO(LOAD_AI_CORE)
-    SET(AI_CORE_HOME ${3RDPARTY_DIR}/ai_core)
-    IF (TARGET_OS STREQUAL "Android")
-        SET(CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH} ${AI_CORE_HOME}/share)
-    ELSE()
-        LIST(APPEND CMAKE_PREFIX_PATH ${AI_CORE_HOME}/share)
-    ENDIF()
-    FIND_PACKAGE(ai_core)
+    if(NOT logger_FOUND)
+        message(FATAL_ERROR "logger not found!")
+    endif()
 
-    IF(NOT ai_core_FOUND)
-        MESSAGE(FATAL_ERROR "ai_core not found!")
-    ENDIF()
-ENDMACRO()
+    message(STATUS "logger found successfully")
+endfunction()
 
-MACRO(LOAD_ANDROID_ENV)
-    SET(ANDROID_JIN_INCLUDE_DIR "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include")
-    SET(ANDROID_JIN_LIBS_DIR "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${TARGET_ARCH}-linux-android/24")
-    SET(ANDROID_JIN_LIBS 
-        android
-        log
-        z
-        dl
-    )
-    LINK_DIRECTORIES(${ANDROID_JIN_LIBS_DIR})
-ENDMACRO()
+# Load ai_core library
+function(load_ai_core)
+    set(AI_CORE_HOME ${3RDPARTY_DIR}/ai_core)
+
+    if(TARGET_OS STREQUAL "Android")
+        list(APPEND CMAKE_FIND_ROOT_PATH ${AI_CORE_HOME}/share)
+    else()
+        list(APPEND CMAKE_PREFIX_PATH ${AI_CORE_HOME}/share)
+    endif()
+
+    find_package(ai_core REQUIRED)
+
+    if(NOT ai_core_FOUND)
+        message(FATAL_ERROR "ai_core not found!")
+    endif()
+
+    message(STATUS "ai_core found successfully")
+endfunction()
+
+# Load Android environment dependencies
+function(load_android_env)
+    set(ANDROID_JNI_INCLUDE_DIR
+        "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+        PARENT_SCOPE)
+    set(ANDROID_JNI_LIBS_DIR
+        "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${TARGET_ARCH}-linux-android/24"
+        PARENT_SCOPE)
+
+    # Create imported targets for Android system libraries
+    set(android_libs android log z dl)
+    set(ANDROID_JNI_LIBS ${android_libs} PARENT_SCOPE)
+
+    message(STATUS "Android environment configured")
+endfunction()

@@ -1,14 +1,25 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
-PROJECT(Tests)
+cmake_minimum_required(VERSION 3.16)
 
-SET(DEPENDENCY_INCLUDES
+project(Tests)
+
+# Test source files
+set(TEST_SOURCES
+    main.cc
+    test_through_pass.cpp
+)
+
+# Prefix paths
+list(TRANSFORM TEST_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+
+# Dependency configuration
+set(DEPENDENCY_INCLUDES
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../examples
     ${PROJECT_INCLUDE_DIR}
 )
 
-SET(DEPENDENCY_LIBS
+set(DEPENDENCY_LIBS
     ai_pipe::ai_pipe_examples
     ai_pipe::ai_pipe
     logger::logger
@@ -17,17 +28,28 @@ SET(DEPENDENCY_LIBS
     ${OpenCV_LIBS}
 )
 
-FILE(GLOB CURRENT_DIR_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
+# Configure test output directory
+file(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
 
-MESSAGE(STATUS "APP SOURCES: ${CURRENT_DIR_SRCS}")
+# Build test executable
+add_executable(ai_pipe_tests ${TEST_SOURCES})
 
-FILE(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
-SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
+# Set target properties
+set_target_properties(ai_pipe_tests PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
 
-ADD_EXECUTABLE(ai_pipe_tests ${CURRENT_DIR_SRCS})
+# Configure include directories
+target_include_directories(ai_pipe_tests PRIVATE ${DEPENDENCY_INCLUDES})
 
-TARGET_INCLUDE_DIRECTORIES(ai_pipe_tests PRIVATE ${DEPENDENCY_INCLUDES})
+# Link dependencies
+target_link_libraries(ai_pipe_tests PRIVATE ${DEPENDENCY_LIBS})
 
-TARGET_LINK_LIBRARIES(ai_pipe_tests PRIVATE ${DEPENDENCY_LIBS})
-
-INSTALL(TARGETS ai_pipe_tests DESTINATION tests)
+# Install test executable
+install(TARGETS ai_pipe_tests
+    DESTINATION tests
+    COMPONENT test
+)
