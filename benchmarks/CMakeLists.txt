@@ -15,9 +15,13 @@ list(TRANSFORM BENCHMARK_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 set(DEPENDENCY_INCLUDES
     ${OpenCV_INCLUDE_DIRS}
     ${PROJECT_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/api
+    ${CMAKE_SOURCE_DIR}/src/api/ai_pipe
 )
 
 set(DEPENDENCY_LIBS
+    ai_pipe::ai_pipe
     logger::logger
     benchmark::benchmark
 )
