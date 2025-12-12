@@ -7,7 +7,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Public headers (API)
 set(PUBLIC_HEADERS
     api/ai_pipe/ai_pipe_version.hpp
-    api/ai_pipe/config.hpp
     api/ai_pipe/context.hpp
     api/ai_pipe/data_packet.hpp
     api/ai_pipe/edge.hpp
@@ -32,7 +31,7 @@ set(PRIVATE_HEADERS
 set(SOURCE_FILES
     default_execution_engine.cpp
     graph.cpp
-    pipeline.cpp
+    context.cpp
     pipeline_impl.cpp
 )
 

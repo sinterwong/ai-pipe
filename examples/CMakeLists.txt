@@ -6,7 +6,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Source files
 set(SOURCE_FILES
-    pipeline_builder.cpp
+    pipeline_config_builder.cpp
     nodes/through_pass_node.cpp
 )
 

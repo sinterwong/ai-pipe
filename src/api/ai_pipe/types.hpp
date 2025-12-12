@@ -9,8 +9,8 @@
  *
  */
 
-#ifndef __AI_PIPE_TYPES_HPP__
-#define __AI_PIPE_TYPES_HPP__
+#ifndef _AI_PIPE_TYPES_HPP
+#define _AI_PIPE_TYPES_HPP
 
 #include "ai_pipe/data_packet.hpp"
 #include <map>
