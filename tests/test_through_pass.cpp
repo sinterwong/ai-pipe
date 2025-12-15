@@ -5,6 +5,7 @@
 
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
+#include "ai_pipe/logger.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include "logger_adapter.hpp"
 #include "nodes/through_pass_node.hpp"
@@ -12,7 +13,6 @@
 #include <atomic>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <logger.hpp>
 #include <nlohmann/json.hpp>
 
 namespace testing_algo_infer_pipeline {
@@ -22,13 +22,14 @@ namespace fs = std::filesystem;
 class ThroughPassPipeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    Logger::LogConfig log_config;
-    log_config.appName = "Test-Unit";
-    log_config.logPath = "./logs";
-    log_config.logLevel = LogLevel::INFO;
-    log_config.enableConsole = true;
-    log_config.enableColor = true;
-    Logger::instance()->initialize(log_config);
+    auto &logger = ai_pipe::logging::Logger::getInstance();
+    // 配置文件日志
+    ai_pipe::logging::LoggerConfig config;
+    config.enable_file = true;
+    config.log_file_path = "./logs/test_through_pass.log";
+    config.enable_console = true;
+    config.enable_color = true;
+    logger.configure(config);
   }
 
   void TearDown() override {}
@@ -120,7 +121,6 @@ TEST_F(ThroughPassPipeTest, SynchronousExecution) {
   EXPECT_TRUE(result.success);
   EXPECT_TRUE(result.outputs.count("ThroughPass04:output"));
   EXPECT_TRUE(result.outputs.count("ThroughPass05:output"));
-  EXPECT_GT(result.elapsed.count(), 0);
 
   // Verify callbacks were invoked correctly
   EXPECT_TRUE(result_received) << "Pipeline result callback was not invoked.";

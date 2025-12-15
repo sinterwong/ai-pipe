@@ -1,7 +1,3 @@
-[submodule "3rdparty/logger"]
-	path = 3rdparty/logger
-	url = https://github.com/sinterwong/logger.git
-  branch = master
 [submodule "3rdparty/googletest"]
 	path = 3rdparty/googletest
 	url = https://github.com/google/googletest.git

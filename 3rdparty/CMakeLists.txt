@@ -5,14 +5,6 @@ project(AIPipe3rdparty)
 # Create include directory if it doesn't exist
 file(MAKE_DIRECTORY ${PROJECT_INCLUDE_DIR})
 
-# Build logger library
-if(NOT TARGET logger)
-    message(STATUS "Adding logger subdirectory...")
-    add_subdirectory(logger EXCLUDE_FROM_ALL)
-else()
-    message(STATUS "logger target already exists. Skipping.")
-endif()
-
 # Build Google Test library (for tests)
 set(OLD_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
 set(BUILD_SHARED_LIBS OFF)

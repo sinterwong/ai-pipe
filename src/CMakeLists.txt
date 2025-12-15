@@ -15,6 +15,7 @@ set(PUBLIC_HEADERS
     api/ai_pipe/pipeline.hpp
     api/ai_pipe/type_safe_factory.hpp
     api/ai_pipe/types.hpp
+    api/ai_pipe/logger.hpp
 )
 
 # Private headers (implementation)
@@ -25,6 +26,7 @@ set(PRIVATE_HEADERS
     pipeline_impl.hpp
     thread_pool.hpp
     thread_safe_queue.hpp
+    logger_adapter.hpp
 )
 
 # Source files
@@ -33,6 +35,7 @@ set(SOURCE_FILES
     graph.cpp
     context.cpp
     pipeline_impl.cpp
+    logger.cpp
 )
 
 # Prefix paths for organization
@@ -47,7 +50,6 @@ set(DEPENDENCY_INCLUDES
 )
 
 set(DEPENDENCY_LIBS
-    logger::logger
 )
 
 # Build shared library

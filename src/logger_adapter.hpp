@@ -22,7 +22,7 @@
 #define AI_PIPE_GLOG_LOGGER_ADAPTER_HPP
 
 #include "ai_pipe/context.hpp"
-#include <logger.hpp>
+#include "ai_pipe/logger.hpp"
 
 namespace ai_pipe {
 
@@ -54,8 +54,7 @@ public:
     // Route to appropriate glog level
     switch (level) {
     case PipeLogLevel::kDebug:
-      // Use DEBUG level if available, otherwise INFO
-      LOG_INFOS << "[DEBUG] " << formatted;
+      LOG_DEBUGS << formatted;
       break;
 
     case PipeLogLevel::kInfo:

@@ -22,7 +22,6 @@ set(DEPENDENCY_INCLUDES
 
 set(DEPENDENCY_LIBS
     ai_pipe::ai_pipe
-    logger::logger
     benchmark::benchmark
 )
 

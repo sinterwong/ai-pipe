@@ -9,9 +9,9 @@
  */
 
 #include "pipeline_config_builder.hpp"
+#include "ai_pipe/logger.hpp"
 #include "node_registrar.hpp"
 #include <fstream>
-#include <logger.hpp>
 #include <nlohmann/json.hpp>
 
 namespace ai_pipe::examples {
