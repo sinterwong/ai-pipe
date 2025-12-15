@@ -9,13 +9,12 @@
  *
  */
 
+#include "ai_pipe/logger.hpp"
 #include "benchmark_node.hpp"
 #include "default_execution_engine.hpp"
 #include "graph.hpp"
 #include <benchmark/benchmark.h>
-#include <logger.hpp>
 #include <memory>
-#include <sstream>
 
 using namespace ai_pipe;
 using namespace ai_pipe::bench;
@@ -39,8 +38,8 @@ Graph createLinearGraph(int numNodes, int64_t delayMicros = 0) {
 
   std::vector<std::shared_ptr<BenchmarkNode>> nodes;
   for (int i = 0; i < numNodes; ++i) {
-    auto node =
-        std::make_shared<BenchmarkNode>("Node" + std::to_string(i), delayMicros);
+    auto node = std::make_shared<BenchmarkNode>("Node" + std::to_string(i),
+                                                delayMicros);
     nodes.push_back(node);
     graph.addNode(node);
   }
@@ -78,8 +77,8 @@ Graph createParallelGraph(int numParallel, int64_t delayMicros = 0) {
   // Parallel nodes
   std::vector<std::shared_ptr<BenchmarkNode>> parallelNodes;
   for (int i = 0; i < numParallel; ++i) {
-    auto node = std::make_shared<BenchmarkNode>(
-        "Parallel" + std::to_string(i), delayMicros);
+    auto node = std::make_shared<BenchmarkNode>("Parallel" + std::to_string(i),
+                                                delayMicros);
     parallelNodes.push_back(node);
     graph.addNode(node);
     graph.addEdge("Source", "output", "Parallel" + std::to_string(i), "input");
@@ -121,8 +120,8 @@ Graph createDiamondGraph(int depth = 2, int64_t delayMicros = 0) {
   // Left branch
   std::vector<std::shared_ptr<BenchmarkNode>> leftBranch;
   for (int i = 0; i < depth; ++i) {
-    auto node =
-        std::make_shared<BenchmarkNode>("Left" + std::to_string(i), delayMicros);
+    auto node = std::make_shared<BenchmarkNode>("Left" + std::to_string(i),
+                                                delayMicros);
     leftBranch.push_back(node);
     graph.addNode(node);
   }
@@ -131,7 +130,7 @@ Graph createDiamondGraph(int depth = 2, int64_t delayMicros = 0) {
   std::vector<std::shared_ptr<BenchmarkNode>> rightBranch;
   for (int i = 0; i < depth; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Right" + std::to_string(i),
-                                                 delayMicros);
+                                                delayMicros);
     rightBranch.push_back(node);
     graph.addNode(node);
   }
@@ -180,13 +179,13 @@ static void BM_LinearPipeline(benchmark::State &state) {
   // Setup logger (only once)
   static bool loggerInitialized = false;
   if (!loggerInitialized) {
-    Logger::LogConfig logConfig;
-    logConfig.appName = "Benchmark";
-    logConfig.logPath = "./logs";
-    logConfig.logLevel = LogLevel::ERROR; // Reduce log noise
-    logConfig.enableConsole = false;
-    Logger::instance()->initialize(logConfig);
-    loggerInitialized = true;
+    auto &logger = ai_pipe::logging::Logger::getInstance();
+    ai_pipe::logging::LoggerConfig config;
+    config.enable_file = true;
+    config.log_file_path = "./logs/benchmark";
+    config.enable_console = true;
+    config.enable_color = true;
+    logger.configure(config);
   }
 
   // Create graph
@@ -261,18 +260,19 @@ static void BM_ParallelExecution(benchmark::State &state) {
     engine.reset();
   }
 
-  state.SetItemsProcessed(state.iterations() * (numParallel + 2)); // +source +sink
+  state.SetItemsProcessed(state.iterations() *
+                          (numParallel + 2)); // +source +sink
   state.SetLabel("parallel=" + std::to_string(numParallel) +
                  ",delay=" + std::to_string(delayMicros) + "us");
 }
 
 BENCHMARK(BM_ParallelExecution)
-    ->Args({2, 0})    // 2 parallel branches, no delay
-    ->Args({4, 0})    // 4 parallel branches, no delay
-    ->Args({8, 0})    // 8 parallel branches, no delay
-    ->Args({2, 100})  // 2 parallel branches, 100us delay
-    ->Args({4, 100})  // 4 parallel branches, 100us delay
-    ->Args({8, 100})  // 8 parallel branches, 100us delay
+    ->Args({2, 0})   // 2 parallel branches, no delay
+    ->Args({4, 0})   // 4 parallel branches, no delay
+    ->Args({8, 0})   // 8 parallel branches, no delay
+    ->Args({2, 100}) // 2 parallel branches, 100us delay
+    ->Args({4, 100}) // 4 parallel branches, 100us delay
+    ->Args({8, 100}) // 8 parallel branches, 100us delay
     ->Unit(benchmark::kMicrosecond);
 
 // ============================================================================
@@ -359,10 +359,10 @@ static void BM_DiamondPattern(benchmark::State &state) {
 }
 
 BENCHMARK(BM_DiamondPattern)
-    ->Args({2, 0})   // depth=2, no delay
-    ->Args({4, 0})   // depth=4, no delay
-    ->Args({2, 50})  // depth=2, 50us delay
-    ->Args({4, 50})  // depth=4, 50us delay
+    ->Args({2, 0})  // depth=2, no delay
+    ->Args({4, 0})  // depth=4, no delay
+    ->Args({2, 50}) // depth=2, 50us delay
+    ->Args({4, 50}) // depth=4, 50us delay
     ->Unit(benchmark::kMicrosecond);
 
 // ============================================================================
@@ -517,8 +517,8 @@ static void BM_ComplexGraph(benchmark::State &state) {
   // Stage 2: Fan-out to 3 nodes
   std::vector<std::shared_ptr<BenchmarkNode>> stage2Nodes;
   for (int i = 0; i < 3; ++i) {
-    auto node =
-        std::make_shared<BenchmarkNode>("Stage2_" + std::to_string(i), delayMicros);
+    auto node = std::make_shared<BenchmarkNode>("Stage2_" + std::to_string(i),
+                                                delayMicros);
     stage2Nodes.push_back(node);
     graph.addNode(node);
     graph.addEdge("Stage1", "output", "Stage2_" + std::to_string(i), "input");
@@ -567,8 +567,8 @@ static void BM_ComplexGraph(benchmark::State &state) {
 
   int totalNodes = 1 + 3 + 6 + 1; // stage1 + stage2 + stage3 + stage4
   state.SetItemsProcessed(state.iterations() * totalNodes);
-  state.SetLabel("delay=" + std::to_string(delayMicros) + "us,nodes=" +
-                 std::to_string(totalNodes));
+  state.SetLabel("delay=" + std::to_string(delayMicros) +
+                 "us,nodes=" + std::to_string(totalNodes));
 }
 
 BENCHMARK(BM_ComplexGraph)

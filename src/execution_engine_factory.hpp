@@ -9,16 +9,13 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP__
-#define __AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP__
+#ifndef AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP
+#define AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP
 
 #include "ai_pipe/data_packet.hpp"
 #include "ai_pipe/type_safe_factory.hpp"
 #include "execution_engine_base.hpp"
-#include <functional>
-#include <map>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 namespace ai_pipe {
@@ -45,8 +42,8 @@ using EngineConstructParams = common_utils::DataPacket;
  */
 #define AI_PIPE_REGISTER_ENGINE(EngineType, EngineClass)                       \
   namespace {                                                                  \
-  [[maybe_unused]] const auto ___##EngineType##Registration__ =               \
-      ai_pipe::ExecutionEngineFactory::instance().registerCreator(            \
+  [[maybe_unused]] const auto ___##EngineType##Registration__ =                \
+      ai_pipe::ExecutionEngineFactory::instance().registerCreator(             \
           #EngineType,                                                         \
           [](const ai_pipe::EngineConstructParams &)                           \
               -> std::shared_ptr<ai_pipe::IExecutionEngine> {                  \

@@ -22,7 +22,6 @@ set(DEPENDENCY_INCLUDES
 set(DEPENDENCY_LIBS
     ai_pipe::ai_pipe_examples
     ai_pipe::ai_pipe
-    logger::logger
     GTest::gtest
     GTest::gtest_main
     ${OpenCV_LIBS}

@@ -9,8 +9,8 @@
  *
  */
 #include "graph.hpp"
+#include "ai_pipe/logger.hpp"
 #include <algorithm>
-#include <logger.hpp>
 
 namespace ai_pipe {
 bool Graph::addNode(const std::shared_ptr<ILogicNode> &node) {

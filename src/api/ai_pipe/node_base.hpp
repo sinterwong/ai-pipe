@@ -8,8 +8,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __PIPE_NODE_BASE_HPP_
-#define __PIPE_NODE_BASE_HPP_
+#ifndef AI_PIPE_I_LOGIC_NODE_HPP
+#define AI_PIPE_I_LOGIC_NODE_HPP
 #include <string>
 #include <vector>
 

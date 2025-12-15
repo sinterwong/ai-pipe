@@ -1,73 +1,137 @@
 /**
  * @file pipeline_impl.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
- * @version 0.1
- * @date 2025-07-04
+ * @brief Pipeline implementation details (internal)
+ * @version 0.3
+ * @date 2025-04-20
  *
  * @copyright Copyright (c) 2025
- *
  */
-#ifndef __PIPE_PIPELINE_IMPL_HPP__
-#define __PIPE_PIPELINE_IMPL_HPP__
+
+#ifndef AI_PIPE_PIPELINE_IMPL_HPP
+#define AI_PIPE_PIPELINE_IMPL_HPP
 
 #include "execution_engine_base.hpp"
 #include "pipeline.hpp"
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <vector>
 
 namespace ai_pipe {
+
+/**
+ * @brief Pipeline implementation using PIMPL idiom
+ */
 class Pipeline::Impl {
 public:
   Impl();
   ~Impl();
 
+  // Non-copyable
   Impl(const Impl &) = delete;
   Impl &operator=(const Impl &) = delete;
 
+  // Movable
   Impl(Impl &&other) noexcept;
   Impl &operator=(Impl &&other) noexcept;
 
+  // -------------------------------------------------------------------------
+  // Initialization
+  // -------------------------------------------------------------------------
+
   bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
-                  const PipelineConfig &config);
+                  const PipelineOptions &options);
 
-  bool start();
+  // -------------------------------------------------------------------------
+  // Execution
+  // -------------------------------------------------------------------------
 
-  bool stop();
+  ExecutionResult run(const PortDataMap &inputs,
+                      std::optional<std::chrono::milliseconds> timeout);
 
+  std::future<ExecutionResult> runAsync(const PortDataMap &inputs);
+
+  bool submit(const PortDataMap &inputs);
+
+  // -------------------------------------------------------------------------
+  // Control
+  // -------------------------------------------------------------------------
+
+  void cancel();
+  void wait();
   void reset();
 
-  bool feedDataAsync(const PortDataMap &initialInputs);
+  // -------------------------------------------------------------------------
+  // Status
+  // -------------------------------------------------------------------------
 
-  std::future<bool>
-  feedDataAndGetResultFuture(const PortDataMap &initialInputs);
+  [[nodiscard]] bool isReady() const;
+  [[nodiscard]] bool isRunning() const;
+  [[nodiscard]] bool hasError() const;
+  [[nodiscard]] PipelineState state() const;
+  [[nodiscard]] EngineState engineState() const;
+  [[nodiscard]] std::unordered_map<std::string, NodeExecutionState>
+  nodeStates() const;
 
-  PipelineState getState() const;
+  // -------------------------------------------------------------------------
+  // Accessors
+  // -------------------------------------------------------------------------
 
-  EngineState getEngineState() const;
+  [[nodiscard]] const Graph &graph() const;
+  [[nodiscard]] PipelineContext &context();
+  [[nodiscard]] const PipelineContext &context() const;
 
-  std::unordered_map<std::string, NodeExecutionState> getNodeStates() const;
+  // -------------------------------------------------------------------------
+  // Observer Management
+  // -------------------------------------------------------------------------
 
-  void setPipelineResultCallback(
-      std::function<void(const PortDataMap &finalResults)> callback);
-
-  void setPipelineErrorCallback(std::function<void(const std::string &errorMsg,
-                                                   const std::string &nodeName)>
-                                    callback);
-
-  const Graph &getGraph() const { return *m_graph; }
-
-  PipelineContext &getContext() { return *m_context; }
+  void addObserver(std::shared_ptr<IPipelineObserver> observer);
+  void removeObserver(const std::shared_ptr<IPipelineObserver> &observer);
 
 private:
+  // -------------------------------------------------------------------------
+  // Internal Helpers
+  // -------------------------------------------------------------------------
+
+  void setupEngineCallbacks();
+  void notifyExecutionStarted();
+  void notifyExecutionCompleted(const PortDataMap &results);
+  void notifyExecutionFailed(const std::string &error,
+                             const std::string &node_name);
+
+  bool validateState(const char *operation) const;
+  void transitionTo(PipelineState new_state);
+
+  ExecutionResult createSuccessResult(const PortDataMap &outputs,
+                                      std::chrono::milliseconds elapsed) const;
+  ExecutionResult createErrorResult(const std::string &message) const;
+
+private:
+  // Core components
   std::unique_ptr<Graph> m_graph;
-  std::shared_ptr<IExecutionEngine> m_executionEngine;
-  std::atomic<PipelineState> m_state;
-
+  std::shared_ptr<IExecutionEngine> m_engine;
   std::shared_ptr<PipelineContext> m_context;
+  PipelineOptions m_options;
 
-  std::function<void(const std::string &errorMsg, const std::string &nodeName)>
-      m_onPipelineError;
-  std::function<void(const PortDataMap &finalResults)> m_onPipelineResult;
+  // State
+  std::atomic<PipelineState> m_state{PipelineState::UNINITIALIZED};
+  mutable std::mutex m_stateMutex;
+
+  // Observers
+  std::vector<std::shared_ptr<IPipelineObserver>> m_observers;
+  mutable std::mutex m_observersMutex;
+
+  // Execution tracking
+  std::chrono::steady_clock::time_point m_executionStart;
+
+  // Result storage for async execution
+  PortDataMap m_lastResults;
+  std::string m_lastError;
+  std::string m_lastErrorNode;
+  std::mutex m_resultsMutex;
 };
+
 } // namespace ai_pipe
 
-#endif
+#endif // AI_PIPE_PIPELINE_IMPL_HPP

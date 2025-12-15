@@ -8,8 +8,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __PIPE_EDGE_HPP__
-#define __PIPE_EDGE_HPP__
+#ifndef AI_PIPE_EDGE_HPP
+#define AI_PIPE_EDGE_HPP
 
 #include "ai_pipe/node_base.hpp"
 #include <memory>

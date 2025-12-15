@@ -7,7 +7,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Public headers (API)
 set(PUBLIC_HEADERS
     api/ai_pipe/ai_pipe_version.hpp
-    api/ai_pipe/config.hpp
     api/ai_pipe/context.hpp
     api/ai_pipe/data_packet.hpp
     api/ai_pipe/edge.hpp
@@ -16,6 +15,7 @@ set(PUBLIC_HEADERS
     api/ai_pipe/pipeline.hpp
     api/ai_pipe/type_safe_factory.hpp
     api/ai_pipe/types.hpp
+    api/ai_pipe/logger.hpp
 )
 
 # Private headers (implementation)
@@ -26,14 +26,16 @@ set(PRIVATE_HEADERS
     pipeline_impl.hpp
     thread_pool.hpp
     thread_safe_queue.hpp
+    logger_adapter.hpp
 )
 
 # Source files
 set(SOURCE_FILES
     default_execution_engine.cpp
     graph.cpp
-    pipeline.cpp
+    context.cpp
     pipeline_impl.cpp
+    logger.cpp
 )
 
 # Prefix paths for organization
@@ -48,7 +50,6 @@ set(DEPENDENCY_INCLUDES
 )
 
 set(DEPENDENCY_LIBS
-    logger::logger
 )
 
 # Build shared library

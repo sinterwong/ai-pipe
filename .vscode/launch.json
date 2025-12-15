@@ -6,6 +6,7 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/install/tests/ai_pipe_tests",
+      // "program": "${workspaceFolder}/install/benchmarks/ai_pipe_benchmarks",
       "args": [
         "--gtest_filter=*.*"
       ],
