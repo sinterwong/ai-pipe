@@ -6,6 +6,7 @@
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/pipeline.hpp"
+#include "logger_adapter.hpp"
 #include "nodes/through_pass_node.hpp"
 #include "pipeline_config_builder.hpp"
 #include <atomic>
@@ -81,6 +82,8 @@ protected:
 TEST_F(ThroughPassPipeTest, SynchronousExecution) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
 
+  context->setLoggerAdapter(std::make_shared<ai_pipe::LoggerAdapter>());
+
   std::atomic<bool> result_received{false};
   std::atomic<bool> error_occurred{false};
   std::string last_error_msg;
@@ -138,6 +141,7 @@ TEST_F(ThroughPassPipeTest, SynchronousExecution) {
 
 TEST_F(ThroughPassPipeTest, AsynchronousExecution) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   std::atomic<bool> result_received{false};
   std::atomic<bool> error_occurred{false};
@@ -192,6 +196,7 @@ TEST_F(ThroughPassPipeTest, AsynchronousExecution) {
 
 TEST_F(ThroughPassPipeTest, FireAndForgetExecution) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   std::atomic<bool> result_received{false};
   std::condition_variable cv;
@@ -237,6 +242,7 @@ TEST_F(ThroughPassPipeTest, FireAndForgetExecution) {
 
 TEST_F(ThroughPassPipeTest, ExecutionWithTimeout) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   auto pipeline = ai_pipe::Pipeline::create()
                       .withGraph(createTestGraph())
@@ -258,6 +264,7 @@ TEST_F(ThroughPassPipeTest, ExecutionWithTimeout) {
 TEST_F(ThroughPassPipeTest, BuildFromJsonConfig) {
   const std::string graph_config_path = confDir / "through_pass_pipe.json";
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   // Build pipeline from JSON config using PipelineConfigBuilder
   auto pipeline = ai_pipe::examples::PipelineConfigBuilder::buildPipeline(
@@ -307,6 +314,7 @@ TEST_F(ThroughPassPipeTest, BuildFromJsonConfig) {
 TEST_F(ThroughPassPipeTest, BuildFromJsonConfigWithOptions) {
   const std::string graph_config_path = confDir / "through_pass_pipe.json";
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   // Custom options override config file
   ai_pipe::PipelineOptions options{
@@ -331,6 +339,7 @@ TEST_F(ThroughPassPipeTest, BuildFromJsonConfigWithOptions) {
 
 TEST_F(ThroughPassPipeTest, TryBuildPipelineInvalidConfig) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
 
   // Try with non-existent file
   auto result = ai_pipe::examples::PipelineConfigBuilder::tryBuildPipeline(
@@ -371,6 +380,8 @@ public:
 
 TEST_F(ThroughPassPipeTest, CustomObserver) {
   auto context = std::make_shared<ai_pipe::PipelineContext>();
+  ai_pipe::setupLoggerAdapter(context);
+
   auto observer = std::make_shared<TestPipelineObserver>();
 
   auto pipeline = ai_pipe::Pipeline::create()

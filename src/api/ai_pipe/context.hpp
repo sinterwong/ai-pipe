@@ -29,7 +29,7 @@ namespace ai_pipe {
 
 // Forward declarations
 class PipelineContext;
-class ScopedContext;
+class ScopedNodeExecution;
 
 // =============================================================================
 // Supporting Types
@@ -91,21 +91,6 @@ struct ExecutionMetrics {
 };
 
 /**
- * @brief Log entry for pipeline execution
- */
-struct LogEntry {
-  enum class Level { kDebug, kInfo, kWarning, kError };
-
-  Level level{Level::kInfo};
-  std::chrono::system_clock::time_point timestamp;
-  std::string node_name;
-  std::string message;
-
-  [[nodiscard]] std::string levelString() const;
-  [[nodiscard]] std::string format() const;
-};
-
-/**
  * @brief Cancellation token for cooperative cancellation
  */
 class CancellationToken {
@@ -144,26 +129,6 @@ public:
   explicit ProgressReporter(ProgressCallback callback = nullptr)
       : m_callback(std::move(callback)) {}
 
-  ProgressReporter(ProgressReporter &&other) noexcept
-      : m_callback(std::move(other.m_callback)),
-        // atomic 不能移动，只能读取旧值来初始化新值
-        m_progress(other.m_progress.load(std::memory_order_relaxed)),
-        m_message(std::move(other.m_message)) {}
-
-  ProgressReporter &operator=(ProgressReporter &&other) noexcept {
-    if (this != &other) {
-      m_callback = std::move(other.m_callback);
-      // atomic 不能移动赋值，只能存入新值
-      m_progress.store(other.m_progress.load(std::memory_order_relaxed),
-                       std::memory_order_relaxed);
-      m_message = std::move(other.m_message);
-    }
-    return *this;
-  }
-
-  ProgressReporter(const ProgressReporter &) = delete;
-  ProgressReporter &operator=(const ProgressReporter &) = delete;
-
   void report(double progress, const std::string &message = "") {
     m_progress.store(progress, std::memory_order_release);
     m_message = message;
@@ -185,6 +150,60 @@ private:
 };
 
 // =============================================================================
+// Logger Adapter Interface
+// =============================================================================
+
+/**
+ * @brief Log level enumeration (matches common logging frameworks)
+ */
+enum class PipeLogLevel { kDebug = 0, kInfo = 1, kWarning = 2, kError = 3 };
+
+/**
+ * @brief Abstract logger adapter interface
+ *
+ * Implement this interface to bridge PipelineContext logging to your
+ * existing logging system (glog, spdlog, etc.)
+ *
+ * Example implementation for glog wrapper:
+ * @code
+ *   class GlogAdapter : public ILoggerAdapter {
+ *   public:
+ *     void log(PipeLogLevel level, const std::string& node_name,
+ *              const std::string& message) override {
+ *       std::string formatted = "[" + node_name + "] " + message;
+ *       switch (level) {
+ *         case PipeLogLevel::kDebug:   LOG_DEBUGS << formatted; break;
+ *         case PipeLogLevel::kInfo:    LOG_INFOS << formatted; break;
+ *         case PipeLogLevel::kWarning: LOG_WARNINGS << formatted; break;
+ *         case PipeLogLevel::kError:   LOG_ERRORS << formatted; break;
+ *       }
+ *     }
+ *   };
+ * @endcode
+ */
+class ILoggerAdapter {
+public:
+  virtual ~ILoggerAdapter() = default;
+
+  /**
+   * @brief Log a message
+   * @param level Log level
+   * @param node_name Name of the node generating the log (may be empty)
+   * @param message Log message
+   */
+  virtual void log(PipeLogLevel level, const std::string &node_name,
+                   const std::string &message) = 0;
+};
+
+/**
+ * @brief Null logger adapter (discards all logs)
+ */
+class NullLoggerAdapter : public ILoggerAdapter {
+public:
+  void log(PipeLogLevel, const std::string &, const std::string &) override {}
+};
+
+// =============================================================================
 // Pipeline Context
 // =============================================================================
 
@@ -195,7 +214,7 @@ private:
  * - Thread-safe resource/service management
  * - Execution tracking and metrics collection
  * - Cancellation support
- * - Logging infrastructure
+ * - Logger adapter (bridges to your logging system)
  * - Configuration management
  * - Progress reporting
  *
@@ -203,16 +222,18 @@ private:
  * @code
  *   auto ctx = std::make_shared<PipelineContext>();
  *
+ *   // Optional: Set logger adapter to bridge to your logger
+ *   ctx->setLoggerAdapter(std::make_shared<GlogAdapter>());
+ *
  *   // Register resources
  *   ctx->setResource("model", model_ptr);
  *   ctx->setService<IInferenceEngine>(engine_ptr);
  *
  *   // In node processing
- *   void process(const PortDataMap& in, PortDataMap& out,
- *                std::shared_ptr<PipelineContext> ctx) {
+ *   void process(..., std::shared_ptr<PipelineContext> ctx) {
  *     ctx->cancellation().throwIfCancelled();
  *     auto model = ctx->getResource<Model>("model");
- *     ctx->log(LogEntry::Level::kInfo, name(), "Processing...");
+ *     ctx->logInfo(name(), "Processing...");  // Goes to your logger
  *   }
  * @endcode
  */
@@ -233,9 +254,6 @@ public:
 
   /**
    * @brief Store a named resource
-   * @tparam T Resource type
-   * @param name Resource name
-   * @param resource Shared pointer to resource
    */
   template <typename T>
   void setResource(const std::string &name, std::shared_ptr<T> resource) {
@@ -245,8 +263,6 @@ public:
 
   /**
    * @brief Retrieve a named resource
-   * @tparam T Expected resource type
-   * @param name Resource name
    * @return Shared pointer to resource, or nullptr if not found/wrong type
    */
   template <typename T>
@@ -273,7 +289,6 @@ public:
 
   /**
    * @brief Remove a resource
-   * @return true if resource was removed
    */
   bool removeResource(const std::string &name) {
     std::unique_lock lock(m_resourceMutex);
@@ -299,8 +314,6 @@ public:
 
   /**
    * @brief Register a service by interface type
-   * @tparam Interface Service interface type
-   * @param service Service implementation
    */
   template <typename Interface>
   void setService(std::shared_ptr<Interface> service) {
@@ -310,8 +323,6 @@ public:
 
   /**
    * @brief Retrieve a service by interface type
-   * @tparam Interface Service interface type
-   * @return Service implementation or nullptr
    */
   template <typename Interface>
   [[nodiscard]] std::shared_ptr<Interface> getService() const {
@@ -349,7 +360,6 @@ public:
 
   /**
    * @brief Get a configuration value
-   * @return Value if exists and correct type, default_value otherwise
    */
   template <typename T>
   [[nodiscard]] T getConfig(const std::string &key,
@@ -379,7 +389,7 @@ public:
   // -------------------------------------------------------------------------
 
   /**
-   * @brief Start a new execution (resets metrics, generates new ID)
+   * @brief Start a new execution
    * @return The new execution ID
    */
   ExecutionId beginExecution();
@@ -412,8 +422,6 @@ public:
 
   /**
    * @brief End tracking metrics for a node
-   * @param success Whether the node succeeded
-   * @param error_message Error message if failed
    */
   void endNodeExecution(const std::string &node_name, bool success = true,
                         const std::string &error_message = "");
@@ -456,51 +464,49 @@ public:
   }
 
   // -------------------------------------------------------------------------
-  // Logging
+  // Logger Adapter
   // -------------------------------------------------------------------------
 
   /**
-   * @brief Log a message
+   * @brief Set the logger adapter
+   *
+   * If not set, logs are discarded (NullLoggerAdapter behavior).
+   * Set this to bridge to your existing logging system.
    */
-  void log(LogEntry::Level level, const std::string &node_name,
-           const std::string &message);
+  void setLoggerAdapter(std::shared_ptr<ILoggerAdapter> adapter) {
+    std::lock_guard<std::mutex> lock(m_loggerMutex);
+    m_loggerAdapter = std::move(adapter);
+  }
+
+  /**
+   * @brief Log a message through the adapter
+   */
+  void log(PipeLogLevel level, const std::string &node_name,
+           const std::string &message) {
+    std::shared_ptr<ILoggerAdapter> adapter;
+    {
+      std::lock_guard<std::mutex> lock(m_loggerMutex);
+      adapter = m_loggerAdapter;
+    }
+    if (adapter) {
+      adapter->log(level, node_name, message);
+    }
+  }
 
   /**
    * @brief Convenience logging methods
    */
   void logDebug(const std::string &node_name, const std::string &message) {
-    log(LogEntry::Level::kDebug, node_name, message);
+    log(PipeLogLevel::kDebug, node_name, message);
   }
   void logInfo(const std::string &node_name, const std::string &message) {
-    log(LogEntry::Level::kInfo, node_name, message);
+    log(PipeLogLevel::kInfo, node_name, message);
   }
   void logWarning(const std::string &node_name, const std::string &message) {
-    log(LogEntry::Level::kWarning, node_name, message);
+    log(PipeLogLevel::kWarning, node_name, message);
   }
   void logError(const std::string &node_name, const std::string &message) {
-    log(LogEntry::Level::kError, node_name, message);
-  }
-
-  /**
-   * @brief Get all log entries for current execution
-   */
-  [[nodiscard]] std::vector<LogEntry> logs() const;
-
-  /**
-   * @brief Get log entries filtered by level
-   */
-  [[nodiscard]] std::vector<LogEntry> logs(LogEntry::Level min_level) const;
-
-  /**
-   * @brief Clear log entries
-   */
-  void clearLogs();
-
-  /**
-   * @brief Set maximum number of log entries to keep (0 = unlimited)
-   */
-  void setMaxLogEntries(std::size_t max_entries) {
-    m_maxLogEntries = max_entries;
+    log(PipeLogLevel::kError, node_name, message);
   }
 
   // -------------------------------------------------------------------------
@@ -574,13 +580,13 @@ public:
   // -------------------------------------------------------------------------
 
   /**
-   * @brief Reset context for new execution (clears metrics, logs, progress)
-   * @note Does NOT clear resources, services, or config
+   * @brief Reset context for new execution (clears metrics, progress)
+   * @note Does NOT clear resources, services, config, or logger adapter
    */
   void resetExecution();
 
   /**
-   * @brief Full reset (clears everything including resources)
+   * @brief Full reset (clears everything except logger adapter)
    */
   void reset();
 
@@ -615,35 +621,24 @@ private:
   // Cancellation
   CancellationToken m_cancellationToken;
 
-  // Logging
-  mutable std::mutex m_logMutex;
-  std::vector<LogEntry> m_logs;
-  std::size_t m_maxLogEntries{1000};
+  // Logger adapter
+  std::mutex m_loggerMutex;
+  std::shared_ptr<ILoggerAdapter> m_loggerAdapter;
 
   // Progress
   std::atomic<double> m_overallProgress{0.0};
   ProgressReporter::ProgressCallback m_progressCallback;
   mutable std::mutex m_progressMutex;
-  std::unordered_map<std::string, ProgressReporter> m_nodeProgressReporters;
+  std::unordered_map<std::string, std::unique_ptr<ProgressReporter>>
+      m_nodeProgressReporters;
 };
 
 // =============================================================================
-// Scoped Context Helper
+// Scoped Node Execution Helper
 // =============================================================================
 
 /**
  * @brief RAII helper for node execution context
- *
- * Automatically tracks node execution metrics and handles errors.
- *
- * Usage:
- * @code
- *   void MyNode::process(..., std::shared_ptr<PipelineContext> ctx) {
- *     ScopedNodeExecution scope(ctx, getName());
- *     // ... node logic ...
- *     // Metrics automatically recorded on scope exit
- *   }
- * @endcode
  */
 class ScopedNodeExecution {
 public:
@@ -667,39 +662,40 @@ public:
   ScopedNodeExecution(ScopedNodeExecution &&) = delete;
   ScopedNodeExecution &operator=(ScopedNodeExecution &&) = delete;
 
-  /**
-   * @brief Mark execution as failed
-   */
   void setFailed(const std::string &error_message = "") {
     m_success = false;
     m_errorMessage = error_message;
   }
 
-  /**
-   * @brief Check cancellation and throw if requested
-   */
   void checkCancellation() const {
     if (m_ctx) {
       m_ctx->cancellation().throwIfCancelled();
     }
   }
 
-  /**
-   * @brief Report progress for this node
-   */
   void reportProgress(double progress, const std::string &message = "") {
     if (m_ctx) {
       m_ctx->progressReporter(m_nodeName).report(progress, message);
     }
   }
 
-  /**
-   * @brief Log a message
-   */
-  void log(LogEntry::Level level, const std::string &message) {
+  void log(PipeLogLevel level, const std::string &message) {
     if (m_ctx) {
       m_ctx->log(level, m_nodeName, message);
     }
+  }
+
+  void logDebug(const std::string &message) {
+    log(PipeLogLevel::kDebug, message);
+  }
+  void logInfo(const std::string &message) {
+    log(PipeLogLevel::kInfo, message);
+  }
+  void logWarning(const std::string &message) {
+    log(PipeLogLevel::kWarning, message);
+  }
+  void logError(const std::string &message) {
+    log(PipeLogLevel::kError, message);
   }
 
 private:
@@ -707,6 +703,53 @@ private:
   std::string m_nodeName;
   bool m_success;
   std::string m_errorMessage;
+};
+
+// =============================================================================
+// Common Logger Adapters
+// =============================================================================
+
+/**
+ * @brief Simple console logger adapter (for testing/debugging)
+ */
+class ConsoleLoggerAdapter : public ILoggerAdapter {
+public:
+  void log(PipeLogLevel level, const std::string &node_name,
+           const std::string &message) override;
+};
+
+/**
+ * @brief Logger adapter that captures logs in memory (for testing)
+ */
+class MemoryLoggerAdapter : public ILoggerAdapter {
+public:
+  struct Entry {
+    PipeLogLevel level;
+    std::string node_name;
+    std::string message;
+    std::chrono::system_clock::time_point timestamp;
+  };
+
+  void log(PipeLogLevel level, const std::string &node_name,
+           const std::string &message) override {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_entries.push_back(
+        {level, node_name, message, std::chrono::system_clock::now()});
+  }
+
+  [[nodiscard]] std::vector<Entry> entries() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries;
+  }
+
+  void clear() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_entries.clear();
+  }
+
+private:
+  mutable std::mutex m_mutex;
+  std::vector<Entry> m_entries;
 };
 
 } // namespace ai_pipe

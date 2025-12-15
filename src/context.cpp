@@ -10,6 +10,7 @@
 
 #include "ai_pipe/context.hpp"
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 
 namespace ai_pipe {
@@ -35,39 +36,41 @@ std::string ExecutionId::toString() const {
 }
 
 // =============================================================================
-// LogEntry Implementation
+// ConsoleLoggerAdapter Implementation
 // =============================================================================
 
-std::string LogEntry::levelString() const {
+void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
+                               const std::string &message) {
+  const char *level_str = nullptr;
   switch (level) {
-  case Level::kDebug:
-    return "DEBUG";
-  case Level::kInfo:
-    return "INFO";
-  case Level::kWarning:
-    return "WARN";
-  case Level::kError:
-    return "ERROR";
+  case PipeLogLevel::kDebug:
+    level_str = "DEBUG";
+    break;
+  case PipeLogLevel::kInfo:
+    level_str = "INFO";
+    break;
+  case PipeLogLevel::kWarning:
+    level_str = "WARN";
+    break;
+  case PipeLogLevel::kError:
+    level_str = "ERROR";
+    break;
   default:
-    return "UNKNOWN";
+    level_str = "???";
+    break;
   }
-}
-
-std::string LogEntry::format() const {
-  auto time_t = std::chrono::system_clock::to_time_t(timestamp);
-  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                timestamp.time_since_epoch()) %
-            1000;
 
   std::ostringstream oss;
-  oss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-  oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
-  oss << " [" << levelString() << "]";
+  oss << "[" << level_str << "]";
   if (!node_name.empty()) {
     oss << " [" << node_name << "]";
   }
   oss << " " << message;
-  return oss.str();
+
+  // Thread-safe output
+  static std::mutex cout_mutex;
+  std::lock_guard<std::mutex> lock(cout_mutex);
+  std::cout << oss.str() << std::endl;
 }
 
 // =============================================================================
@@ -83,7 +86,7 @@ PipelineContext::PipelineContext(PipelineContext &&other) noexcept {
   std::unique_lock config_lock(other.m_configMutex);
   std::unique_lock user_data_lock(other.m_userDataMutex);
   std::lock_guard metrics_lock(other.m_metricsMutex);
-  std::lock_guard log_lock(other.m_logMutex);
+  std::lock_guard logger_lock(other.m_loggerMutex);
   std::lock_guard progress_lock(other.m_progressMutex);
 
   m_resources = std::move(other.m_resources);
@@ -96,8 +99,7 @@ PipelineContext::PipelineContext(PipelineContext &&other) noexcept {
   m_nodeMetrics = std::move(other.m_nodeMetrics);
   m_nodesExecuted = other.m_nodesExecuted;
   m_nodesFailed = other.m_nodesFailed;
-  m_logs = std::move(other.m_logs);
-  m_maxLogEntries = other.m_maxLogEntries;
+  m_loggerAdapter = std::move(other.m_loggerAdapter);
   m_overallProgress.store(other.m_overallProgress.load());
   m_progressCallback = std::move(other.m_progressCallback);
   m_nodeProgressReporters = std::move(other.m_nodeProgressReporters);
@@ -122,9 +124,9 @@ PipelineContext &PipelineContext::operator=(PipelineContext &&other) noexcept {
             other_service_lock, self_config_lock, other_config_lock,
             self_user_data_lock, other_user_data_lock);
 
-  std::scoped_lock other_locks(m_metricsMutex, other.m_metricsMutex, m_logMutex,
-                               other.m_logMutex, m_progressMutex,
-                               other.m_progressMutex);
+  std::scoped_lock other_locks(m_metricsMutex, other.m_metricsMutex,
+                               m_loggerMutex, other.m_loggerMutex,
+                               m_progressMutex, other.m_progressMutex);
 
   m_resources = std::move(other.m_resources);
   m_services = std::move(other.m_services);
@@ -136,8 +138,7 @@ PipelineContext &PipelineContext::operator=(PipelineContext &&other) noexcept {
   m_nodeMetrics = std::move(other.m_nodeMetrics);
   m_nodesExecuted = other.m_nodesExecuted;
   m_nodesFailed = other.m_nodesFailed;
-  m_logs = std::move(other.m_logs);
-  m_maxLogEntries = other.m_maxLogEntries;
+  m_loggerAdapter = std::move(other.m_loggerAdapter);
   m_overallProgress.store(other.m_overallProgress.load());
   m_progressCallback = std::move(other.m_progressCallback);
   m_nodeProgressReporters = std::move(other.m_nodeProgressReporters);
@@ -173,7 +174,7 @@ void PipelineContext::beginNodeExecution(const std::string &node_name) {
   NodeMetrics metrics;
   metrics.node_name = node_name;
   metrics.start_time = std::chrono::steady_clock::now();
-  metrics.success = false; // Will be set true on successful completion
+  metrics.success = false;
 
   m_nodeMetrics[node_name] = metrics;
 }
@@ -185,7 +186,6 @@ void PipelineContext::endNodeExecution(const std::string &node_name,
 
   auto it = m_nodeMetrics.find(node_name);
   if (it == m_nodeMetrics.end()) {
-    // Node wasn't tracked, create entry anyway
     NodeMetrics metrics;
     metrics.node_name = node_name;
     metrics.start_time = std::chrono::steady_clock::now();
@@ -237,52 +237,6 @@ PipelineContext::nodeMetrics(const std::string &node_name) const {
 }
 
 // -------------------------------------------------------------------------
-// Logging
-// -------------------------------------------------------------------------
-
-void PipelineContext::log(LogEntry::Level level, const std::string &node_name,
-                          const std::string &message) {
-  std::lock_guard<std::mutex> lock(m_logMutex);
-
-  LogEntry entry;
-  entry.level = level;
-  entry.timestamp = std::chrono::system_clock::now();
-  entry.node_name = node_name;
-  entry.message = message;
-
-  m_logs.push_back(std::move(entry));
-
-  // Trim if exceeds max
-  if (m_maxLogEntries > 0 && m_logs.size() > m_maxLogEntries) {
-    m_logs.erase(m_logs.begin(),
-                 m_logs.begin() + static_cast<std::ptrdiff_t>(m_logs.size() -
-                                                              m_maxLogEntries));
-  }
-}
-
-std::vector<LogEntry> PipelineContext::logs() const {
-  std::lock_guard<std::mutex> lock(m_logMutex);
-  return m_logs;
-}
-
-std::vector<LogEntry> PipelineContext::logs(LogEntry::Level min_level) const {
-  std::lock_guard<std::mutex> lock(m_logMutex);
-
-  std::vector<LogEntry> filtered;
-  for (const auto &entry : m_logs) {
-    if (static_cast<int>(entry.level) >= static_cast<int>(min_level)) {
-      filtered.push_back(entry);
-    }
-  }
-  return filtered;
-}
-
-void PipelineContext::clearLogs() {
-  std::lock_guard<std::mutex> lock(m_logMutex);
-  m_logs.clear();
-}
-
-// -------------------------------------------------------------------------
 // Progress Reporting
 // -------------------------------------------------------------------------
 
@@ -292,9 +246,11 @@ PipelineContext::progressReporter(const std::string &node_name) {
 
   auto it = m_nodeProgressReporters.find(node_name);
   if (it == m_nodeProgressReporters.end()) {
-    it = m_nodeProgressReporters.emplace(node_name, ProgressReporter{}).first;
+    it = m_nodeProgressReporters
+             .emplace(node_name, std::make_unique<ProgressReporter>())
+             .first;
   }
-  return it->second;
+  return *it->second;
 }
 
 void PipelineContext::reportProgress(double progress,
@@ -320,9 +276,6 @@ void PipelineContext::resetExecution() {
     m_nodesExecuted = 0;
     m_nodesFailed = 0;
   }
-
-  // Clear logs
-  clearLogs();
 
   // Reset progress
   m_overallProgress.store(0.0, std::memory_order_release);
@@ -362,6 +315,8 @@ void PipelineContext::reset() {
     std::unique_lock lock(m_userDataMutex);
     m_userData.clear();
   }
+
+  // Note: Logger adapter is intentionally NOT cleared
 }
 
 } // namespace ai_pipe
