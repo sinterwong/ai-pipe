@@ -301,7 +301,7 @@ Configuration for usage:
 2. **Thread Safety**: Ensure your engine implementation is thread-safe
 3. **Error Handling**: Use `setPipelineErrorCallback` appropriately to report errors
 4. **Resource Management**: Clean up resources correctly in `stopExecutionSync()`
-5. **Logging**: Use `LOG_INFOS`/`LOG_ERRORS` to record key events
+5. **Logging**: Use `LOG_INFO_S`/`LOG_ERROR_S` to record key events
 6. **Testing**: Write unit and integration tests for new engines
 
 ## Troubleshooting

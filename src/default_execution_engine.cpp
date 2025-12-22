@@ -271,7 +271,7 @@ DefaultExecutionEngine::operator=(DefaultExecutionEngine &&other) noexcept {
 
 bool DefaultExecutionEngine::initialize(Graph *graph, uint8_t num_workers) {
   if (!graph) {
-    LOG_ERRORS << "DefaultExecutionEngine: Invalid graph pointer.";
+    LOG_ERROR_S << "DefaultExecutionEngine: Invalid graph pointer.";
     return false;
   }
 
@@ -292,8 +292,8 @@ bool DefaultExecutionEngine::initialize(Graph *graph, uint8_t num_workers) {
 
   identifySinkNodes();
 
-  LOG_INFOS << "DefaultExecutionEngine: Initialized with "
-            << static_cast<int>(num_workers) << " workers.";
+  LOG_INFO_S << "DefaultExecutionEngine: Initialized with "
+             << static_cast<int>(num_workers) << " workers.";
   return true;
 }
 
@@ -302,8 +302,8 @@ void DefaultExecutionEngine::identifySinkNodes() {
   for (const auto &node : m_graph->getNodes()) {
     if (m_graph->getOutDegree(node) == 0) {
       m_sinkNodes.push_back(node);
-      LOG_INFOS << "DefaultExecutionEngine: Identified sink node: "
-                << node->getName();
+      LOG_INFO_S << "DefaultExecutionEngine: Identified sink node: "
+                 << node->getName();
     }
   }
 }
@@ -317,18 +317,18 @@ bool DefaultExecutionEngine::execute(const PortDataMap &initial_inputs,
     std::unique_lock<std::mutex> lock(m_engineMutex);
 
     if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-      LOG_ERRORS << "DefaultExecutionEngine: Already running.";
+      LOG_ERROR_S << "DefaultExecutionEngine: Already running.";
       m_currentContext = nullptr;
       return false;
     }
 
     if (!m_graph || !m_threadPool) {
-      LOG_ERRORS << "DefaultExecutionEngine: Not initialized.";
+      LOG_ERROR_S << "DefaultExecutionEngine: Not initialized.";
       m_currentContext = nullptr;
       return false;
     }
 
-    LOG_INFOS << "DefaultExecutionEngine: Starting execution.";
+    LOG_TRACE_S << "DefaultExecutionEngine: Starting execution.";
 
     resetInternalState();
     m_engineState.store(EngineState::RUNNING, std::memory_order_release);
@@ -337,7 +337,7 @@ bool DefaultExecutionEngine::execute(const PortDataMap &initial_inputs,
   if (!distributeInitialInputs(initial_inputs)) {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
-    LOG_ERRORS
+    LOG_ERROR_S
         << "DefaultExecutionEngine: Failed to distribute initial inputs.";
     m_currentContext = nullptr;
     return false;
@@ -364,15 +364,15 @@ bool DefaultExecutionEngine::waitForCompletion() {
 
   if (was_stopped && current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::STOPPED, std::memory_order_release);
-    LOG_ERRORS << "DefaultExecutionEngine: Execution was stopped.";
+    LOG_ERROR_S << "DefaultExecutionEngine: Execution was stopped.";
   } else if (active_tasks == 0 && current_state == EngineState::RUNNING) {
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
-    LOG_INFOS << "DefaultExecutionEngine: Execution completed successfully.";
+    LOG_INFO_S << "DefaultExecutionEngine: Execution completed successfully.";
   } else if (current_state != EngineState::ERROR &&
              current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
-    LOG_ERRORS << "DefaultExecutionEngine: Execution finished abnormally. "
-               << "Active tasks: " << active_tasks;
+    LOG_ERROR_S << "DefaultExecutionEngine: Execution finished abnormally. "
+                << "Active tasks: " << active_tasks;
   }
 
   const bool success =
@@ -395,7 +395,7 @@ void DefaultExecutionEngine::resetInternalState() {
 }
 
 void DefaultExecutionEngine::stopExecutionAsync() {
-  LOG_INFOS << "DefaultExecutionEngine: stopExecutionAsync called.";
+  LOG_INFO_S << "DefaultExecutionEngine: stopExecutionAsync called.";
 
   bool expected = false;
   if (m_stopFlag.compare_exchange_strong(expected, true,
@@ -409,7 +409,7 @@ void DefaultExecutionEngine::stopExecutionAsync() {
 }
 
 void DefaultExecutionEngine::stopExecutionSync() {
-  LOG_INFOS << "DefaultExecutionEngine: stopExecutionSync called.";
+  LOG_INFO_S << "DefaultExecutionEngine: stopExecutionSync called.";
 
   stopExecutionAsync();
 
@@ -428,12 +428,13 @@ void DefaultExecutionEngine::stopExecutionSync() {
     m_engineState.store(EngineState::STOPPED, std::memory_order_release);
   }
 
-  LOG_INFOS << "DefaultExecutionEngine: Execution fully stopped. Active tasks: "
-            << m_activeTasks.load(std::memory_order_acquire);
+  LOG_INFO_S
+      << "DefaultExecutionEngine: Execution fully stopped. Active tasks: "
+      << m_activeTasks.load(std::memory_order_acquire);
 }
 
 void DefaultExecutionEngine::reset() {
-  LOG_INFOS << "DefaultExecutionEngine: Resetting.";
+  LOG_INFO_S << "DefaultExecutionEngine: Resetting.";
 
   stopExecutionSync();
 
@@ -446,7 +447,7 @@ void DefaultExecutionEngine::reset() {
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_engineState.store(EngineState::IDLE, std::memory_order_relaxed);
 
-  LOG_INFOS << "DefaultExecutionEngine: Reset complete.";
+  LOG_INFO_S << "DefaultExecutionEngine: Reset complete.";
 }
 
 EngineState DefaultExecutionEngine::getState() const {
@@ -477,23 +478,23 @@ bool DefaultExecutionEngine::distributeInitialInputs(
         const std::string &target_port = expected_ports[0];
         if (m_inputQueueManager.hasQueue(node, target_port)) {
           m_inputQueueManager.pushToQueue(node, target_port, data_packet);
-          LOG_INFOS << "DefaultExecutionEngine: Distributed input to "
-                    << node->getName() << ":" << target_port;
+          LOG_TRACE_S << "DefaultExecutionEngine: Distributed input to "
+                      << node->getName() << ":" << target_port;
           has_scheduled = true;
           tryScheduleNode(node);
         } else {
-          LOG_ERRORS << "DefaultExecutionEngine: Queue not found for "
-                     << node->getName() << ":" << target_port;
+          LOG_ERROR_S << "DefaultExecutionEngine: Queue not found for "
+                      << node->getName() << ":" << target_port;
         }
       } else {
-        LOG_INFOS << "DefaultExecutionEngine: Source node " << node->getName()
-                  << " has no input ports, scheduling.";
+        LOG_TRACE_S << "DefaultExecutionEngine: Source node " << node->getName()
+                    << " has no input ports, scheduling.";
         has_scheduled = true;
         tryScheduleNode(node);
       }
     } else if (expected_ports.empty()) {
-      LOG_INFOS << "DefaultExecutionEngine: Auto-scheduling source node "
-                << node->getName();
+      LOG_TRACE_S << "DefaultExecutionEngine: Auto-scheduling source node "
+                  << node->getName();
       has_scheduled = true;
       tryScheduleNode(node);
     }
@@ -506,8 +507,8 @@ bool DefaultExecutionEngine::distributeInitialInputs(
 void DefaultExecutionEngine::validateSchedulingResult(
     const PortDataMap &initial_inputs, bool has_scheduled) {
   if (!has_scheduled && !initial_inputs.empty()) {
-    LOG_ERRORS << "DefaultExecutionEngine: Initial inputs provided but no "
-                  "source nodes consumed them.";
+    LOG_ERROR_S << "DefaultExecutionEngine: Initial inputs provided but no "
+                   "source nodes consumed them.";
     throw std::runtime_error(
         "Initial inputs provided but no source nodes consumed them.");
   }
@@ -515,7 +516,7 @@ void DefaultExecutionEngine::validateSchedulingResult(
   if (initial_inputs.empty() && !has_scheduled) {
     for (const auto &node : m_graph->getNodes()) {
       if (m_graph->getInDegree(node) == 0) {
-        LOG_ERRORS
+        LOG_ERROR_S
             << "DefaultExecutionEngine: Source nodes exist but none started.";
         throw std::runtime_error("Source nodes exist but none started.");
       }
@@ -549,9 +550,9 @@ void DefaultExecutionEngine::tryScheduleNode(
   if (m_nodeStateManager.compareAndSetState(node, NodeExecutionState::WAITING,
                                             NodeExecutionState::READY)) {
     m_activeTasks.fetch_add(1, std::memory_order_acq_rel);
-    LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-              << " is READY. Active tasks: "
-              << m_activeTasks.load(std::memory_order_acquire);
+    LOG_TRACE_S << "DefaultExecutionEngine: Node " << node->getName()
+                << " is READY. Active tasks: "
+                << m_activeTasks.load(std::memory_order_acquire);
 
     auto temp_future = m_threadPool->submit(
         &DefaultExecutionEngine::executeNodeTask, this, node, m_currentContext);
@@ -565,8 +566,8 @@ bool DefaultExecutionEngine::isNodeReady(
   if (expected_ports.empty()) {
     // Node with no expected input ports
     if (m_graph->getInDegree(node) > 0) {
-      LOG_INFOS << "Debug: Node " << node->getName()
-                << " has in-degree but no expected ports.";
+      LOG_DEBUG_S << "Node " << node->getName()
+                  << " has in-degree but no expected ports.";
       return false;
     }
     return true;
@@ -583,23 +584,23 @@ void DefaultExecutionEngine::executeNodeTask(
     m_nodeStateManager.setState(node, NodeExecutionState::WAITING);
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
-    LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-              << " cancelled due to stop flag.";
+    LOG_INFO_S << "DefaultExecutionEngine: Node " << node->getName()
+               << " cancelled due to stop flag.";
     return;
   }
 
   // Transition to EXECUTING state
   if (!m_nodeStateManager.compareAndSetState(node, NodeExecutionState::READY,
                                              NodeExecutionState::EXECUTING)) {
-    LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-              << " was not READY. Aborting.";
+    LOG_INFO_S << "DefaultExecutionEngine: Node " << node->getName()
+               << " was not READY. Aborting.";
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
     return;
   }
 
-  LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-            << " is EXECUTING.";
+  LOG_TRACE_S << "DefaultExecutionEngine: Node " << node->getName()
+              << " is EXECUTING.";
 
   PortDataMap inputs;
   PortDataMap outputs;
@@ -615,8 +616,8 @@ void DefaultExecutionEngine::executeNodeTask(
   // Handle completion based on stop flag and success
   if (m_stopFlag.load(std::memory_order_acquire)) {
     m_nodeStateManager.setState(node, NodeExecutionState::WAITING);
-    LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-              << " interrupted by stop flag.";
+    LOG_INFO_S << "DefaultExecutionEngine: Node " << node->getName()
+               << " interrupted by stop flag.";
   } else if (success) {
     handleNodeSuccess(node, outputs);
   } else {
@@ -624,9 +625,9 @@ void DefaultExecutionEngine::executeNodeTask(
   }
 
   m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
-  LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-            << " task finished. Active tasks: "
-            << m_activeTasks.load(std::memory_order_acquire);
+  LOG_TRACE_S << "DefaultExecutionEngine: Node " << node->getName()
+              << " task finished. Active tasks: "
+              << m_activeTasks.load(std::memory_order_acquire);
 
   checkCompletionAndNotify();
 }
@@ -640,8 +641,8 @@ bool DefaultExecutionEngine::gatherNodeInputs(
     if (data_item.has_value()) {
       inputs[port_name] = data_item.value();
     } else {
-      LOG_ERRORS << "DefaultExecutionEngine: Input queue empty for "
-                 << node->getName() << ":" << port_name;
+      LOG_ERROR_S << "DefaultExecutionEngine: Input queue empty for "
+                  << node->getName() << ":" << port_name;
       return false;
     }
   }
@@ -655,15 +656,15 @@ bool DefaultExecutionEngine::processNode(
     node->process(inputs, outputs, context);
     return true;
   } catch (const std::exception &e) {
-    LOG_ERRORS << "DefaultExecutionEngine: Node " << node->getName()
-               << " failed: " << e.what();
+    LOG_ERROR_S << "DefaultExecutionEngine: Node " << node->getName()
+                << " failed: " << e.what();
     if (m_onErrorCallback) {
       m_onErrorCallback(e.what(), node->getName());
     }
     return false;
   } catch (...) {
-    LOG_ERRORS << "DefaultExecutionEngine: Node " << node->getName()
-               << " failed with unknown exception.";
+    LOG_ERROR_S << "DefaultExecutionEngine: Node " << node->getName()
+                << " failed with unknown exception.";
     if (m_onErrorCallback) {
       m_onErrorCallback("Unknown exception", node->getName());
     }
@@ -674,8 +675,8 @@ bool DefaultExecutionEngine::processNode(
 void DefaultExecutionEngine::handleNodeSuccess(
     const std::shared_ptr<ILogicNode> &node, const PortDataMap &outputs) {
   m_nodeStateManager.setState(node, NodeExecutionState::COMPLETED);
-  LOG_INFOS << "DefaultExecutionEngine: Node " << node->getName()
-            << " COMPLETED.";
+  LOG_TRACE_S << "DefaultExecutionEngine: Node " << node->getName()
+              << " COMPLETED.";
 
   if (isSinkNode(node)) {
     collectFinalResults(node, outputs);
@@ -687,8 +688,8 @@ void DefaultExecutionEngine::handleNodeSuccess(
 void DefaultExecutionEngine::handleNodeFailure(
     const std::shared_ptr<ILogicNode> &node, const std::string &error_msg) {
   m_nodeStateManager.setState(node, NodeExecutionState::FAILED);
-  LOG_ERRORS << "DefaultExecutionEngine: Node " << node->getName()
-             << " FAILED: " << error_msg;
+  LOG_ERROR_S << "DefaultExecutionEngine: Node " << node->getName()
+              << " FAILED: " << error_msg;
   stopExecutionAsync();
 }
 
@@ -700,14 +701,14 @@ bool DefaultExecutionEngine::isSinkNode(
 
 void DefaultExecutionEngine::collectFinalResults(
     const std::shared_ptr<ILogicNode> &node, const PortDataMap &outputs) {
-  LOG_INFOS << "DefaultExecutionEngine: Collecting results from sink node: "
-            << node->getName();
+  LOG_TRACE_S << "DefaultExecutionEngine: Collecting results from sink node: "
+              << node->getName();
 
   std::lock_guard<std::mutex> lock(m_finalResultsMutex);
   for (const auto &[port_name, data] : outputs) {
     std::string result_key = node->getName() + ":" + port_name;
     m_accumulatedFinalResults[result_key] = data;
-    LOG_INFOS << "DefaultExecutionEngine: Added final result: " << result_key;
+    LOG_TRACE_S << "DefaultExecutionEngine: Added final result: " << result_key;
   }
 }
 
@@ -732,13 +733,13 @@ void DefaultExecutionEngine::propagateOutputAndScheduleDownstream(
 
     if (m_inputQueueManager.hasQueue(dest_node, dest_port)) {
       m_inputQueueManager.pushToQueue(dest_node, dest_port, data);
-      LOG_INFOS << "DefaultExecutionEngine: Propagated "
-                << source_node->getName() << ":" << edge.sourcePort << " -> "
-                << dest_node->getName() << ":" << dest_port;
+      LOG_TRACE_S << "DefaultExecutionEngine: Propagated "
+                  << source_node->getName() << ":" << edge.sourcePort << " -> "
+                  << dest_node->getName() << ":" << dest_port;
       tryScheduleNode(dest_node);
     } else {
-      LOG_ERRORS << "DefaultExecutionEngine: Queue not found for "
-                 << dest_node->getName() << ":" << dest_port;
+      LOG_ERROR_S << "DefaultExecutionEngine: Queue not found for "
+                  << dest_node->getName() << ":" << dest_port;
     }
   }
 }
@@ -749,7 +750,7 @@ void DefaultExecutionEngine::checkCompletionAndNotify() {
     return;
   }
 
-  LOG_INFOS << "DefaultExecutionEngine: All tasks completed.";
+  LOG_TRACE_S << "DefaultExecutionEngine: All tasks completed.";
 
   const auto current_state = m_engineState.load(std::memory_order_acquire);
   const bool was_stopped = m_stopFlag.load(std::memory_order_acquire);
@@ -762,8 +763,8 @@ void DefaultExecutionEngine::checkCompletionAndNotify() {
       std::lock_guard<std::mutex> lock(m_finalResultsMutex);
       results = m_accumulatedFinalResults;
     }
-    LOG_INFOS << "DefaultExecutionEngine: Invoking result callback with "
-              << results.size() << " results.";
+    LOG_TRACE_S << "DefaultExecutionEngine: Invoking result callback with "
+                << results.size() << " results.";
     m_onResultCallback(results);
   }
 

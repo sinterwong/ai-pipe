@@ -156,7 +156,13 @@ private:
 /**
  * @brief Log level enumeration (matches common logging frameworks)
  */
-enum class PipeLogLevel { kDebug = 0, kInfo = 1, kWarning = 2, kError = 3 };
+enum class PipeLogLevel {
+  kTrace = 0,
+  kDebug = 1,
+  kInfo = 2,
+  kWarning = 3,
+  kError = 4
+};
 
 /**
  * @brief Abstract logger adapter interface
@@ -172,10 +178,10 @@ enum class PipeLogLevel { kDebug = 0, kInfo = 1, kWarning = 2, kError = 3 };
  *              const std::string& message) override {
  *       std::string formatted = "[" + node_name + "] " + message;
  *       switch (level) {
- *         case PipeLogLevel::kDebug:   LOG_DEBUGS << formatted; break;
- *         case PipeLogLevel::kInfo:    LOG_INFOS << formatted; break;
- *         case PipeLogLevel::kWarning: LOG_WARNINGS << formatted; break;
- *         case PipeLogLevel::kError:   LOG_ERRORS << formatted; break;
+ *         case PipeLogLevel::kDebug:   LOG_DEBUG_S << formatted; break;
+ *         case PipeLogLevel::kInfo:    LOG_INFO_S << formatted; break;
+ *         case PipeLogLevel::kWarning: LOG_WARNING_S << formatted; break;
+ *         case PipeLogLevel::kError:   LOG_ERROR_S << formatted; break;
  *       }
  *     }
  *   };

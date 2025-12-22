@@ -179,13 +179,10 @@ static void BM_LinearPipeline(benchmark::State &state) {
   // Setup logger (only once)
   static bool loggerInitialized = false;
   if (!loggerInitialized) {
-    auto &logger = ai_pipe::logging::Logger::getInstance();
-    ai_pipe::logging::LoggerConfig config;
-    config.enable_file = true;
-    config.log_file_path = "./logs/benchmark";
-    config.enable_console = true;
-    config.enable_color = true;
-    logger.configure(config);
+    ai_pipe::logging::LoggerConfig cfg;
+    cfg.async_enabled = true;
+    cfg.json_output = true;
+    ai_pipe::logging::Logger::instance().configure(cfg);
   }
 
   // Create graph

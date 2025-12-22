@@ -30,7 +30,7 @@ namespace ai_pipe {
  * @brief Logger adapter that bridges to glog wrapper
  *
  * Converts PipelineContext log calls to your existing glog-based
- * LOG_INFOS, LOG_ERRORS, etc. macros.
+ * LOG_INFO_S, LOG_ERROR_S, etc. macros.
  */
 class LoggerAdapter : public ILoggerAdapter {
 public:
@@ -53,20 +53,24 @@ public:
 
     // Route to appropriate glog level
     switch (level) {
+    case PipeLogLevel::kTrace:
+      LOG_TRACE_S << formatted;
+      break;
+
     case PipeLogLevel::kDebug:
-      LOG_DEBUGS << formatted;
+      LOG_DEBUG_S << formatted;
       break;
 
     case PipeLogLevel::kInfo:
-      LOG_INFOS << formatted;
+      LOG_INFO_S << formatted;
       break;
 
     case PipeLogLevel::kWarning:
-      LOG_WARNINGS << formatted;
+      LOG_WARNING_S << formatted;
       break;
 
     case PipeLogLevel::kError:
-      LOG_ERRORS << formatted;
+      LOG_ERROR_S << formatted;
       break;
     }
   }

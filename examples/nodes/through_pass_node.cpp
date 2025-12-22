@@ -23,7 +23,7 @@ void ThroughPassNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   const std::string outputPortName = getExpectedOutputPorts()[0];
 
   if (inputs.find(inputPortName) == inputs.end()) {
-    LOG_ERRORS << "ThroughPassNode: Missing '" << inputPortName << "' input.";
+    LOG_ERROR_S << "ThroughPassNode: Missing '" << inputPortName << "' input.";
     throw InvalidValueException("ThroughPassNode: Missing '" + inputPortName +
                                 "' input.");
   }
@@ -31,8 +31,9 @@ void ThroughPassNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   const auto &inputDataPacket = inputs.at(inputPortName);
 
   // print info
-  LOG_INFOS << "ThroughPassNode: Processing data from input port '"
-            << inputPortName << "' to output port '" << outputPortName << "'.";
+  LOG_TRACE_S << "ThroughPassNode: Processing data from input port '"
+              << inputPortName << "' to output port '" << outputPortName
+              << "'.";
 
   auto outputDataPacket = std::make_shared<PortData>();
   *outputDataPacket = *inputDataPacket;

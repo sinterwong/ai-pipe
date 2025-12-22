@@ -22,14 +22,16 @@ namespace fs = std::filesystem;
 class ThroughPassPipeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    auto &logger = ai_pipe::logging::Logger::getInstance();
-    // 配置文件日志
-    ai_pipe::logging::LoggerConfig config;
-    config.enable_file = true;
-    config.log_file_path = "./logs/test_through_pass.log";
-    config.enable_console = true;
-    config.enable_color = true;
-    logger.configure(config);
+    // Initialize logger for tests
+    ai_pipe::logging::LoggerConfig cfg;
+    cfg.async_enabled = false;
+    cfg.json_output = false;
+    cfg.console_enabled = true;
+    cfg.file_enabled = true;
+    cfg.show_thread_id = true;
+    cfg.file_path = "logs/through_pass_test.log";
+    cfg.min_level = ai_pipe::logging::LogLevel::Trace;
+    ai_pipe::logging::Logger::instance().configure(cfg);
   }
 
   void TearDown() override {}

@@ -19,7 +19,7 @@ namespace ai_pipe {
 // Pipeline::Impl Implementation
 // =============================================================================
 
-Pipeline::Impl::Impl() { LOG_INFOS << "Pipeline::Impl: Constructed"; }
+Pipeline::Impl::Impl() { LOG_INFO_S << "Pipeline::Impl: Constructed"; }
 
 Pipeline::Impl::~Impl() {
   if (isRunning()) {
@@ -27,10 +27,10 @@ Pipeline::Impl::~Impl() {
       cancel();
       wait();
     } catch (const std::exception &e) {
-      LOG_ERRORS << "Pipeline::Impl: Exception during shutdown: " << e.what();
+      LOG_ERROR_S << "Pipeline::Impl: Exception during shutdown: " << e.what();
     }
   }
-  LOG_INFOS << "Pipeline::Impl: Destructed";
+  LOG_INFO_S << "Pipeline::Impl: Destructed";
 }
 
 Pipeline::Impl::Impl(Impl &&other) noexcept {
@@ -44,7 +44,7 @@ Pipeline::Impl::Impl(Impl &&other) noexcept {
   m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
   m_observers = std::move(other.m_observers);
 
-  LOG_INFOS << "Pipeline::Impl: Move constructed";
+  LOG_INFO_S << "Pipeline::Impl: Move constructed";
 }
 
 Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
@@ -67,16 +67,16 @@ Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
   m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
   m_observers = std::move(other.m_observers);
 
-  LOG_INFOS << "Pipeline::Impl: Move assigned";
+  LOG_INFO_S << "Pipeline::Impl: Move assigned";
   return *this;
 }
 
 bool Pipeline::Impl::initialize(Graph &&graph,
                                 std::shared_ptr<PipelineContext> context,
                                 const PipelineOptions &options) {
-  LOG_INFOS << "Pipeline::Impl: Initializing with engine="
-            << options.engine_type
-            << ", workers=" << static_cast<int>(options.num_workers);
+  LOG_INFO_S << "Pipeline::Impl: Initializing with engine="
+             << options.engine_type
+             << ", workers=" << static_cast<int>(options.num_workers);
 
   std::lock_guard<std::mutex> lock(m_stateMutex);
 
@@ -85,7 +85,7 @@ bool Pipeline::Impl::initialize(Graph &&graph,
 
   // Validate graph
   if (m_graph->hasCycle()) {
-    LOG_ERRORS << "Pipeline::Impl: Graph contains cycle";
+    LOG_ERROR_S << "Pipeline::Impl: Graph contains cycle";
     m_state.store(PipelineState::ERROR, std::memory_order_release);
     return false;
   }
@@ -93,15 +93,15 @@ bool Pipeline::Impl::initialize(Graph &&graph,
   // Create execution engine
   m_engine = createExecutionEngine(options.engine_type);
   if (!m_engine) {
-    LOG_ERRORS << "Pipeline::Impl: Failed to create engine: "
-               << options.engine_type;
+    LOG_ERROR_S << "Pipeline::Impl: Failed to create engine: "
+                << options.engine_type;
     m_state.store(PipelineState::ERROR, std::memory_order_release);
     return false;
   }
 
   // Initialize engine
   if (!m_engine->initialize(m_graph.get(), options.num_workers)) {
-    LOG_ERRORS << "Pipeline::Impl: Engine initialization failed";
+    LOG_ERROR_S << "Pipeline::Impl: Engine initialization failed";
     m_state.store(PipelineState::ERROR, std::memory_order_release);
     return false;
   }
@@ -115,7 +115,7 @@ bool Pipeline::Impl::initialize(Graph &&graph,
   setupEngineCallbacks();
 
   m_state.store(PipelineState::IDLE, std::memory_order_release);
-  LOG_INFOS << "Pipeline::Impl: Initialized successfully";
+  LOG_INFO_S << "Pipeline::Impl: Initialized successfully";
   return true;
 }
 
@@ -255,7 +255,7 @@ bool Pipeline::Impl::submit(const PortDataMap &inputs) {
 
   if (!success) {
     transitionTo(PipelineState::ERROR);
-    LOG_ERRORS << "Pipeline::Impl: Submit failed to start execution";
+    LOG_ERROR_S << "Pipeline::Impl: Submit failed to start execution";
   }
 
   return success;
@@ -266,7 +266,7 @@ void Pipeline::Impl::cancel() {
     return;
   }
 
-  LOG_INFOS << "Pipeline::Impl: Cancelling execution";
+  LOG_INFO_S << "Pipeline::Impl: Cancelling execution";
   m_engine->stopExecutionAsync();
   transitionTo(PipelineState::STOPPING);
 }
@@ -287,7 +287,7 @@ void Pipeline::Impl::wait() {
 }
 
 void Pipeline::Impl::reset() {
-  LOG_INFOS << "Pipeline::Impl: Resetting";
+  LOG_INFO_S << "Pipeline::Impl: Resetting";
 
   if (isRunning()) {
     cancel();
@@ -309,7 +309,7 @@ void Pipeline::Impl::reset() {
     transitionTo(PipelineState::IDLE);
   }
 
-  LOG_INFOS << "Pipeline::Impl: Reset complete";
+  LOG_INFO_S << "Pipeline::Impl: Reset complete";
 }
 
 bool Pipeline::Impl::isReady() const {
@@ -382,24 +382,24 @@ bool Pipeline::Impl::validateState(const char *operation) const {
   auto current = m_state.load(std::memory_order_acquire);
 
   if (current == PipelineState::UNINITIALIZED) {
-    LOG_ERRORS << "Pipeline: Cannot " << operation << " - not initialized";
+    LOG_ERROR_S << "Pipeline: Cannot " << operation << " - not initialized";
     return false;
   }
 
   if (current == PipelineState::RUNNING) {
-    LOG_ERRORS << "Pipeline: Cannot " << operation << " - already running";
+    LOG_ERROR_S << "Pipeline: Cannot " << operation << " - already running";
     return false;
   }
 
   if (current == PipelineState::ERROR) {
-    LOG_WARNINGS << "Pipeline: " << operation
-                 << " called in ERROR state, attempting reset";
+    LOG_WARNING_S << "Pipeline: " << operation
+                  << " called in ERROR state, attempting reset";
     // Allow retry after error - caller should reset if needed
   }
 
   if (!m_engine || !m_graph) {
-    LOG_ERRORS << "Pipeline: Cannot " << operation
-               << " - missing engine or graph";
+    LOG_ERROR_S << "Pipeline: Cannot " << operation
+                << " - missing engine or graph";
     return false;
   }
 
@@ -409,8 +409,8 @@ bool Pipeline::Impl::validateState(const char *operation) const {
 void Pipeline::Impl::transitionTo(PipelineState new_state) {
   auto old_state = m_state.exchange(new_state, std::memory_order_acq_rel);
   if (old_state != new_state) {
-    LOG_INFOS << "Pipeline: State " << static_cast<int>(old_state) << " -> "
-              << static_cast<int>(new_state);
+    LOG_TRACE_S << "Pipeline: State " << static_cast<int>(old_state) << " -> "
+                << static_cast<int>(new_state);
   }
 }
 
@@ -421,7 +421,7 @@ void Pipeline::Impl::notifyExecutionStarted() {
       try {
         observer->onExecutionStarted();
       } catch (const std::exception &e) {
-        LOG_ERRORS << "Pipeline: Observer exception: " << e.what();
+        LOG_ERROR_S << "Pipeline: Observer exception: " << e.what();
       }
     }
   }
@@ -434,7 +434,7 @@ void Pipeline::Impl::notifyExecutionCompleted(const PortDataMap &results) {
       try {
         observer->onExecutionCompleted(results);
       } catch (const std::exception &e) {
-        LOG_ERRORS << "Pipeline: Observer exception: " << e.what();
+        LOG_ERROR_S << "Pipeline: Observer exception: " << e.what();
       }
     }
   }
@@ -448,7 +448,7 @@ void Pipeline::Impl::notifyExecutionFailed(const std::string &error,
       try {
         observer->onExecutionFailed(error, node_name);
       } catch (const std::exception &e) {
-        LOG_ERRORS << "Pipeline: Observer exception: " << e.what();
+        LOG_ERROR_S << "Pipeline: Observer exception: " << e.what();
       }
     }
   }
@@ -640,7 +640,7 @@ Pipeline PipelineBuilder::build() {
 
 std::optional<Pipeline> PipelineBuilder::tryBuild() {
   if (!m_state->graph.has_value()) {
-    LOG_ERRORS << "PipelineBuilder: No graph provided";
+    LOG_ERROR_S << "PipelineBuilder: No graph provided";
     return std::nullopt;
   }
 

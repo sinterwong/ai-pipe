@@ -15,12 +15,12 @@
 namespace ai_pipe {
 bool Graph::addNode(const std::shared_ptr<ILogicNode> &node) {
   if (!node) {
-    LOG_ERRORS << "Tried to add a null node to the graph";
+    LOG_ERROR_S << "Tried to add a null node to the graph";
     return false;
   }
   if (m_nodeMap.find(node->getName()) != m_nodeMap.end()) {
-    LOG_ERRORS << "Node with name " << node->getName()
-               << " already exists in the graph";
+    LOG_ERROR_S << "Node with name " << node->getName()
+                << " already exists in the graph";
     return false;
   }
   m_nodes.push_back(node);
@@ -53,27 +53,28 @@ bool Graph::addEdge(const std::string &sourceNodeName,
   auto destNode = getNode(destNodeName);
 
   if (!sourceNode) {
-    LOG_ERRORS << "Source node " << sourceNodeName << " not found";
+    LOG_ERROR_S << "Source node " << sourceNodeName << " not found";
     return false;
   }
   if (!destNode) {
-    LOG_ERRORS << "Destination node " << destNodeName << " not found";
+    LOG_ERROR_S << "Destination node " << destNodeName << " not found";
     return false;
   }
 
   const auto &expectedOutputPorts = sourceNode->getExpectedOutputPorts();
   if (expectedOutputPorts.empty() && !sourcePortName.empty()) {
-    LOG_ERRORS << "Source node '" << sourceNodeName
-               << "' declares no output ports, but tried to connect from port '"
-               << sourcePortName << "'.";
+    LOG_ERROR_S
+        << "Source node '" << sourceNodeName
+        << "' declares no output ports, but tried to connect from port '"
+        << sourcePortName << "'.";
     return false;
   }
   if (!sourcePortName.empty()) {
     if (std::find(expectedOutputPorts.begin(), expectedOutputPorts.end(),
                   sourcePortName) == expectedOutputPorts.end()) {
-      LOG_ERRORS << "Source port '" << sourcePortName
-                 << "' is not a declared output port for node '"
-                 << sourceNodeName << "'.";
+      LOG_ERROR_S << "Source port '" << sourcePortName
+                  << "' is not a declared output port for node '"
+                  << sourceNodeName << "'.";
       return false;
     }
   }
@@ -81,18 +82,18 @@ bool Graph::addEdge(const std::string &sourceNodeName,
   // Validate destination node port
   const auto &expectedInputPorts = destNode->getExpectedInputPorts();
   if (expectedInputPorts.empty() && !destPortName.empty()) {
-    LOG_ERRORS << "Destination node '" << destNodeName
-               << "' declares no input ports, but tried to connect to port '"
-               << destPortName << "'.";
+    LOG_ERROR_S << "Destination node '" << destNodeName
+                << "' declares no input ports, but tried to connect to port '"
+                << destPortName << "'.";
     return false;
   }
   // Similarly, only search for non-empty port names
   if (!destPortName.empty()) {
     if (std::find(expectedInputPorts.begin(), expectedInputPorts.end(),
                   destPortName) == expectedInputPorts.end()) {
-      LOG_ERRORS << "Destination port '" << destPortName
-                 << "' is not a declared input port for node '" << destNodeName
-                 << "'.";
+      LOG_ERROR_S << "Destination port '" << destPortName
+                  << "' is not a declared input port for node '" << destNodeName
+                  << "'.";
       return false;
     }
   }
@@ -103,9 +104,9 @@ bool Graph::addEdge(const std::string &sourceNodeName,
         existingEdge.sourcePort == sourcePortName &&
         existingEdge.destNode == destNode &&
         existingEdge.destPort == destPortName) {
-      LOG_WARNINGS << "Edge from " << sourceNodeName << ":" << sourcePortName
-                   << " to " << destNodeName << ":" << destPortName
-                   << "already exists. Skipping.";
+      LOG_WARNING_S << "Edge from " << sourceNodeName << ":" << sourcePortName
+                    << " to " << destNodeName << ":" << destPortName
+                    << "already exists. Skipping.";
       return false;
     }
   }
@@ -126,14 +127,14 @@ const std::vector<Edge> &Graph::getEdges() const { return m_edges; }
 
 int Graph::getInDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
-    LOG_ERRORS << "Node is null";
+    LOG_ERROR_S << "Node is null";
     throw std::runtime_error("Node is null");
   }
   auto it = m_inDegree.find(node);
   if (it != m_inDegree.end()) {
     return it->second;
   } else {
-    LOG_WARNINGS << "Node " << node->getName() << " not found in inDegree map";
+    LOG_WARNING_S << "Node " << node->getName() << " not found in inDegree map";
     return 0;
   }
   return 0;
@@ -141,15 +142,15 @@ int Graph::getInDegree(const std::shared_ptr<ILogicNode> &node) const {
 
 int Graph::getOutDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
-    LOG_ERRORS << "Node is null";
+    LOG_ERROR_S << "Node is null";
     throw std::runtime_error("Node is null");
   }
   auto it = m_adjListOut.find(node);
   if (it != m_adjListOut.end()) {
     return it->second.size();
   } else {
-    LOG_WARNINGS << "Node " << node->getName()
-                 << " not found in m_adjListOut map";
+    LOG_WARNING_S << "Node " << node->getName()
+                  << " not found in m_adjListOut map";
     return 0;
   }
 }

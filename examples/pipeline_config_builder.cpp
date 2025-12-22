@@ -24,8 +24,8 @@ Pipeline
 PipelineConfigBuilder::buildPipeline(const std::string &config_path,
                                      std::shared_ptr<PipelineContext> context,
                                      std::uint8_t num_workers) {
-  LOG_INFOS << "PipelineConfigBuilder: Building pipeline from " << config_path
-            << ", workers=" << static_cast<int>(num_workers);
+  LOG_INFO_S << "PipelineConfigBuilder: Building pipeline from " << config_path
+             << ", workers=" << static_cast<int>(num_workers);
 
   // Load graph and options from config
   auto [graph, options] = buildGraphAndOptions(config_path);
@@ -37,16 +37,16 @@ PipelineConfigBuilder::buildPipeline(const std::string &config_path,
 
   // Validate graph
   if (graph.hasCycle()) {
-    LOG_ERRORS << "PipelineConfigBuilder: Graph contains a cycle";
+    LOG_ERROR_S << "PipelineConfigBuilder: Graph contains a cycle";
     throw std::runtime_error("Graph contains a cycle");
   }
 
   if (graph.getNodes().empty()) {
-    LOG_WARNINGS << "PipelineConfigBuilder: Graph is empty after loading";
+    LOG_WARNING_S << "PipelineConfigBuilder: Graph is empty after loading";
   }
 
-  LOG_INFOS << "PipelineConfigBuilder: Using engine=" << options.engine_type
-            << ", workers=" << static_cast<int>(options.num_workers);
+  LOG_INFO_S << "PipelineConfigBuilder: Using engine=" << options.engine_type
+             << ", workers=" << static_cast<int>(options.num_workers);
 
   // Build pipeline using fluent API
   return Pipeline::create()
@@ -61,13 +61,13 @@ Pipeline
 PipelineConfigBuilder::buildPipeline(const std::string &config_path,
                                      std::shared_ptr<PipelineContext> context,
                                      const PipelineOptions &options) {
-  LOG_INFOS << "PipelineConfigBuilder: Building pipeline from " << config_path
-            << " with explicit options";
+  LOG_INFO_S << "PipelineConfigBuilder: Building pipeline from " << config_path
+             << " with explicit options";
 
   auto graph = buildGraph(config_path);
 
   if (graph.hasCycle()) {
-    LOG_ERRORS << "PipelineConfigBuilder: Graph contains a cycle";
+    LOG_ERROR_S << "PipelineConfigBuilder: Graph contains a cycle";
     throw std::runtime_error("Graph contains a cycle");
   }
 
@@ -90,7 +90,7 @@ std::optional<Pipeline> PipelineConfigBuilder::tryBuildPipeline(
     }
 
     if (graph.hasCycle()) {
-      LOG_ERRORS << "PipelineConfigBuilder: Graph contains a cycle";
+      LOG_ERROR_S << "PipelineConfigBuilder: Graph contains a cycle";
       return std::nullopt;
     }
 
@@ -102,14 +102,14 @@ std::optional<Pipeline> PipelineConfigBuilder::tryBuildPipeline(
         .tryBuild();
 
   } catch (const std::exception &e) {
-    LOG_ERRORS << "PipelineConfigBuilder: Failed to build pipeline: "
-               << e.what();
+    LOG_ERROR_S << "PipelineConfigBuilder: Failed to build pipeline: "
+                << e.what();
     return std::nullopt;
   }
 }
 
 Graph PipelineConfigBuilder::buildGraph(const std::string &config_path) {
-  LOG_INFOS << "PipelineConfigBuilder: Building graph from " << config_path;
+  LOG_INFO_S << "PipelineConfigBuilder: Building graph from " << config_path;
 
   auto json = loadJsonFile(config_path);
   return parseGraphFromJson(json);
@@ -117,18 +117,19 @@ Graph PipelineConfigBuilder::buildGraph(const std::string &config_path) {
 
 std::tuple<Graph, PipelineOptions>
 PipelineConfigBuilder::buildGraphAndOptions(const std::string &config_path) {
-  LOG_INFOS << "PipelineConfigBuilder: Building graph and options from "
-            << config_path;
+  LOG_INFO_S << "PipelineConfigBuilder: Building graph and options from "
+             << config_path;
 
   auto json = loadJsonFile(config_path);
 
   Graph graph = parseGraphFromJson(json);
   PipelineOptions options = parseOptionsFromJson(json);
 
-  LOG_INFOS << "PipelineConfigBuilder: Built successfully. Nodes: "
-            << graph.getNodes().size() << ", Edges: " << graph.getEdges().size()
-            << ", Engine: " << options.engine_type
-            << ", Workers: " << static_cast<int>(options.num_workers);
+  LOG_INFO_S << "PipelineConfigBuilder: Built successfully. Nodes: "
+             << graph.getNodes().size()
+             << ", Edges: " << graph.getEdges().size()
+             << ", Engine: " << options.engine_type
+             << ", Workers: " << static_cast<int>(options.num_workers);
 
   return {std::move(graph), options};
 }
@@ -140,7 +141,7 @@ PipelineConfigBuilder::buildGraphAndOptions(const std::string &config_path) {
 nlohmann::json PipelineConfigBuilder::loadJsonFile(const std::string &path) {
   std::ifstream file(path);
   if (!file.is_open()) {
-    LOG_ERRORS << "PipelineConfigBuilder: Failed to open file: " << path;
+    LOG_ERROR_S << "PipelineConfigBuilder: Failed to open file: " << path;
     throw std::runtime_error("Failed to open config file: " + path);
   }
 
@@ -148,7 +149,7 @@ nlohmann::json PipelineConfigBuilder::loadJsonFile(const std::string &path) {
   try {
     file >> json;
   } catch (const nlohmann::json::parse_error &e) {
-    LOG_ERRORS << "PipelineConfigBuilder: JSON parse error: " << e.what();
+    LOG_ERROR_S << "PipelineConfigBuilder: JSON parse error: " << e.what();
     throw std::runtime_error("Failed to parse JSON: " + std::string(e.what()));
   }
 
@@ -160,7 +161,7 @@ Graph PipelineConfigBuilder::parseGraphFromJson(const nlohmann::json &json) {
 
   // Parse nodes
   if (!json.contains("nodes") || !json["nodes"].is_array()) {
-    LOG_ERRORS << "PipelineConfigBuilder: Missing 'nodes' array";
+    LOG_ERROR_S << "PipelineConfigBuilder: Missing 'nodes' array";
     throw std::runtime_error("Config missing 'nodes' array");
   }
 
@@ -168,12 +169,12 @@ Graph PipelineConfigBuilder::parseGraphFromJson(const nlohmann::json &json) {
     std::string name = node_config.at("name").get<std::string>();
     std::string type = node_config.at("type").get<std::string>();
 
-    LOG_INFOS << "PipelineConfigBuilder: Creating node '" << name
-              << "' of type '" << type << "'";
+    LOG_INFO_S << "PipelineConfigBuilder: Creating node '" << name
+               << "' of type '" << type << "'";
 
     // Check if parser is registered
     if (!NodeParamParserFactory::instance().isRegistered(type)) {
-      LOG_ERRORS << "PipelineConfigBuilder: Unknown node type: " << type;
+      LOG_ERROR_S << "PipelineConfigBuilder: Unknown node type: " << type;
       throw std::runtime_error("Node type not registered: " + type);
     }
 
@@ -187,7 +188,7 @@ Graph PipelineConfigBuilder::parseGraphFromJson(const nlohmann::json &json) {
     // Create node instance
     auto node = NodeCreatorFactory::instance().create(type, params);
     if (!node) {
-      LOG_ERRORS << "PipelineConfigBuilder: Failed to create node: " << name;
+      LOG_ERROR_S << "PipelineConfigBuilder: Failed to create node: " << name;
       throw std::runtime_error("Failed to create node: " + name);
     }
 
@@ -202,22 +203,22 @@ Graph PipelineConfigBuilder::parseGraphFromJson(const nlohmann::json &json) {
       std::string to_node = edge_config.at("to_node").get<std::string>();
       std::string to_port = edge_config.at("to_port").get<std::string>();
 
-      LOG_INFOS << "PipelineConfigBuilder: Adding edge " << from_node << ":"
-                << from_port << " -> " << to_node << ":" << to_port;
+      LOG_INFO_S << "PipelineConfigBuilder: Adding edge " << from_node << ":"
+                 << from_port << " -> " << to_node << ":" << to_port;
 
       if (!graph.addEdge(from_node, from_port, to_node, to_port)) {
-        LOG_ERRORS << "PipelineConfigBuilder: Failed to add edge";
+        LOG_ERROR_S << "PipelineConfigBuilder: Failed to add edge";
         throw std::runtime_error("Failed to add edge: " + from_node + ":" +
                                  from_port + " -> " + to_node + ":" + to_port);
       }
     }
   } else {
-    LOG_WARNINGS << "PipelineConfigBuilder: No 'edges' array found";
+    LOG_WARNING_S << "PipelineConfigBuilder: No 'edges' array found";
   }
 
-  LOG_INFOS << "PipelineConfigBuilder: Graph parsed. Nodes: "
-            << graph.getNodes().size()
-            << ", Edges: " << graph.getEdges().size();
+  LOG_INFO_S << "PipelineConfigBuilder: Graph parsed. Nodes: "
+             << graph.getNodes().size()
+             << ", Edges: " << graph.getEdges().size();
 
   return graph;
 }
@@ -227,7 +228,8 @@ PipelineConfigBuilder::parseOptionsFromJson(const nlohmann::json &json) {
   PipelineOptions options;
 
   if (!json.contains("pipeline")) {
-    LOG_INFOS << "PipelineConfigBuilder: No 'pipeline' section, using defaults";
+    LOG_INFO_S
+        << "PipelineConfigBuilder: No 'pipeline' section, using defaults";
     return options;
   }
 
@@ -237,15 +239,16 @@ PipelineConfigBuilder::parseOptionsFromJson(const nlohmann::json &json) {
   if (pipeline_config.contains("engine_type") &&
       pipeline_config["engine_type"].is_string()) {
     options.engine_type = pipeline_config["engine_type"].get<std::string>();
-    LOG_INFOS << "PipelineConfigBuilder: engine_type = " << options.engine_type;
+    LOG_INFO_S << "PipelineConfigBuilder: engine_type = "
+               << options.engine_type;
   }
 
   // Parse num_workers
   if (pipeline_config.contains("num_workers") &&
       pipeline_config["num_workers"].is_number_integer()) {
     options.num_workers = pipeline_config["num_workers"].get<std::uint8_t>();
-    LOG_INFOS << "PipelineConfigBuilder: num_workers = "
-              << static_cast<int>(options.num_workers);
+    LOG_INFO_S << "PipelineConfigBuilder: num_workers = "
+               << static_cast<int>(options.num_workers);
   }
 
   // Parse execution_timeout (optional, in milliseconds)
@@ -253,8 +256,8 @@ PipelineConfigBuilder::parseOptionsFromJson(const nlohmann::json &json) {
       pipeline_config["execution_timeout_ms"].is_number_integer()) {
     auto timeout_ms = pipeline_config["execution_timeout_ms"].get<int64_t>();
     options.execution_timeout = std::chrono::milliseconds{timeout_ms};
-    LOG_INFOS << "PipelineConfigBuilder: execution_timeout = " << timeout_ms
-              << "ms";
+    LOG_INFO_S << "PipelineConfigBuilder: execution_timeout = " << timeout_ms
+               << "ms";
   }
 
   // Parse auto_reset_on_error (optional)
@@ -262,8 +265,8 @@ PipelineConfigBuilder::parseOptionsFromJson(const nlohmann::json &json) {
       pipeline_config["auto_reset_on_error"].is_boolean()) {
     options.auto_reset_on_error =
         pipeline_config["auto_reset_on_error"].get<bool>();
-    LOG_INFOS << "PipelineConfigBuilder: auto_reset_on_error = "
-              << std::boolalpha << options.auto_reset_on_error;
+    LOG_INFO_S << "PipelineConfigBuilder: auto_reset_on_error = "
+               << std::boolalpha << options.auto_reset_on_error;
   }
 
   return options;
