@@ -666,7 +666,7 @@ std::string hexDump(const void *data, size_t size, size_t bytes_per_line) {
   for (size_t i = 0; i < size; i += bytes_per_line) {
     // Offset
     char offset_buf[16];
-    std::snprintf(offset_buf, sizeof(offset_buf), "%08zx  ", i);
+    std::snprintf(offset_buf, sizeof(offset_buf), "%08zx ", i);
     result += offset_buf;
 
     // Hex bytes

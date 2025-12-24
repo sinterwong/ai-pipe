@@ -6,6 +6,7 @@ project(Tests)
 set(TEST_SOURCES
     main.cc
     test_through_pass.cpp
+    test_stream_execution_engine.cpp
 )
 
 # Prefix paths

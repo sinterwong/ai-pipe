@@ -181,7 +181,10 @@ static void BM_LinearPipeline(benchmark::State &state) {
   if (!loggerInitialized) {
     ai_pipe::logging::LoggerConfig cfg;
     cfg.async_enabled = true;
-    cfg.json_output = true;
+    cfg.json_output = false;
+    cfg.color_enabled = true;
+    cfg.file_enabled = false;
+    cfg.min_level = ai_pipe::logging::LogLevel::Error;
     ai_pipe::logging::Logger::instance().configure(cfg);
   }
 
