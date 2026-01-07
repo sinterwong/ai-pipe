@@ -20,22 +20,27 @@ set(PUBLIC_HEADERS
 
 # Private headers (implementation)
 set(PRIVATE_HEADERS
-    default_execution_engine.hpp
     execution_engine_base.hpp
     execution_engine_factory.hpp
     pipeline_impl.hpp
     thread_pool.hpp
     thread_safe_queue.hpp
     logger_adapter.hpp
+    bounded_drop_queue.hpp
+    drop_strategy.hpp
+    frame_metadata.hpp
+    default_execution_engine.hpp
+    stream_execution_engine.hpp
 )
 
 # Source files
 set(SOURCE_FILES
-    default_execution_engine.cpp
     graph.cpp
     context.cpp
     pipeline_impl.cpp
     logger.cpp
+    default_execution_engine.cpp
+    stream_execution_engine.cpp
 )
 
 # Prefix paths for organization
@@ -47,9 +52,6 @@ list(TRANSFORM SOURCE_FILES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 set(DEPENDENCY_INCLUDES
     ${PROJECT_INCLUDE_DIR}
     ${PROJECT_INCLUDE_DIR}/ai_pipe
-)
-
-set(DEPENDENCY_LIBS
 )
 
 # Build shared library

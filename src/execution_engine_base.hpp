@@ -10,8 +10,8 @@
  */
 #ifndef AI_PIPE_I_EXECUTION_ENGINE_HPP
 #define AI_PIPE_I_EXECUTION_ENGINE_HPP
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/types.hpp"
-#include "graph.hpp"
 #include <functional>
 #include <memory>
 #include <string>
