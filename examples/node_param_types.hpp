@@ -8,8 +8,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __AI_PIPE_PARAM_PARSER_HPP__
-#define __AI_PIPE_PARAM_PARSER_HPP__
+#ifndef AI_PIPE_PARAM_PARSER_HPP
+#define AI_PIPE_PARAM_PARSER_HPP
 
 #include "ai_pipe/data_packet.hpp"
 #include <nlohmann/json.hpp>

@@ -13,8 +13,8 @@
 #define AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP
 
 #include "ai_pipe/data_packet.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
 #include "ai_pipe/type_safe_factory.hpp"
-#include "execution_engine_base.hpp"
 #include <memory>
 #include <string>
 
@@ -61,9 +61,9 @@ using EngineConstructParams = common_utils::DataPacket;
  * @throws std::runtime_error if the engine type is not registered
  */
 inline std::shared_ptr<IExecutionEngine>
-createExecutionEngine(const std::string &engineType = "DefaultExecutionEngine",
+createExecutionEngine(const std::string &engine_type = "DefaultExecutionEngine",
                       const EngineConstructParams &params = {}) {
-  return ExecutionEngineFactory::instance().create(engineType, params);
+  return ExecutionEngineFactory::instance().create(engine_type, params);
 }
 
 } // namespace ai_pipe

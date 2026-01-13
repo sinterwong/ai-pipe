@@ -43,16 +43,16 @@ void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
                                const std::string &message) {
   const char *level_str = nullptr;
   switch (level) {
-  case PipeLogLevel::kDebug:
+  case PipeLogLevel::KDebug:
     level_str = "DEBUG";
     break;
-  case PipeLogLevel::kInfo:
+  case PipeLogLevel::KInfo:
     level_str = "INFO";
     break;
-  case PipeLogLevel::kWarning:
+  case PipeLogLevel::KWarning:
     level_str = "WARN";
     break;
-  case PipeLogLevel::kError:
+  case PipeLogLevel::KError:
     level_str = "ERROR";
     break;
   default:

@@ -36,8 +36,8 @@ protected:
 
   void TearDown() override {}
 
-  fs::path resourceDir = fs::path("assets");
-  fs::path confDir = resourceDir / "conf";
+  fs::path m_resourceDir = fs::path("assets");
+  fs::path m_confDir = m_resourceDir / "conf";
 
   // Helper to create a standard test graph
   ai_pipe::Graph createTestGraph() {
@@ -264,7 +264,7 @@ TEST_F(ThroughPassPipeTest, ExecutionWithTimeout) {
 // =============================================================================
 
 TEST_F(ThroughPassPipeTest, BuildFromJsonConfig) {
-  const std::string graph_config_path = confDir / "through_pass_pipe.json";
+  const std::string graph_config_path = m_confDir / "through_pass_pipe.json";
   auto context = std::make_shared<ai_pipe::PipelineContext>();
   ai_pipe::setupLoggerAdapter(context);
 
@@ -314,7 +314,7 @@ TEST_F(ThroughPassPipeTest, BuildFromJsonConfig) {
 // =============================================================================
 
 TEST_F(ThroughPassPipeTest, BuildFromJsonConfigWithOptions) {
-  const std::string graph_config_path = confDir / "through_pass_pipe.json";
+  const std::string graph_config_path = m_confDir / "through_pass_pipe.json";
   auto context = std::make_shared<ai_pipe::PipelineContext>();
   ai_pipe::setupLoggerAdapter(context);
 
@@ -525,7 +525,7 @@ TEST_F(ThroughPassPipeTest, AccessGraphAndContext) {
 // =============================================================================
 
 TEST_F(ThroughPassPipeTest, BuildGraphFromConfig) {
-  const std::string graph_config_path = confDir / "through_pass_pipe.json";
+  const std::string graph_config_path = m_confDir / "through_pass_pipe.json";
 
   auto graph =
       ai_pipe::examples::PipelineConfigBuilder::buildGraph(graph_config_path);
@@ -547,7 +547,7 @@ TEST_F(ThroughPassPipeTest, BuildGraphFromConfig) {
 // =============================================================================
 
 TEST_F(ThroughPassPipeTest, BuildGraphAndOptionsFromConfig) {
-  const std::string graph_config_path = confDir / "through_pass_pipe.json";
+  const std::string graph_config_path = m_confDir / "through_pass_pipe.json";
 
   auto [graph, options] =
       ai_pipe::examples::PipelineConfigBuilder::buildGraphAndOptions(

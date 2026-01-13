@@ -358,7 +358,7 @@ public:
       for (FrameId frame_id : dropped_frame_ids) {
         DropEvent event{
             .frame_id = frame_id,
-            .stream_id = frame_constants::kDefaultStreamId,
+            .stream_id = frame_constants::k_default_stream_id,
             .drop_time = std::chrono::steady_clock::now(),
             .node_name = m_config.node_name,
             .port_name = m_config.port_name,

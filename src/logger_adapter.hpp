@@ -53,23 +53,23 @@ public:
 
     // Route to appropriate glog level
     switch (level) {
-    case PipeLogLevel::kTrace:
+    case PipeLogLevel::KTrace:
       LOG_TRACE_S << formatted;
       break;
 
-    case PipeLogLevel::kDebug:
+    case PipeLogLevel::KDebug:
       LOG_DEBUG_S << formatted;
       break;
 
-    case PipeLogLevel::kInfo:
+    case PipeLogLevel::KInfo:
       LOG_INFO_S << formatted;
       break;
 
-    case PipeLogLevel::kWarning:
+    case PipeLogLevel::KWarning:
       LOG_WARNING_S << formatted;
       break;
 
-    case PipeLogLevel::kError:
+    case PipeLogLevel::KError:
       LOG_ERROR_S << formatted;
       break;
     }

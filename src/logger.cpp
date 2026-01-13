@@ -1,4 +1,4 @@
-#include "logger.hpp"
+#include "ai_pipe/logger.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -15,7 +15,7 @@ namespace ai_pipe::logging {
 // ============================================================================
 
 Logger::Logger() {
-  initialized_.store(true, std::memory_order_release);
+  m_initialized.store(true, std::memory_order_release);
 
 #ifdef _WIN32
   // Enable ANSI color support on Windows 10+
@@ -31,32 +31,32 @@ Logger::~Logger() { shutdown(); }
 
 void Logger::configure(const LoggerConfig &config) {
   // Atomics can be set lock-free
-  level_.store(config.min_level, std::memory_order_relaxed);
-  console_enabled_.store(config.console_enabled, std::memory_order_relaxed);
-  color_enabled_.store(config.color_enabled, std::memory_order_relaxed);
-  json_enabled_.store(config.json_output, std::memory_order_relaxed);
-  show_thread_id_.store(config.show_thread_id, std::memory_order_relaxed);
-  show_source_.store(config.show_source_location, std::memory_order_relaxed);
-  show_category_.store(config.show_category, std::memory_order_relaxed);
+  m_level.store(config.min_level, std::memory_order_relaxed);
+  m_consoleEnabled.store(config.console_enabled, std::memory_order_relaxed);
+  m_colorEnabled.store(config.color_enabled, std::memory_order_relaxed);
+  m_jsonEnabled.store(config.json_output, std::memory_order_relaxed);
+  m_showThreadId.store(config.show_thread_id, std::memory_order_relaxed);
+  m_showSource.store(config.show_source_location, std::memory_order_relaxed);
+  m_showCategory.store(config.show_category, std::memory_order_relaxed);
 
   bool need_file_reopen = false;
   bool need_async_change = false;
 
   {
-    std::lock_guard lock(config_mutex_);
-    need_file_reopen = (config_.file_path != config.file_path) ||
-                       (config_.file_enabled != config.file_enabled);
-    need_async_change = (config_.async_enabled != config.async_enabled);
-    config_ = config;
+    std::lock_guard lock(m_configMutex);
+    need_file_reopen = (m_config.file_path != config.file_path) ||
+                       (m_config.file_enabled != config.file_enabled);
+    need_async_change = (m_config.async_enabled != config.async_enabled);
+    m_config = config;
   }
 
   // Handle file changes
   if (need_file_reopen) {
-    std::lock_guard lock(file_mutex_);
+    std::lock_guard lock(m_fileMutex);
 
-    if (file_stream_.is_open()) {
-      file_stream_.flush();
-      file_stream_.close();
+    if (m_fileStream.is_open()) {
+      m_fileStream.flush();
+      m_fileStream.close();
     }
 
     if (config.file_enabled) {
@@ -65,90 +65,90 @@ void Logger::configure(const LoggerConfig &config) {
       if (!parent.empty() && !std::filesystem::exists(parent)) {
         std::filesystem::create_directories(parent);
       }
-      file_stream_.open(config.file_path, std::ios::out | std::ios::app);
+      m_fileStream.open(config.file_path, std::ios::out | std::ios::app);
     }
 
-    file_enabled_.store(config.file_enabled, std::memory_order_relaxed);
+    m_fileEnabled.store(config.file_enabled, std::memory_order_relaxed);
   }
 
   // Handle async mode changes
   if (need_async_change) {
-    if (config.async_enabled && !running_.load(std::memory_order_acquire)) {
+    if (config.async_enabled && !m_running.load(std::memory_order_acquire)) {
       // Start async worker
-      ring_buffer_ =
+      m_ringBuffer =
           std::make_unique<SPSCRingBuffer<LogEntry>>(config.async_queue_size);
-      running_.store(true, std::memory_order_release);
-      worker_thread_ =
+      m_running.store(true, std::memory_order_release);
+      m_workerThread =
           std::make_unique<std::thread>(&Logger::asyncWorker, this);
     } else if (!config.async_enabled &&
-               running_.load(std::memory_order_acquire)) {
+               m_running.load(std::memory_order_acquire)) {
       // Stop async worker
-      running_.store(false, std::memory_order_release);
+      m_running.store(false, std::memory_order_release);
       {
-        std::lock_guard lock(worker_mutex_);
-        worker_cv_.notify_one();
+        std::lock_guard lock(m_workerMutex);
+        m_workerCv.notify_one();
       }
 
-      if (worker_thread_ && worker_thread_->joinable()) {
-        worker_thread_->join();
+      if (m_workerThread && m_workerThread->joinable()) {
+        m_workerThread->join();
       }
-      worker_thread_.reset();
+      m_workerThread.reset();
 
       // Drain remaining entries
-      if (ring_buffer_) {
+      if (m_ringBuffer) {
         LogEntry entry;
-        while (ring_buffer_->tryPop(entry)) {
+        while (m_ringBuffer->tryPop(entry)) {
           processEntry(entry);
         }
-        ring_buffer_.reset();
+        m_ringBuffer.reset();
       }
     }
 
-    async_enabled_.store(config.async_enabled, std::memory_order_release);
+    m_asyncEnabled.store(config.async_enabled, std::memory_order_release);
   }
 }
 
 LoggerConfig Logger::config() const {
-  std::lock_guard lock(config_mutex_);
-  return config_;
+  std::lock_guard lock(m_configMutex);
+  return m_config;
 }
 
 void Logger::setLevel(LogLevel level) noexcept {
-  level_.store(level, std::memory_order_relaxed);
+  m_level.store(level, std::memory_order_relaxed);
 }
 
 LogLevel Logger::level() const noexcept {
-  return level_.load(std::memory_order_relaxed);
+  return m_level.load(std::memory_order_relaxed);
 }
 
 void Logger::enableConsole(bool enable) noexcept {
-  console_enabled_.store(enable, std::memory_order_relaxed);
+  m_consoleEnabled.store(enable, std::memory_order_relaxed);
 }
 
 void Logger::enableFile(bool enable) {
-  if (enable == file_enabled_.load(std::memory_order_relaxed)) {
+  if (enable == m_fileEnabled.load(std::memory_order_relaxed)) {
     return;
   }
 
-  std::lock_guard lock(file_mutex_);
+  std::lock_guard lock(m_fileMutex);
 
-  if (enable && !file_stream_.is_open()) {
+  if (enable && !m_fileStream.is_open()) {
     std::string path;
     {
-      std::lock_guard config_lock(config_mutex_);
-      path = config_.file_path;
+      std::lock_guard config_lock(m_configMutex);
+      path = m_config.file_path;
     }
-    file_stream_.open(path, std::ios::out | std::ios::app);
-  } else if (!enable && file_stream_.is_open()) {
-    file_stream_.flush();
-    file_stream_.close();
+    m_fileStream.open(path, std::ios::out | std::ios::app);
+  } else if (!enable && m_fileStream.is_open()) {
+    m_fileStream.flush();
+    m_fileStream.close();
   }
 
-  file_enabled_.store(enable, std::memory_order_relaxed);
+  m_fileEnabled.store(enable, std::memory_order_relaxed);
 }
 
 void Logger::enableColor(bool enable) noexcept {
-  color_enabled_.store(enable, std::memory_order_relaxed);
+  m_colorEnabled.store(enable, std::memory_order_relaxed);
 }
 
 void Logger::enableAsync(bool enable) {
@@ -158,44 +158,44 @@ void Logger::enableAsync(bool enable) {
 }
 
 void Logger::enableJson(bool enable) noexcept {
-  json_enabled_.store(enable, std::memory_order_relaxed);
+  m_jsonEnabled.store(enable, std::memory_order_relaxed);
 }
 
 void Logger::setFilePath(const std::string &path) {
-  std::lock_guard config_lock(config_mutex_);
-  if (config_.file_path == path)
+  std::lock_guard config_lock(m_configMutex);
+  if (m_config.file_path == path)
     return;
 
-  config_.file_path = path;
+  m_config.file_path = path;
 
-  std::lock_guard file_lock(file_mutex_);
-  if (file_stream_.is_open()) {
-    file_stream_.flush();
-    file_stream_.close();
+  std::lock_guard file_lock(m_fileMutex);
+  if (m_fileStream.is_open()) {
+    m_fileStream.flush();
+    m_fileStream.close();
   }
 
-  if (file_enabled_.load(std::memory_order_relaxed)) {
+  if (m_fileEnabled.load(std::memory_order_relaxed)) {
     auto parent = std::filesystem::path(path).parent_path();
     if (!parent.empty() && !std::filesystem::exists(parent)) {
       std::filesystem::create_directories(parent);
     }
-    file_stream_.open(path, std::ios::out | std::ios::app);
+    m_fileStream.open(path, std::ios::out | std::ios::app);
   }
 }
 
 void Logger::setPattern(const std::string &pattern) {
-  std::lock_guard lock(config_mutex_);
-  config_.pattern = pattern;
+  std::lock_guard lock(m_configMutex);
+  m_config.pattern = pattern;
 }
 
 void Logger::addCallback(LogCallback callback) {
-  std::lock_guard lock(callback_mutex_);
-  callbacks_.push_back(std::move(callback));
+  std::lock_guard lock(m_callbackMutex);
+  m_callbacks.push_back(std::move(callback));
 }
 
 void Logger::clearCallbacks() noexcept {
-  std::lock_guard lock(callback_mutex_);
-  callbacks_.clear();
+  std::lock_guard lock(m_callbackMutex);
+  m_callbacks.clear();
 }
 
 void Logger::log(LogLevel level, std::string_view message,
@@ -205,14 +205,14 @@ void Logger::log(LogLevel level, std::string_view message,
 
   LogEntry entry(level, std::string(message), loc, category);
 
-  if (async_enabled_.load(std::memory_order_acquire) && ring_buffer_) {
+  if (m_asyncEnabled.load(std::memory_order_acquire) && m_ringBuffer) {
     // Try lock-free push; fall back to sync if queue full
-    if (!ring_buffer_->tryPush(std::move(entry))) {
+    if (!m_ringBuffer->tryPush(std::move(entry))) {
       // Queue full - process synchronously to avoid log loss
       processEntry(entry);
     } else {
       // Notify worker thread
-      worker_cv_.notify_one();
+      m_workerCv.notify_one();
     }
   } else {
     processEntry(entry);
@@ -251,17 +251,17 @@ void Logger::fatal(std::string_view msg, const SourceLocation &loc,
 
 void Logger::flush() {
   // Flush async queue first
-  if (async_enabled_.load(std::memory_order_acquire) && ring_buffer_) {
+  if (m_asyncEnabled.load(std::memory_order_acquire) && m_ringBuffer) {
     // Signal worker and wait briefly for drain
-    worker_cv_.notify_one();
+    m_workerCv.notify_one();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   // Flush file
   {
-    std::lock_guard lock(file_mutex_);
-    if (file_stream_.is_open()) {
-      file_stream_.flush();
+    std::lock_guard lock(m_fileMutex);
+    if (m_fileStream.is_open()) {
+      m_fileStream.flush();
     }
   }
 
@@ -270,58 +270,58 @@ void Logger::flush() {
 }
 
 void Logger::shutdown() {
-  if (!initialized_.exchange(false, std::memory_order_acq_rel)) {
+  if (!m_initialized.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
 
   // Stop async worker
-  if (running_.exchange(false, std::memory_order_acq_rel)) {
-    worker_cv_.notify_all();
+  if (m_running.exchange(false, std::memory_order_acq_rel)) {
+    m_workerCv.notify_all();
 
-    if (worker_thread_ && worker_thread_->joinable()) {
-      worker_thread_->join();
+    if (m_workerThread && m_workerThread->joinable()) {
+      m_workerThread->join();
     }
-    worker_thread_.reset();
+    m_workerThread.reset();
 
     // Drain remaining entries
-    if (ring_buffer_) {
+    if (m_ringBuffer) {
       LogEntry entry;
-      while (ring_buffer_->tryPop(entry)) {
+      while (m_ringBuffer->tryPop(entry)) {
         processEntry(entry);
       }
-      ring_buffer_.reset();
+      m_ringBuffer.reset();
     }
   }
 
   // Clear callbacks
   {
-    std::lock_guard lock(callback_mutex_);
-    callbacks_.clear();
+    std::lock_guard lock(m_callbackMutex);
+    m_callbacks.clear();
   }
 
   // Close file
   {
-    std::lock_guard lock(file_mutex_);
-    if (file_stream_.is_open()) {
-      file_stream_.flush();
-      file_stream_.close();
+    std::lock_guard lock(m_fileMutex);
+    if (m_fileStream.is_open()) {
+      m_fileStream.flush();
+      m_fileStream.close();
     }
   }
 }
 
 void Logger::processEntry(const LogEntry &entry) {
-  if (console_enabled_.load(std::memory_order_relaxed)) {
+  if (m_consoleEnabled.load(std::memory_order_relaxed)) {
     writeConsole(entry);
   }
 
-  if (file_enabled_.load(std::memory_order_relaxed)) {
+  if (m_fileEnabled.load(std::memory_order_relaxed)) {
     writeFile(entry);
   }
 
   // Invoke callbacks
   {
-    std::lock_guard lock(callback_mutex_);
-    for (const auto &cb : callbacks_) {
+    std::lock_guard lock(m_callbackMutex);
+    for (const auto &cb : m_callbacks) {
       try {
         cb(entry);
       } catch (...) {
@@ -334,9 +334,9 @@ void Logger::processEntry(const LogEntry &entry) {
 void Logger::writeConsole(const LogEntry &entry) {
   auto &buf = getThreadLocalBuffer();
 
-  bool use_color = color_enabled_.load(std::memory_order_relaxed);
+  bool use_color = m_colorEnabled.load(std::memory_order_relaxed);
 
-  if (json_enabled_.load(std::memory_order_relaxed)) {
+  if (m_jsonEnabled.load(std::memory_order_relaxed)) {
     formatJson(buf, entry);
   } else {
     formatEntry(buf, entry, use_color);
@@ -351,9 +351,9 @@ void Logger::writeConsole(const LogEntry &entry) {
 }
 
 void Logger::writeFile(const LogEntry &entry) {
-  std::lock_guard lock(file_mutex_);
+  std::lock_guard lock(m_fileMutex);
 
-  if (!file_stream_.is_open())
+  if (!m_fileStream.is_open())
     return;
 
   // Check rotation
@@ -361,17 +361,17 @@ void Logger::writeFile(const LogEntry &entry) {
 
   auto &buf = getThreadLocalBuffer();
 
-  if (json_enabled_.load(std::memory_order_relaxed)) {
+  if (m_jsonEnabled.load(std::memory_order_relaxed)) {
     formatJson(buf, entry);
   } else {
     formatEntry(buf, entry, false); // No color for files
   }
 
-  file_stream_ << buf.view() << '\n';
+  m_fileStream << buf.view() << '\n';
 
   // Flush for Error/Fatal levels immediately
   if (entry.level >= LogLevel::Error) {
-    file_stream_.flush();
+    m_fileStream.flush();
   }
 }
 
@@ -380,19 +380,19 @@ void Logger::asyncWorker() {
   std::vector<LogEntry> batch;
   batch.reserve(64);
 
-  while (running_.load(std::memory_order_acquire)) {
+  while (m_running.load(std::memory_order_acquire)) {
     // Wait for entries or shutdown signal
     {
-      std::unique_lock lock(worker_mutex_);
-      worker_cv_.wait_for(lock, std::chrono::milliseconds(100), [this] {
-        return !ring_buffer_->empty() ||
-               !running_.load(std::memory_order_acquire);
+      std::unique_lock lock(m_workerMutex);
+      m_workerCv.wait_for(lock, std::chrono::milliseconds(100), [this] {
+        return !m_ringBuffer->empty() ||
+               !m_running.load(std::memory_order_acquire);
       });
     }
 
     // Batch process entries for efficiency
     batch.clear();
-    while (ring_buffer_->tryPop(entry) && batch.size() < 64) {
+    while (m_ringBuffer->tryPop(entry) && batch.size() < 64) {
       batch.push_back(std::move(entry));
     }
 
@@ -402,31 +402,31 @@ void Logger::asyncWorker() {
   }
 
   // Final drain on shutdown
-  while (ring_buffer_->tryPop(entry)) {
+  while (m_ringBuffer->tryPop(entry)) {
     processEntry(entry);
   }
 }
 
 void Logger::rotateFile() {
-  if (!file_stream_.is_open())
+  if (!m_fileStream.is_open())
     return;
 
   size_t max_size;
   int max_backups;
   std::string path;
   {
-    std::lock_guard lock(config_mutex_);
-    max_size = config_.max_file_size;
-    max_backups = config_.max_backup_count;
-    path = config_.file_path;
+    std::lock_guard lock(m_configMutex);
+    max_size = m_config.max_file_size;
+    max_backups = m_config.max_backup_count;
+    path = m_config.file_path;
   }
 
-  auto pos = file_stream_.tellp();
+  auto pos = m_fileStream.tellp();
   if (pos < 0 || static_cast<size_t>(pos) < max_size) {
     return;
   }
 
-  file_stream_.close();
+  m_fileStream.close();
 
   namespace fs = std::filesystem;
 
@@ -445,7 +445,7 @@ void Logger::rotateFile() {
     }
   }
 
-  file_stream_.open(path, std::ios::out | std::ios::app);
+  m_fileStream.open(path, std::ios::out | std::ios::app);
 }
 
 void Logger::formatEntry(FormatBuffer &buf, const LogEntry &entry,
@@ -469,12 +469,12 @@ void Logger::formatEntry(FormatBuffer &buf, const LogEntry &entry,
   buf.append(level_str);
 
   if (with_color) {
-    buf.append(color::kReset);
+    buf.append(color::k_reset);
   }
   buf.append(']');
 
   // Thread ID
-  if (show_thread_id_.load(std::memory_order_relaxed)) {
+  if (m_showThreadId.load(std::memory_order_relaxed)) {
     buf.append(" [T:");
     std::ostringstream oss;
     oss << entry.thread_id;
@@ -483,7 +483,7 @@ void Logger::formatEntry(FormatBuffer &buf, const LogEntry &entry,
   }
 
   // Category
-  if (show_category_.load(std::memory_order_relaxed) &&
+  if (m_showCategory.load(std::memory_order_relaxed) &&
       !entry.category.empty()) {
     buf.append(" [");
     buf.append(entry.category);
@@ -491,7 +491,7 @@ void Logger::formatEntry(FormatBuffer &buf, const LogEntry &entry,
   }
 
   // Source location
-  if (show_source_.load(std::memory_order_relaxed) &&
+  if (m_showSource.load(std::memory_order_relaxed) &&
       entry.location.file != nullptr && entry.location.file[0] != '\0') {
     buf.append(" [");
     buf.append(extractFilename(entry.location.file));
@@ -519,7 +519,7 @@ void Logger::formatJson(FormatBuffer &buf, const LogEntry &entry) const {
   buf.append(levelName(entry.level));
   buf.append("\"");
 
-  if (show_thread_id_.load(std::memory_order_relaxed)) {
+  if (m_showThreadId.load(std::memory_order_relaxed)) {
     buf.append(",\"thread\":\"");
     std::ostringstream oss;
     oss << entry.thread_id;
@@ -527,14 +527,14 @@ void Logger::formatJson(FormatBuffer &buf, const LogEntry &entry) const {
     buf.append("\"");
   }
 
-  if (show_category_.load(std::memory_order_relaxed) &&
+  if (m_showCategory.load(std::memory_order_relaxed) &&
       !entry.category.empty()) {
     buf.append(",\"cat\":\"");
     buf.append(entry.category);
     buf.append("\"");
   }
 
-  if (show_source_.load(std::memory_order_relaxed) &&
+  if (m_showSource.load(std::memory_order_relaxed) &&
       entry.location.file != nullptr && entry.location.file[0] != '\0') {
     buf.append(",\"file\":\"");
     buf.append(extractFilename(entry.location.file));
@@ -628,19 +628,19 @@ std::string_view Logger::levelName(LogLevel level) noexcept {
 std::string_view Logger::levelColor(LogLevel level) noexcept {
   switch (level) {
   case LogLevel::Trace:
-    return color::kGray;
+    return color::k_gray;
   case LogLevel::Debug:
-    return color::kCyan;
+    return color::k_cyan;
   case LogLevel::Info:
-    return color::kGreen;
+    return color::k_green;
   case LogLevel::Warning:
-    return color::kYellow;
+    return color::k_yellow;
   case LogLevel::Error:
-    return color::kBoldRed;
+    return color::k_bold_red;
   case LogLevel::Fatal:
-    return color::kMagenta;
+    return color::k_magenta;
   default:
-    return color::kWhite;
+    return color::k_white;
   }
 }
 
@@ -665,7 +665,7 @@ std::string hexDump(const void *data, size_t size, size_t bytes_per_line) {
 
   for (size_t i = 0; i < size; i += bytes_per_line) {
     // Offset
-    char offset_buf[16];
+    char offset_buf[32];
     std::snprintf(offset_buf, sizeof(offset_buf), "%08zx ", i);
     result += offset_buf;
 

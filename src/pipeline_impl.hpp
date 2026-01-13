@@ -11,8 +11,8 @@
 #ifndef AI_PIPE_PIPELINE_IMPL_HPP
 #define AI_PIPE_PIPELINE_IMPL_HPP
 
-#include "execution_engine_base.hpp"
-#include "pipeline.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
+#include "ai_pipe/pipeline.hpp"
 #include <atomic>
 #include <chrono>
 #include <mutex>

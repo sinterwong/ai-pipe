@@ -9,10 +9,10 @@
  *
  */
 
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/logger.hpp"
 #include "benchmark_node.hpp"
 #include "default_execution_engine.hpp"
-#include "graph.hpp"
 #include <benchmark/benchmark.h>
 #include <memory>
 
@@ -33,19 +33,19 @@ using namespace ai_pipe::bench;
  * @param delayMicros Processing delay per node in microseconds
  * @return Graph The constructed graph
  */
-Graph createLinearGraph(int numNodes, int64_t delayMicros = 0) {
+Graph createLinearGraph(int num_nodes, int64_t delay_micros = 0) {
   Graph graph;
 
   std::vector<std::shared_ptr<BenchmarkNode>> nodes;
-  for (int i = 0; i < numNodes; ++i) {
+  for (int i = 0; i < num_nodes; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Node" + std::to_string(i),
-                                                delayMicros);
+                                                delay_micros);
     nodes.push_back(node);
     graph.addNode(node);
   }
 
   // Connect nodes linearly
-  for (int i = 0; i < numNodes - 1; ++i) {
+  for (int i = 0; i < num_nodes - 1; ++i) {
     graph.addEdge("Node" + std::to_string(i), "output",
                   "Node" + std::to_string(i + 1), "input");
   }
@@ -67,29 +67,29 @@ Graph createLinearGraph(int numNodes, int64_t delayMicros = 0) {
  * @param delayMicros Processing delay per node in microseconds
  * @return Graph The constructed graph
  */
-Graph createParallelGraph(int numParallel, int64_t delayMicros = 0) {
+Graph createParallelGraph(int num_parallel, int64_t delay_micros = 0) {
   Graph graph;
 
   // Source node
-  auto sourceNode = std::make_shared<BenchmarkNode>("Source", delayMicros);
-  graph.addNode(sourceNode);
+  auto source_node = std::make_shared<BenchmarkNode>("Source", delay_micros);
+  graph.addNode(source_node);
 
   // Parallel nodes
-  std::vector<std::shared_ptr<BenchmarkNode>> parallelNodes;
-  for (int i = 0; i < numParallel; ++i) {
+  std::vector<std::shared_ptr<BenchmarkNode>> parallel_nodes;
+  for (int i = 0; i < num_parallel; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Parallel" + std::to_string(i),
-                                                delayMicros);
-    parallelNodes.push_back(node);
+                                                delay_micros);
+    parallel_nodes.push_back(node);
     graph.addNode(node);
     graph.addEdge("Source", "output", "Parallel" + std::to_string(i), "input");
   }
 
   // Sink node (only if we have multiple parallel branches)
-  if (numParallel > 1) {
-    auto sinkNode = std::make_shared<BenchmarkNode>("Sink", delayMicros);
-    graph.addNode(sinkNode);
+  if (num_parallel > 1) {
+    auto sink_node = std::make_shared<BenchmarkNode>("Sink", delay_micros);
+    graph.addNode(sink_node);
 
-    for (int i = 0; i < numParallel; ++i) {
+    for (int i = 0; i < num_parallel; ++i) {
       graph.addEdge("Parallel" + std::to_string(i), "output", "Sink", "input");
     }
   }
@@ -110,34 +110,34 @@ Graph createParallelGraph(int numParallel, int64_t delayMicros = 0) {
  * @param delayMicros Processing delay per node in microseconds
  * @return Graph The constructed graph
  */
-Graph createDiamondGraph(int depth = 2, int64_t delayMicros = 0) {
+Graph createDiamondGraph(int depth = 2, int64_t delay_micros = 0) {
   Graph graph;
 
   // Source node
-  auto sourceNode = std::make_shared<BenchmarkNode>("Source", delayMicros);
-  graph.addNode(sourceNode);
+  auto source_node = std::make_shared<BenchmarkNode>("Source", delay_micros);
+  graph.addNode(source_node);
 
   // Left branch
-  std::vector<std::shared_ptr<BenchmarkNode>> leftBranch;
+  std::vector<std::shared_ptr<BenchmarkNode>> left_branch;
   for (int i = 0; i < depth; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Left" + std::to_string(i),
-                                                delayMicros);
-    leftBranch.push_back(node);
+                                                delay_micros);
+    left_branch.push_back(node);
     graph.addNode(node);
   }
 
   // Right branch
-  std::vector<std::shared_ptr<BenchmarkNode>> rightBranch;
+  std::vector<std::shared_ptr<BenchmarkNode>> right_branch;
   for (int i = 0; i < depth; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Right" + std::to_string(i),
-                                                delayMicros);
-    rightBranch.push_back(node);
+                                                delay_micros);
+    right_branch.push_back(node);
     graph.addNode(node);
   }
 
   // Sink node
-  auto sinkNode = std::make_shared<BenchmarkNode>("Sink", delayMicros);
-  graph.addNode(sinkNode);
+  auto sink_node = std::make_shared<BenchmarkNode>("Sink", delay_micros);
+  graph.addNode(sink_node);
 
   // Connect source to both branches
   graph.addEdge("Source", "output", "Left0", "input");
@@ -172,13 +172,13 @@ Graph createDiamondGraph(int depth = 2, int64_t delayMicros = 0) {
  * Measures the performance of executing a linear sequence of nodes.
  * This tests the basic scheduling overhead and sequential execution.
  */
-static void BM_LinearPipeline(benchmark::State &state) {
-  const int numNodes = state.range(0);
-  const int64_t delayMicros = state.range(1);
+static void bmLinearPipeline(benchmark::State &state) {
+  const int num_nodes = state.range(0);
+  const int64_t delay_micros = state.range(1);
 
   // Setup logger (only once)
-  static bool loggerInitialized = false;
-  if (!loggerInitialized) {
+  static bool logger_initialized = false;
+  if (!logger_initialized) {
     ai_pipe::logging::LoggerConfig cfg;
     cfg.async_enabled = true;
     cfg.json_output = false;
@@ -189,21 +189,21 @@ static void BM_LinearPipeline(benchmark::State &state) {
   }
 
   // Create graph
-  auto graph = createLinearGraph(numNodes, delayMicros);
+  auto graph = createLinearGraph(num_nodes, delay_micros);
 
   // Create engine
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 4;
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 4;
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   // Prepare input
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Node0"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Node0"] = input_data;
 
   // Benchmark loop
   for (auto _ : state) {
@@ -212,13 +212,13 @@ static void BM_LinearPipeline(benchmark::State &state) {
   }
 
   // Report custom metrics
-  state.SetItemsProcessed(state.iterations() * numNodes);
-  state.SetLabel("nodes=" + std::to_string(numNodes) +
-                 ",delay=" + std::to_string(delayMicros) + "us");
+  state.SetItemsProcessed(state.iterations() * num_nodes);
+  state.SetLabel("nodes=" + std::to_string(num_nodes) +
+                 ",delay=" + std::to_string(delay_micros) + "us");
 }
 
 // Register linear pipeline benchmarks
-BENCHMARK(BM_LinearPipeline)
+BENCHMARK(bmLinearPipeline)
     ->Args({3, 0})    // 3 nodes, no delay
     ->Args({5, 0})    // 5 nodes, no delay
     ->Args({10, 0})   // 10 nodes, no delay
@@ -237,23 +237,23 @@ BENCHMARK(BM_LinearPipeline)
  * Measures the performance of executing multiple parallel branches.
  * This tests the engine's ability to utilize multiple threads effectively.
  */
-static void BM_ParallelExecution(benchmark::State &state) {
-  const int numParallel = state.range(0);
-  const int64_t delayMicros = state.range(1);
+static void bmParallelExecution(benchmark::State &state) {
+  const int num_parallel = state.range(0);
+  const int64_t delay_micros = state.range(1);
 
-  auto graph = createParallelGraph(numParallel, delayMicros);
+  auto graph = createParallelGraph(num_parallel, delay_micros);
 
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 8; // More workers for parallel execution
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 8; // More workers for parallel execution
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Source"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Source"] = input_data;
 
   for (auto _ : state) {
     engine.execute(inputs, true);
@@ -261,12 +261,12 @@ static void BM_ParallelExecution(benchmark::State &state) {
   }
 
   state.SetItemsProcessed(state.iterations() *
-                          (numParallel + 2)); // +source +sink
-  state.SetLabel("parallel=" + std::to_string(numParallel) +
-                 ",delay=" + std::to_string(delayMicros) + "us");
+                          (num_parallel + 2)); // +source +sink
+  state.SetLabel("parallel=" + std::to_string(num_parallel) +
+                 ",delay=" + std::to_string(delay_micros) + "us");
 }
 
-BENCHMARK(BM_ParallelExecution)
+BENCHMARK(bmParallelExecution)
     ->Args({2, 0})   // 2 parallel branches, no delay
     ->Args({4, 0})   // 4 parallel branches, no delay
     ->Args({8, 0})   // 8 parallel branches, no delay
@@ -285,33 +285,33 @@ BENCHMARK(BM_ParallelExecution)
  * Measures how the engine scales with different numbers of worker threads.
  * This helps identify the optimal thread pool size.
  */
-static void BM_WorkerThreadScaling(benchmark::State &state) {
-  const uint8_t numWorkers = state.range(0);
-  const int numParallel = 8; // Fixed parallel workload
-  const int64_t delayMicros = 100;
+static void bmWorkerThreadScaling(benchmark::State &state) {
+  const uint8_t num_workers = state.range(0);
+  const int num_parallel = 8; // Fixed parallel workload
+  const int64_t delay_micros = 100;
 
-  auto graph = createParallelGraph(numParallel, delayMicros);
+  auto graph = createParallelGraph(num_parallel, delay_micros);
 
   DefaultExecutionEngine engine;
-  if (!engine.initialize(&graph, numWorkers)) {
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Source"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Source"] = input_data;
 
   for (auto _ : state) {
     engine.execute(inputs, true);
     engine.reset();
   }
 
-  state.SetLabel("workers=" + std::to_string(numWorkers));
+  state.SetLabel("workers=" + std::to_string(num_workers));
 }
 
-BENCHMARK(BM_WorkerThreadScaling)
+BENCHMARK(bmWorkerThreadScaling)
     ->Arg(1)  // 1 worker
     ->Arg(2)  // 2 workers
     ->Arg(4)  // 4 workers
@@ -329,36 +329,36 @@ BENCHMARK(BM_WorkerThreadScaling)
  * Tests a common pattern where work splits and then merges.
  * This is typical in many real-world pipelines.
  */
-static void BM_DiamondPattern(benchmark::State &state) {
+static void bmDiamondPattern(benchmark::State &state) {
   const int depth = state.range(0);
-  const int64_t delayMicros = state.range(1);
+  const int64_t delay_micros = state.range(1);
 
-  auto graph = createDiamondGraph(depth, delayMicros);
+  auto graph = createDiamondGraph(depth, delay_micros);
 
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 4;
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 4;
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Source"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Source"] = input_data;
 
   for (auto _ : state) {
     engine.execute(inputs, true);
     engine.reset();
   }
 
-  int totalNodes = 1 + 2 * depth + 1; // source + 2 branches + sink
-  state.SetItemsProcessed(state.iterations() * totalNodes);
+  int total_nodes = 1 + 2 * depth + 1; // source + 2 branches + sink
+  state.SetItemsProcessed(state.iterations() * total_nodes);
   state.SetLabel("depth=" + std::to_string(depth) +
-                 ",delay=" + std::to_string(delayMicros) + "us");
+                 ",delay=" + std::to_string(delay_micros) + "us");
 }
 
-BENCHMARK(BM_DiamondPattern)
+BENCHMARK(bmDiamondPattern)
     ->Args({2, 0})  // depth=2, no delay
     ->Args({4, 0})  // depth=4, no delay
     ->Args({2, 50}) // depth=2, 50us delay
@@ -376,40 +376,40 @@ BENCHMARK(BM_DiamondPattern)
  * This simulates a scenario where the same pipeline processes
  * multiple inputs sequentially.
  */
-static void BM_Throughput(benchmark::State &state) {
-  const int numNodes = 5;
-  const int64_t delayMicros = 10; // Small delay to simulate real work
+static void bmThroughput(benchmark::State &state) {
+  const int num_nodes = 5;
+  const int64_t delay_micros = 10; // Small delay to simulate real work
 
-  auto graph = createLinearGraph(numNodes, delayMicros);
+  auto graph = createLinearGraph(num_nodes, delay_micros);
 
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 4;
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 4;
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Node0"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Node0"] = input_data;
 
-  int64_t totalExecutions = 0;
+  int64_t total_executions = 0;
 
   for (auto _ : state) {
     // Execute multiple times per iteration to measure throughput
     for (int i = 0; i < 10; ++i) {
       engine.execute(inputs, true);
       engine.reset();
-      totalExecutions++;
+      total_executions++;
     }
   }
 
-  state.SetItemsProcessed(totalExecutions);
+  state.SetItemsProcessed(total_executions);
   state.SetLabel("executions_per_iter=10");
 }
 
-BENCHMARK(BM_Throughput)->Unit(benchmark::kMillisecond);
+BENCHMARK(bmThroughput)->Unit(benchmark::kMillisecond);
 
 // ============================================================================
 // Benchmark: Scheduling Overhead
@@ -422,33 +422,33 @@ BENCHMARK(BM_Throughput)->Unit(benchmark::kMillisecond);
  * nodes with zero processing delay. This isolates the scheduling,
  * synchronization, and task management costs.
  */
-static void BM_SchedulingOverhead(benchmark::State &state) {
-  const int numNodes = state.range(0);
+static void bmSchedulingOverhead(benchmark::State &state) {
+  const int num_nodes = state.range(0);
 
-  auto graph = createLinearGraph(numNodes, 0); // Zero delay
+  auto graph = createLinearGraph(num_nodes, 0); // Zero delay
 
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 4;
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 4;
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Node0"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Node0"] = input_data;
 
   for (auto _ : state) {
     engine.execute(inputs, true);
     engine.reset();
   }
 
-  state.SetItemsProcessed(state.iterations() * numNodes);
-  state.SetLabel("nodes=" + std::to_string(numNodes) + ",overhead_only");
+  state.SetItemsProcessed(state.iterations() * num_nodes);
+  state.SetLabel("nodes=" + std::to_string(num_nodes) + ",overhead_only");
 }
 
-BENCHMARK(BM_SchedulingOverhead)
+BENCHMARK(bmSchedulingOverhead)
     ->Arg(1)
     ->Arg(5)
     ->Arg(10)
@@ -467,12 +467,12 @@ BENCHMARK(BM_SchedulingOverhead)
  * This is important for scenarios where the engine is frequently
  * reconfigured.
  */
-static void BM_StateTransitions(benchmark::State &state) {
-  const int numNodes = 10;
+static void bmStateTransitions(benchmark::State &state) {
+  const int num_nodes = 10;
 
   for (auto _ : state) {
     state.PauseTiming();
-    auto graph = createLinearGraph(numNodes, 0);
+    auto graph = createLinearGraph(num_nodes, 0);
     DefaultExecutionEngine engine;
     state.ResumeTiming();
 
@@ -480,9 +480,9 @@ static void BM_StateTransitions(benchmark::State &state) {
 
     state.PauseTiming();
     PortDataMap inputs;
-    auto inputData = std::make_shared<PortData>();
-    inputData->setParam<int>("data", 42);
-    inputs["Node0"] = inputData;
+    auto input_data = std::make_shared<PortData>();
+    input_data->setParam<int>("data", 42);
+    inputs["Node0"] = input_data;
     state.ResumeTiming();
 
     engine.execute(inputs, true);
@@ -492,7 +492,7 @@ static void BM_StateTransitions(benchmark::State &state) {
   state.SetLabel("init+execute+reset");
 }
 
-BENCHMARK(BM_StateTransitions)->Unit(benchmark::kMicrosecond);
+BENCHMARK(bmStateTransitions)->Unit(benchmark::kMicrosecond);
 
 // ============================================================================
 // Benchmark: Complex Graph
@@ -505,32 +505,33 @@ BENCHMARK(BM_StateTransitions)->Unit(benchmark::kMicrosecond);
  *
  * Stage1 -> Stage2 (3 parallel) -> Stage3 (2 parallel) -> Stage4
  */
-static void BM_ComplexGraph(benchmark::State &state) {
-  const int64_t delayMicros = state.range(0);
+static void bmComplexGraph(benchmark::State &state) {
+  const int64_t delay_micros = state.range(0);
 
   Graph graph;
 
   // Stage 1: Single node
-  auto stage1 = std::make_shared<BenchmarkNode>("Stage1", delayMicros);
+  auto stage1 = std::make_shared<BenchmarkNode>("Stage1", delay_micros);
   graph.addNode(stage1);
 
   // Stage 2: Fan-out to 3 nodes
-  std::vector<std::shared_ptr<BenchmarkNode>> stage2Nodes;
+  std::vector<std::shared_ptr<BenchmarkNode>> stage2_nodes;
   for (int i = 0; i < 3; ++i) {
     auto node = std::make_shared<BenchmarkNode>("Stage2_" + std::to_string(i),
-                                                delayMicros);
-    stage2Nodes.push_back(node);
+                                                delay_micros);
+    stage2_nodes.push_back(node);
     graph.addNode(node);
     graph.addEdge("Stage1", "output", "Stage2_" + std::to_string(i), "input");
   }
 
   // Stage 3: Each stage2 node fans out to 2 nodes
-  std::vector<std::shared_ptr<BenchmarkNode>> stage3Nodes;
+  std::vector<std::shared_ptr<BenchmarkNode>> stage3_nodes;
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 2; ++j) {
       auto node = std::make_shared<BenchmarkNode>(
-          "Stage3_" + std::to_string(i) + "_" + std::to_string(j), delayMicros);
-      stage3Nodes.push_back(node);
+          "Stage3_" + std::to_string(i) + "_" + std::to_string(j),
+          delay_micros);
+      stage3_nodes.push_back(node);
       graph.addNode(node);
       graph.addEdge("Stage2_" + std::to_string(i), "output",
                     "Stage3_" + std::to_string(i) + "_" + std::to_string(j),
@@ -539,7 +540,7 @@ static void BM_ComplexGraph(benchmark::State &state) {
   }
 
   // Stage 4: Converge to single node
-  auto stage4 = std::make_shared<BenchmarkNode>("Stage4", delayMicros);
+  auto stage4 = std::make_shared<BenchmarkNode>("Stage4", delay_micros);
   graph.addNode(stage4);
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 2; ++j) {
@@ -549,29 +550,29 @@ static void BM_ComplexGraph(benchmark::State &state) {
   }
 
   DefaultExecutionEngine engine;
-  const uint8_t numWorkers = 8;
-  if (!engine.initialize(&graph, numWorkers)) {
+  const uint8_t num_workers = 8;
+  if (!engine.initialize(&graph, num_workers)) {
     state.SkipWithError("Failed to initialize engine");
     return;
   }
 
   PortDataMap inputs;
-  auto inputData = std::make_shared<PortData>();
-  inputData->setParam<int>("data", 42);
-  inputs["Stage1"] = inputData;
+  auto input_data = std::make_shared<PortData>();
+  input_data->setParam<int>("data", 42);
+  inputs["Stage1"] = input_data;
 
   for (auto _ : state) {
     engine.execute(inputs, true);
     engine.reset();
   }
 
-  int totalNodes = 1 + 3 + 6 + 1; // stage1 + stage2 + stage3 + stage4
-  state.SetItemsProcessed(state.iterations() * totalNodes);
-  state.SetLabel("delay=" + std::to_string(delayMicros) +
-                 "us,nodes=" + std::to_string(totalNodes));
+  int total_nodes = 1 + 3 + 6 + 1; // stage1 + stage2 + stage3 + stage4
+  state.SetItemsProcessed(state.iterations() * total_nodes);
+  state.SetLabel("delay=" + std::to_string(delay_micros) +
+                 "us,nodes=" + std::to_string(total_nodes));
 }
 
-BENCHMARK(BM_ComplexGraph)
+BENCHMARK(bmComplexGraph)
     ->Arg(0)   // No delay
     ->Arg(50)  // 50us delay
     ->Arg(100) // 100us delay

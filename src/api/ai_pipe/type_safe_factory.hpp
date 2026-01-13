@@ -31,21 +31,21 @@ public:
     return instance;
   }
 
-  bool registerCreator(const std::string &className, Creator creator) {
+  bool registerCreator(const std::string &class_name, Creator creator) {
     if (!creator) {
       throw std::runtime_error("Cannot register a null creator");
     }
 
     auto [it, success] =
-        creatorRegistry.insert({className, std::move(creator)});
+        m_creatorRegistry.insert({class_name, std::move(creator)});
     return success;
   }
 
-  std::shared_ptr<BaseClass> create(const std::string &className,
+  std::shared_ptr<BaseClass> create(const std::string &class_name,
                                     const DataPacket &params = {}) const {
-    auto it = creatorRegistry.find(className);
-    if (it == creatorRegistry.end()) {
-      throw std::runtime_error("Factory error: Class '" + className +
+    auto it = m_creatorRegistry.find(class_name);
+    if (it == m_creatorRegistry.end()) {
+      throw std::runtime_error("Factory error: Class '" + class_name +
                                "' not registered for base type '" +
                                typeid(BaseClass).name() + "'.");
     }
@@ -53,13 +53,13 @@ public:
     try {
       return it->second(params);
     } catch (const std::exception &e) {
-      throw std::runtime_error("Factory error: Failed to create '" + className +
+      throw std::runtime_error("Factory error: Failed to create '" + class_name +
                                "': " + e.what());
     }
   }
 
-  bool isRegistered(const std::string &className) const {
-    return creatorRegistry.count(className);
+  bool isRegistered(const std::string &class_name) const {
+    return m_creatorRegistry.count(class_name);
   }
 
 private:
@@ -72,7 +72,7 @@ private:
   Factory(Factory &&) = delete;
   Factory &operator=(Factory &&) = delete;
 
-  std::map<std::string, Creator> creatorRegistry;
+  std::map<std::string, Creator> m_creatorRegistry;
 };
 
 } // namespace ai_pipe::common_utils

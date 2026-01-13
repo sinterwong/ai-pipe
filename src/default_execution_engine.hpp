@@ -11,7 +11,7 @@
 #ifndef AI_PIPE_DEFAULT_EXECUTION_ENGINE_HPP
 #define AI_PIPE_DEFAULT_EXECUTION_ENGINE_HPP
 
-#include "execution_engine_base.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
 #include "thread_pool.hpp"
 #include "thread_safe_queue.hpp"
 #include <atomic>

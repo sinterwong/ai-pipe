@@ -1,6 +1,6 @@
 # Extract version information from header file
 function(ai_pipe_extract_version)
-    file(READ "${CMAKE_CURRENT_LIST_DIR}/src/api/ai_pipe/ai_pipe_version.hpp" file_contents)
+    file(READ "${CMAKE_CURRENT_LIST_DIR}/src/api/ai_pipe/version.hpp" file_contents)
 
     string(REGEX MATCH "AI_PIPE_VER_MAJOR ([0-9]+)" _ "${file_contents}")
     if(NOT CMAKE_MATCH_COUNT EQUAL 1)

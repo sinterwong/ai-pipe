@@ -68,9 +68,9 @@ using CoordinatedDropCallback =
  */
 struct BranchState {
   BranchId branch_id;
-  FrameId latest_frame{frame_constants::kInvalidFrameId}; ///< Latest frame seen
+  FrameId latest_frame{frame_constants::k_invalid_frame_id}; ///< Latest frame seen
   FrameId processed_frame{
-      frame_constants::kInvalidFrameId};      ///< Latest frame processed
+      frame_constants::k_invalid_frame_id};      ///< Latest frame processed
   std::unordered_set<FrameId> dropped_frames; ///< Frames dropped by this branch
   std::unordered_set<FrameId>
       pending_sync_drops;         ///< Drops pending from other branches
@@ -249,7 +249,7 @@ public:
       if (other_id != branch_id) {
         // If this branch hasn't processed this frame yet, mark for sync drop
         if (other_state->processed_frame < frame_id ||
-            other_state->processed_frame == frame_constants::kInvalidFrameId) {
+            other_state->processed_frame == frame_constants::k_invalid_frame_id) {
           other_state->pending_sync_drops.insert(frame_id);
           affected_branches.push_back(other_id);
         }
@@ -358,7 +358,7 @@ public:
   [[nodiscard]] FrameId minLatestFrame() const {
     std::shared_lock lock(m_mutex);
 
-    FrameId min_latest = frame_constants::kEndOfStreamFrameId;
+    FrameId min_latest = frame_constants::k_end_of_stream_frame_id;
     for (const auto &[id, state] : m_branches) {
       if (state->active && state->latest_frame < min_latest) {
         min_latest = state->latest_frame;
@@ -429,7 +429,7 @@ public:
 private:
   void updateWatermarkLocked() {
     // Find minimum processed frame across all active branches
-    FrameId new_watermark = frame_constants::kEndOfStreamFrameId;
+    FrameId new_watermark = frame_constants::k_end_of_stream_frame_id;
 
     for (const auto &[id, state] : m_branches) {
       if (!state->active)
@@ -440,20 +440,20 @@ private:
       FrameId effective_processed = state->processed_frame;
       for (FrameId dropped : state->dropped_frames) {
         if (dropped > effective_processed ||
-            effective_processed == frame_constants::kInvalidFrameId) {
+            effective_processed == frame_constants::k_invalid_frame_id) {
           // Consider dropped frames as "processed" for watermark calculation
           effective_processed = std::max(effective_processed, dropped);
         }
       }
 
-      if (effective_processed != frame_constants::kInvalidFrameId &&
-          (new_watermark == frame_constants::kEndOfStreamFrameId ||
+      if (effective_processed != frame_constants::k_invalid_frame_id &&
+          (new_watermark == frame_constants::k_end_of_stream_frame_id ||
            effective_processed < new_watermark)) {
         new_watermark = effective_processed;
       }
     }
 
-    if (new_watermark != frame_constants::kEndOfStreamFrameId &&
+    if (new_watermark != frame_constants::k_end_of_stream_frame_id &&
         new_watermark > m_watermark) {
       m_watermark = new_watermark;
     }
@@ -470,7 +470,7 @@ private:
   std::unordered_map<FrameId, std::string> m_dropReasons;
 
   // Watermark tracking
-  FrameId m_watermark{frame_constants::kInvalidFrameId};
+  FrameId m_watermark{frame_constants::k_invalid_frame_id};
 
   // Thread safety
   mutable std::shared_mutex m_mutex;
@@ -624,7 +624,7 @@ public:
 
     auto it = m_groups.find(group_id);
     if (it == m_groups.end()) {
-      return frame_constants::kInvalidFrameId;
+      return frame_constants::k_invalid_frame_id;
     }
 
     return it->second->reportFrameReceived(branch_id, frame_id);
@@ -742,7 +742,7 @@ public:
 
     auto it = m_groups.find(group_id);
     if (it == m_groups.end()) {
-      return frame_constants::kInvalidFrameId;
+      return frame_constants::k_invalid_frame_id;
     }
 
     return it->second->watermark();

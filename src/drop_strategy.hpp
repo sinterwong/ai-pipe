@@ -40,8 +40,8 @@ template <typename T> class BoundedDropQueue;
  * @brief Information about a drop event for callbacks/logging
  */
 struct DropEvent {
-  FrameId frame_id{frame_constants::kInvalidFrameId};
-  StreamId stream_id{frame_constants::kDefaultStreamId};
+  FrameId frame_id{frame_constants::k_invalid_frame_id};
+  StreamId stream_id{frame_constants::k_default_stream_id};
   Timestamp drop_time{std::chrono::steady_clock::now()};
   std::string node_name;
   std::string port_name;

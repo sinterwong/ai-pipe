@@ -1,0 +1,98 @@
+---
+# -------------------------------------------------------------------------
+# Checks: 
+# 只开启命名检查 (readability-identifier-naming)。
+# 禁用了所有默认检查 (-*) 以免在重构时被其他逻辑警告干扰。
+# -------------------------------------------------------------------------
+Checks: '-*,readability-identifier-naming'
+
+# 忽略系统头文件和第三方库的警告 (根据需要调整)
+HeaderFilterRegex: ''
+
+CheckOptions:
+  # =========================================================================
+  # 类型定义 (PascalCase)
+  #    例如: class AlgoInferEngine, struct TensorData, enum DataType
+  # =========================================================================
+  - key:             readability-identifier-naming.ClassCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.StructCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.EnumCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.UnionCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.TypedefCase
+    value:           CamelCase
+
+  # =========================================================================
+  # 函数与方法 (camelBack)
+  #    例如: initialize(), getModelInfo()
+  # =========================================================================
+  - key:             readability-identifier-naming.FunctionCase
+    value:           camelBack
+  - key:             readability-identifier-naming.MethodCase
+    value:           camelBack
+  # 虚函数重写通常需要保持父类风格，这里强制检查，如果报错需要手动 suppress
+  
+  # =========================================================================
+  # 变量与参数 (lower_case)
+  #    例如: int device_id, float input_score
+  # =========================================================================
+  # 通用变量设置 (作为兜底)
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  # 局部变量
+  - key:             readability-identifier-naming.LocalVariableCase
+    value:           lower_case
+  # 函数参数
+  - key:             readability-identifier-naming.ParameterCase
+    value:           lower_case
+  # 全局变量
+  - key:             readability-identifier-naming.GlobalVariableCase
+    value:           lower_case
+
+  # =========================================================================
+  # 成员变量
+  # =========================================================================
+  
+  # A. 公有成员 (Public Members) -> lower_case
+  #    场景: struct BoundingBox { int x; int y; };
+  - key:             readability-identifier-naming.PublicMemberCase
+    value:           lower_case
+
+  # B. 私有成员 (Private Members) -> m_ + camelBack
+  #    场景: class Engine { int m_deviceId; };
+  #    注意: 必须同时设置 Prefix 和 Case，且不要设置通用的 MemberCase
+  - key:             readability-identifier-naming.PrivateMemberPrefix
+    value:           m_
+  - key:             readability-identifier-naming.PrivateMemberCase
+    value:           camelBack
+
+  # C. 保护成员 (Protected Members) -> m_ + camelBack
+  - key:             readability-identifier-naming.ProtectedMemberPrefix
+    value:           m_
+  - key:             readability-identifier-naming.ProtectedMemberCase
+    value:           camelBack
+
+  # =========================================================================
+  # 其他
+  # =========================================================================
+  # 命名空间 -> 蛇形 (ai_core)
+  - key:             readability-identifier-naming.NamespaceCase
+    value:           lower_case
+  
+  # 宏定义 -> 全大写 (AI_CORE_VERSION)
+  - key:             readability-identifier-naming.MacroDefinitionCase
+    value:           UPPER_CASE
+  
+  # 枚举值 -> 大驼峰 (DataType::Float32) 或 全大写
+  # 推荐使用 CamelCase 以区分宏，与类名风格一致
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           CamelCase
+    
+  # 模板参数 -> 大驼峰 (template <typename T> 或 typename InputType)
+  - key:             readability-identifier-naming.TemplateParameterCase
+    value:           CamelCase
+
+...

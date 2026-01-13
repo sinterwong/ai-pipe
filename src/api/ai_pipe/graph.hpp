@@ -12,7 +12,7 @@
 #define AI_PIPE_GRAPH_HPP
 
 #include "ai_pipe/edge.hpp"
-#include "ai_pipe/node_base.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include <unordered_map>
 
 namespace ai_pipe {
@@ -33,8 +33,9 @@ public:
 
   const std::vector<std::shared_ptr<ILogicNode>> &getNodes() const;
 
-  bool addEdge(const std::string &sourceNodeName, const std::string &sourcePort,
-               const std::string &destNodeName, const std::string &destPort);
+  bool addEdge(const std::string &source_node_name,
+               const std::string &source_port,
+               const std::string &dest_node_name, const std::string &dest_port);
 
   const std::vector<Edge> &getEdges() const;
 
@@ -49,10 +50,10 @@ public:
   getIncomingNeighbors(const std::shared_ptr<ILogicNode> &node) const;
 
   std::vector<Edge>
-  getIncomingEdges(const std::shared_ptr<ILogicNode> &destNode) const;
+  getIncomingEdges(const std::shared_ptr<ILogicNode> &dest_node) const;
 
   std::vector<Edge>
-  getOutgoingEdges(const std::shared_ptr<ILogicNode> &sourceNode) const;
+  getOutgoingEdges(const std::shared_ptr<ILogicNode> &source_node) const;
 
   bool hasCycle() const;
 
@@ -61,7 +62,7 @@ public:
 private:
   bool hasCycleDFS(
       const std::shared_ptr<ILogicNode> &node,
-      std::unordered_map<std::shared_ptr<ILogicNode>, int> &visitStatus) const;
+      std::unordered_map<std::shared_ptr<ILogicNode>, int> &visit_status) const;
 
 private:
   std::vector<std::shared_ptr<ILogicNode>> m_nodes;

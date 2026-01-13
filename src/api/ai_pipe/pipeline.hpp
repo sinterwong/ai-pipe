@@ -12,15 +12,14 @@
 #define AI_PIPE_PIPELINE_HPP
 
 #include "ai_pipe/context.hpp"
+#include "ai_pipe/enum.hpp"
 #include "ai_pipe/graph.hpp"
-#include "ai_pipe/types.hpp"
 #include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 
 namespace ai_pipe {
 

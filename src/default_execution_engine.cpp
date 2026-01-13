@@ -9,8 +9,8 @@
  */
 
 #include "default_execution_engine.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 #include "ai_pipe/logger.hpp"
-#include "execution_engine_factory.hpp"
 #include <stdexcept>
 
 namespace ai_pipe {
@@ -722,19 +722,19 @@ void DefaultExecutionEngine::propagateOutputAndScheduleDownstream(
   const auto outgoing_edges = m_graph->getOutgoingEdges(source_node);
 
   for (const auto &edge : outgoing_edges) {
-    auto output_it = outputs.find(edge.sourcePort);
+    auto output_it = outputs.find(edge.source_port);
     if (output_it == outputs.end()) {
       continue;
     }
 
     const auto &data = output_it->second;
-    const auto &dest_node = edge.destNode;
-    const auto &dest_port = edge.destPort;
+    const auto &dest_node = edge.dest_node;
+    const auto &dest_port = edge.dest_port;
 
     if (m_inputQueueManager.hasQueue(dest_node, dest_port)) {
       m_inputQueueManager.pushToQueue(dest_node, dest_port, data);
       LOG_TRACE_S << "DefaultExecutionEngine: Propagated "
-                  << source_node->getName() << ":" << edge.sourcePort << " -> "
+                  << source_node->getName() << ":" << edge.source_port << " -> "
                   << dest_node->getName() << ":" << dest_port;
       tryScheduleNode(dest_node);
     } else {
