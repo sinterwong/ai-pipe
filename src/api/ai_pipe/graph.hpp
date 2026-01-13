@@ -12,7 +12,7 @@
 #define AI_PIPE_GRAPH_HPP
 
 #include "ai_pipe/edge.hpp"
-#include "ai_pipe/node_base.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include <unordered_map>
 
 namespace ai_pipe {
@@ -33,7 +33,8 @@ public:
 
   const std::vector<std::shared_ptr<ILogicNode>> &getNodes() const;
 
-  bool addEdge(const std::string &source_node_name, const std::string &source_port,
+  bool addEdge(const std::string &source_node_name,
+               const std::string &source_port,
                const std::string &dest_node_name, const std::string &dest_port);
 
   const std::vector<Edge> &getEdges() const;

@@ -9,10 +9,10 @@
  *
  */
 
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/logger.hpp"
 #include "benchmark_node.hpp"
 #include "default_execution_engine.hpp"
-#include "graph.hpp"
 #include <benchmark/benchmark.h>
 #include <memory>
 
@@ -529,7 +529,8 @@ static void bmComplexGraph(benchmark::State &state) {
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 2; ++j) {
       auto node = std::make_shared<BenchmarkNode>(
-          "Stage3_" + std::to_string(i) + "_" + std::to_string(j), delay_micros);
+          "Stage3_" + std::to_string(i) + "_" + std::to_string(j),
+          delay_micros);
       stage3_nodes.push_back(node);
       graph.addNode(node);
       graph.addEdge("Stage2_" + std::to_string(i), "output",

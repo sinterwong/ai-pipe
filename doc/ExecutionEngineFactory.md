@@ -27,7 +27,7 @@ ai-pipe uses a unified factory pattern to manage components:
 #ifndef MY_CUSTOM_ENGINE_HPP
 #define MY_CUSTOM_ENGINE_HPP
 
-#include "execution_engine_base.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
 
 namespace my_project {
 
@@ -69,7 +69,7 @@ private:
 ```cpp
 // my_custom_engine.cpp
 #include "my_custom_engine.hpp"
-#include "execution_engine_factory.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 
 namespace my_project {
 
@@ -164,7 +164,7 @@ pipeline.initialize(std::move(graph), context, config);
 ### Method 2: Creating the Engine Directly
 
 ```cpp
-#include "execution_engine_factory.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 
 using namespace ai_pipe;
 
@@ -216,7 +216,7 @@ The default execution engine, providing basic parallel execution capabilities.
 If your engine requires additional parameters, you can extend `EngineConstructParams`:
 
 ```cpp
-#include "execution_engine_factory.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 
 // Create parameters
 EngineConstructParams params;

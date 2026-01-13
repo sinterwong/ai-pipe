@@ -10,8 +10,8 @@
  */
 
 #include "ai_pipe/graph.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/logger.hpp"
-#include "ai_pipe/node_base.hpp"
 #include "stream_execution_engine.hpp"
 #include <atomic>
 #include <cassert>
@@ -50,7 +50,8 @@ public:
     if (inputs.count("input")) {
       auto input = inputs.at("input");
       auto frame_id = input->getOptionalParam<FrameId>("frame_id");
-      LOG_DEBUG_S << m_name << ": Received frame " << (frame_id ? *frame_id : 0);
+      LOG_DEBUG_S << m_name << ": Received frame "
+                  << (frame_id ? *frame_id : 0);
       outputs["output"] = input;
     }
   }

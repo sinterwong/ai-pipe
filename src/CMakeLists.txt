@@ -5,57 +5,27 @@ project(AIPipeSrc VERSION ${AI_PIPE_VERSION})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Public headers (API)
-set(PUBLIC_HEADERS
-    api/ai_pipe/ai_pipe_version.hpp
-    api/ai_pipe/context.hpp
-    api/ai_pipe/data_packet.hpp
-    api/ai_pipe/edge.hpp
-    api/ai_pipe/graph.hpp
-    api/ai_pipe/node_base.hpp
-    api/ai_pipe/pipeline.hpp
-    api/ai_pipe/type_safe_factory.hpp
-    api/ai_pipe/types.hpp
-    api/ai_pipe/logger.hpp
+file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS 
+    "api/ai_pipe/*.hpp"
 )
 
-# Private headers (implementation)
-set(PRIVATE_HEADERS
-    execution_engine_base.hpp
-    execution_engine_factory.hpp
-    pipeline_impl.hpp
-    thread_pool.hpp
-    thread_safe_queue.hpp
-    logger_adapter.hpp
-    bounded_drop_queue.hpp
-    drop_strategy.hpp
-    frame_metadata.hpp
-    default_execution_engine.hpp
-    stream_execution_engine.hpp
+file(GLOB AI_PIPE_ROOT_HDRS CONFIGURE_DEPENDS "*.hpp")
+file(GLOB AI_PIPE_ROOT_SRCS CONFIGURE_DEPENDS "*.cpp")
+
+
+set(AI_PIPE_SOURCES
+    ${AI_PIPE_ROOT_SRCS}
 )
 
-# Source files
-set(SOURCE_FILES
-    graph.cpp
-    context.cpp
-    pipeline_impl.cpp
-    logger.cpp
-    default_execution_engine.cpp
-    stream_execution_engine.cpp
-)
-
-# Prefix paths for organization
-list(TRANSFORM PUBLIC_HEADERS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
-list(TRANSFORM PRIVATE_HEADERS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
-list(TRANSFORM SOURCE_FILES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
-
-# Dependency configuration
-set(DEPENDENCY_INCLUDES
-    ${PROJECT_INCLUDE_DIR}
-    ${PROJECT_INCLUDE_DIR}/ai_pipe
+set(AI_PIPE_PRIVATE_HEADERS
+    ${AI_PIPE_ROOT_HDRS}
 )
 
 # Build shared library
-add_library(ai_pipe SHARED ${SOURCE_FILES})
+add_library(ai_pipe SHARED 
+    ${AI_PIPE_SOURCES}
+    ${AI_PIPE_PRIVATE_HEADERS}
+)
 
 add_library(ai_pipe::ai_pipe ALIAS ai_pipe)
 
@@ -68,12 +38,10 @@ set_target_properties(ai_pipe PROPERTIES
 # Configure include directories
 target_include_directories(ai_pipe
     PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api/ai_pipe>
         ${DEPENDENCY_INCLUDES}
 )
 

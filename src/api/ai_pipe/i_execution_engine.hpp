@@ -1,5 +1,5 @@
 /**
- * @file execution_engine_base.hpp
+ * @file i_execution_engine.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -10,8 +10,8 @@
  */
 #ifndef AI_PIPE_I_EXECUTION_ENGINE_HPP
 #define AI_PIPE_I_EXECUTION_ENGINE_HPP
+#include "ai_pipe/enum.hpp"
 #include "ai_pipe/graph.hpp"
-#include "ai_pipe/types.hpp"
 #include <functional>
 #include <memory>
 #include <string>

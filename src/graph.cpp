@@ -8,7 +8,7 @@
  * @copyright Copyright (c) 2025
  *
  */
-#include "graph.hpp"
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/logger.hpp"
 #include <algorithm>
 
@@ -92,8 +92,8 @@ bool Graph::addEdge(const std::string &source_node_name,
     if (std::find(expected_input_ports.begin(), expected_input_ports.end(),
                   dest_port_name) == expected_input_ports.end()) {
       LOG_ERROR_S << "Destination port '" << dest_port_name
-                  << "' is not a declared input port for node '" << dest_node_name
-                  << "'.";
+                  << "' is not a declared input port for node '"
+                  << dest_node_name << "'.";
       return false;
     }
   }
@@ -104,9 +104,9 @@ bool Graph::addEdge(const std::string &source_node_name,
         existing_edge.source_port == source_port_name &&
         existing_edge.dest_node == dest_node &&
         existing_edge.dest_port == dest_port_name) {
-      LOG_WARNING_S << "Edge from " << source_node_name << ":" << source_port_name
-                    << " to " << dest_node_name << ":" << dest_port_name
-                    << "already exists. Skipping.";
+      LOG_WARNING_S << "Edge from " << source_node_name << ":"
+                    << source_port_name << " to " << dest_node_name << ":"
+                    << dest_port_name << "already exists. Skipping.";
       return false;
     }
   }

@@ -13,8 +13,8 @@
 #define AI_PIPE_EXECUTION_ENGINE_FACTORY_HPP
 
 #include "ai_pipe/data_packet.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
 #include "ai_pipe/type_safe_factory.hpp"
-#include "execution_engine_base.hpp"
 #include <memory>
 #include <string>
 

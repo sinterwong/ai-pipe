@@ -10,8 +10,8 @@
  */
 
 #include "stream_execution_engine.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 #include "ai_pipe/logger.hpp"
-#include "execution_engine_factory.hpp"
 #include "thread_pool.hpp"
 #include <algorithm>
 #include <queue>

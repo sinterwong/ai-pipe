@@ -1,7 +1,7 @@
 
 #include "through_pass_node.hpp"
+#include "ai_pipe/data_types.hpp"
 #include "ai_pipe/logger.hpp"
-#include "ai_pipe/types.hpp"
 #include "exception.hpp"
 #include "node_registrar.hpp"
 #include <nlohmann/json.hpp>
@@ -23,7 +23,8 @@ void ThroughPassNode::process(const PortDataMap &inputs, PortDataMap &outputs,
   const std::string output_port_name = getExpectedOutputPorts()[0];
 
   if (inputs.find(input_port_name) == inputs.end()) {
-    LOG_ERROR_S << "ThroughPassNode: Missing '" << input_port_name << "' input.";
+    LOG_ERROR_S << "ThroughPassNode: Missing '" << input_port_name
+                << "' input.";
     throw InvalidValueException("ThroughPassNode: Missing '" + input_port_name +
                                 "' input.");
   }

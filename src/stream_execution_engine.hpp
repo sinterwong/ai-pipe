@@ -23,11 +23,11 @@
 #ifndef AI_PIPE_STREAM_EXECUTION_ENGINE_HPP
 #define AI_PIPE_STREAM_EXECUTION_ENGINE_HPP
 #include "ai_pipe/context.hpp"
+#include "ai_pipe/data_types.hpp"
 #include "ai_pipe/graph.hpp"
-#include "ai_pipe/node_base.hpp"
-#include "ai_pipe/types.hpp"
+#include "ai_pipe/i_execution_engine.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include "bounded_drop_queue.hpp"
-#include "execution_engine_base.hpp"
 #include "frame_metadata.hpp"
 #include "sync_coordinator.hpp"
 #include <atomic>

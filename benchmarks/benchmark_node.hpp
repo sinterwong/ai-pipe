@@ -12,8 +12,8 @@
 #define AI_PIPE_BENCHMARK_NODE_HPP
 
 #include "ai_pipe/context.hpp"
-#include "ai_pipe/node_base.hpp"
-#include "ai_pipe/types.hpp"
+#include "ai_pipe/data_types.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include <chrono>
 #include <string>
 #include <thread>
@@ -35,8 +35,7 @@ public:
    * @param name Node name
    * @param delayMicros Processing delay in microseconds (default: 0)
    */
-  explicit BenchmarkNode(const std::string &name,
-                         int64_t delayMicros = 0)
+  explicit BenchmarkNode(const std::string &name, int64_t delayMicros = 0)
       : ILogicNode(name), m_delayMicros(delayMicros) {}
 
   ~BenchmarkNode() override = default;

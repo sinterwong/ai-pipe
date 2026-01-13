@@ -11,8 +11,8 @@
 #ifndef AI_PIPE_EXAMPLES_THROUGH_PASS_NODE_HPP
 #define AI_PIPE_EXAMPLES_THROUGH_PASS_NODE_HPP
 
-#include "ai_pipe/node_base.hpp"
-#include "ai_pipe/types.hpp"
+#include "ai_pipe/data_types.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include <nlohmann/json.hpp>
 #include <string>
 

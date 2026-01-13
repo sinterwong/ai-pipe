@@ -1,5 +1,5 @@
 /**
- * @file node_base.hpp
+ * @file i_logic_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "ai_pipe/context.hpp"
-#include "ai_pipe/types.hpp"
+#include "ai_pipe/data_types.hpp"
 
 namespace ai_pipe {
 

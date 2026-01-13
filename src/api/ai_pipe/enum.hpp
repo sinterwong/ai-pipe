@@ -1,30 +1,17 @@
 /**
- * @file types.hpp
+ * @file error_code.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief
  * @version 0.1
- * @date 2025-01-24
+ * @date 2026-01-13
  *
- * @copyright Copyright (c) 2025
+ * @copyright Copyright (c) 2026
  *
  */
-
-#ifndef AI_PIPE_TYPES_HPP
-#define AI_PIPE_TYPES_HPP
-
-#include "ai_pipe/data_packet.hpp"
-#include <map>
-#include <memory>
-#include <string>
+#ifndef AI_PIPE_ENUM_HPP
+#define AI_PIPE_ENUM_HPP
 
 namespace ai_pipe {
-
-using PortData = common_utils::DataPacket;
-
-using PortDataPtr = std::shared_ptr<PortData>;
-
-using PortDataMap = std::map<std::string, PortDataPtr>;
-
 // 执行状态枚举
 enum class NodeExecutionState {
   WAITING,   // 等待输入数据
@@ -43,5 +30,4 @@ enum class EngineState {
 
 enum class PipelineState { UNINITIALIZED, IDLE, RUNNING, STOPPING, ERROR };
 } // namespace ai_pipe
-
 #endif

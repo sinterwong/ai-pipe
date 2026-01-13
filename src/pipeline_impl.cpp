@@ -9,8 +9,8 @@
  */
 
 #include "pipeline_impl.hpp"
+#include "ai_pipe/execution_engine_factory.hpp"
 #include "ai_pipe/logger.hpp"
-#include "execution_engine_factory.hpp"
 #include <stdexcept>
 
 namespace ai_pipe {
