@@ -16,15 +16,15 @@
 
 namespace ai_pipe {
 struct Edge {
-  std::shared_ptr<ILogicNode> sourceNode;
-  std::string sourcePort;
-  std::shared_ptr<ILogicNode> destNode;
-  std::string destPort;
+  std::shared_ptr<ILogicNode> source_node;
+  std::string source_port;
+  std::shared_ptr<ILogicNode> dest_node;
+  std::string dest_port;
 
-  Edge(std::shared_ptr<ILogicNode> sourceNode, std::string sourcePort,
-       std::shared_ptr<ILogicNode> destNode, std::string destPort)
-      : sourceNode(std::move(sourceNode)), sourcePort(std::move(sourcePort)),
-        destNode(std::move(destNode)), destPort(std::move(destPort)) {}
+  Edge(std::shared_ptr<ILogicNode> source_node, std::string source_port,
+       std::shared_ptr<ILogicNode> dest_node, std::string dest_port)
+      : source_node(std::move(source_node)), source_port(std::move(source_port)),
+        dest_node(std::move(dest_node)), dest_port(std::move(dest_port)) {}
 };
 } // namespace ai_pipe
 

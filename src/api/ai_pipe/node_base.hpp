@@ -20,10 +20,10 @@ namespace ai_pipe {
 
 class ILogicNode {
 public:
-  ILogicNode(const std::string name) : name_(name) {}
+  ILogicNode(const std::string name) : m_name(name) {}
   virtual ~ILogicNode() {}
 
-  const std::string &getName() const { return name_; }
+  const std::string &getName() const { return m_name; }
 
   virtual void process(const PortDataMap &inputs, PortDataMap &outputs,
                        std::shared_ptr<PipelineContext> context = nullptr) = 0;
@@ -33,7 +33,7 @@ public:
   virtual std::vector<std::string> getExpectedOutputPorts() const { return {}; }
 
 protected:
-  std::string name_;
+  std::string m_name;
 };
 } // namespace ai_pipe
 

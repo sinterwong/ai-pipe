@@ -55,16 +55,16 @@ using Timestamp = std::chrono::steady_clock::time_point;
 namespace frame_constants {
 
 /// Invalid frame ID marker
-constexpr FrameId kInvalidFrameId = 0;
+constexpr FrameId k_invalid_frame_id = 0;
 
 /// End-of-stream frame ID marker
-constexpr FrameId kEndOfStreamFrameId = std::numeric_limits<FrameId>::max();
+constexpr FrameId k_end_of_stream_frame_id = std::numeric_limits<FrameId>::max();
 
 /// Default stream ID for single-source scenarios
-constexpr StreamId kDefaultStreamId = 0;
+constexpr StreamId k_default_stream_id = 0;
 
 /// Maximum allowed frame ID drift for synchronization
-constexpr FrameId kMaxFrameDrift = 100;
+constexpr FrameId k_max_frame_drift = 100;
 
 } // namespace frame_constants
 
@@ -136,14 +136,14 @@ public:
    * @brief Check if frame ID is valid
    */
   [[nodiscard]] virtual bool isValid() const {
-    return frameId() != frame_constants::kInvalidFrameId;
+    return frameId() != frame_constants::k_invalid_frame_id;
   }
 
   /**
    * @brief Check if this is an end-of-stream marker
    */
   [[nodiscard]] virtual bool isEndOfStream() const {
-    return frameId() == frame_constants::kEndOfStreamFrameId;
+    return frameId() == frame_constants::k_end_of_stream_frame_id;
   }
 
   // -------------------------------------------------------------------------
@@ -181,15 +181,15 @@ public:
    * @brief Default constructor (invalid metadata)
    */
   BasicFrameMetadata()
-      : m_frameId(frame_constants::kInvalidFrameId),
-        m_streamId(frame_constants::kDefaultStreamId),
+      : m_frameId(frame_constants::k_invalid_frame_id),
+        m_streamId(frame_constants::k_default_stream_id),
         m_timestamp(std::chrono::steady_clock::now()) {}
 
   /**
    * @brief Construct with frame ID
    */
   explicit BasicFrameMetadata(
-      FrameId frame_id, StreamId stream_id = frame_constants::kDefaultStreamId)
+      FrameId frame_id, StreamId stream_id = frame_constants::k_default_stream_id)
       : m_frameId(frame_id), m_streamId(stream_id),
         m_timestamp(std::chrono::steady_clock::now()) {}
 
@@ -270,17 +270,17 @@ public:
   /**
    * @brief Synchronization tolerance for timestamp matching
    */
-  static constexpr auto kDefaultSyncTolerance = std::chrono::milliseconds{33};
+  static constexpr auto k_default_sync_tolerance = std::chrono::milliseconds{33};
 
   TimestampFrameMetadata()
-      : m_frameId(frame_constants::kInvalidFrameId),
-        m_streamId(frame_constants::kDefaultStreamId),
+      : m_frameId(frame_constants::k_invalid_frame_id),
+        m_streamId(frame_constants::k_default_stream_id),
         m_timestamp(std::chrono::steady_clock::now()),
-        m_syncTolerance(kDefaultSyncTolerance) {}
+        m_syncTolerance(k_default_sync_tolerance) {}
 
   TimestampFrameMetadata(
       FrameId frame_id, StreamId stream_id, Timestamp timestamp,
-      std::chrono::milliseconds sync_tolerance = kDefaultSyncTolerance)
+      std::chrono::milliseconds sync_tolerance = k_default_sync_tolerance)
       : m_frameId(frame_id), m_streamId(stream_id), m_timestamp(timestamp),
         m_syncTolerance(sync_tolerance) {}
 
@@ -341,7 +341,7 @@ public:
    * @brief Create basic frame metadata with auto-incrementing frame ID
    */
   static BasicFrameMetadata
-  createBasic(StreamId stream_id = frame_constants::kDefaultStreamId) {
+  createBasic(StreamId stream_id = frame_constants::k_default_stream_id) {
     static std::atomic<FrameId> next_id{1};
     return BasicFrameMetadata(next_id.fetch_add(1, std::memory_order_relaxed),
                               stream_id);
@@ -351,8 +351,8 @@ public:
    * @brief Create end-of-stream marker
    */
   static BasicFrameMetadata
-  createEndOfStream(StreamId stream_id = frame_constants::kDefaultStreamId) {
-    return BasicFrameMetadata(frame_constants::kEndOfStreamFrameId, stream_id);
+  createEndOfStream(StreamId stream_id = frame_constants::k_default_stream_id) {
+    return BasicFrameMetadata(frame_constants::k_end_of_stream_frame_id, stream_id);
   }
 };
 

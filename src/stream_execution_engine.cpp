@@ -757,7 +757,7 @@ void StreamExecutionEngine::handleDropEvent(const DropEvent &event) {
 
   if (group_it != m_nodeToSyncGroup.end() &&
       branch_it != m_nodeToBranch.end() &&
-      event.frame_id != frame_constants::kInvalidFrameId) {
+      event.frame_id != frame_constants::k_invalid_frame_id) {
     m_syncCoordinator->reportDrop(group_it->second, branch_it->second,
                                   event.frame_id, event.reason);
   }
@@ -1059,14 +1059,14 @@ void StreamExecutionEngine::propagateOutputs(const NodePtr &source_node,
   const auto outgoing_edges = m_graph->getOutgoingEdges(source_node);
 
   for (const auto &edge : outgoing_edges) {
-    auto output_it = outputs.find(edge.sourcePort);
+    auto output_it = outputs.find(edge.source_port);
     if (output_it == outputs.end()) {
       continue;
     }
 
     const auto &data = output_it->second;
-    pushToQueue(edge.destNode, edge.destPort, data);
-    tryScheduleNode(edge.destNode);
+    pushToQueue(edge.dest_node, edge.dest_port, data);
+    tryScheduleNode(edge.dest_node);
   }
 }
 

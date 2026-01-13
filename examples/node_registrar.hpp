@@ -8,8 +8,8 @@
  * @copyright Copyright (c) 2025
  *
  */
-#ifndef __NODE_REGISTRAR_HPP__
-#define __NODE_REGISTRAR_HPP__
+#ifndef AI_PIPE_NODE_REGISTRAR_HPP
+#define AI_PIPE_NODE_REGISTRAR_HPP
 
 #include "ai_pipe/node_base.hpp"
 #include "node_param_types.hpp"
@@ -46,4 +46,4 @@ using NodeCreatorFactory = common_utils::Factory<ILogicNode>;
 
 } // namespace ai_pipe
 
-#endif // __AI_PIPE_PLUGIN_REGISTRATION_HPP__
+#endif

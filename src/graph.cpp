@@ -45,79 +45,79 @@ const std::vector<std::shared_ptr<ILogicNode>> &Graph::getNodes() const {
   return m_nodes;
 }
 
-bool Graph::addEdge(const std::string &sourceNodeName,
-                    const std::string &sourcePortName,
-                    const std::string &destNodeName,
-                    const std::string &destPortName) {
-  auto sourceNode = getNode(sourceNodeName);
-  auto destNode = getNode(destNodeName);
+bool Graph::addEdge(const std::string &source_node_name,
+                    const std::string &source_port_name,
+                    const std::string &dest_node_name,
+                    const std::string &dest_port_name) {
+  auto source_node = getNode(source_node_name);
+  auto dest_node = getNode(dest_node_name);
 
-  if (!sourceNode) {
-    LOG_ERROR_S << "Source node " << sourceNodeName << " not found";
+  if (!source_node) {
+    LOG_ERROR_S << "Source node " << source_node_name << " not found";
     return false;
   }
-  if (!destNode) {
-    LOG_ERROR_S << "Destination node " << destNodeName << " not found";
+  if (!dest_node) {
+    LOG_ERROR_S << "Destination node " << dest_node_name << " not found";
     return false;
   }
 
-  const auto &expectedOutputPorts = sourceNode->getExpectedOutputPorts();
-  if (expectedOutputPorts.empty() && !sourcePortName.empty()) {
+  const auto &expected_output_ports = source_node->getExpectedOutputPorts();
+  if (expected_output_ports.empty() && !source_port_name.empty()) {
     LOG_ERROR_S
-        << "Source node '" << sourceNodeName
+        << "Source node '" << source_node_name
         << "' declares no output ports, but tried to connect from port '"
-        << sourcePortName << "'.";
+        << source_port_name << "'.";
     return false;
   }
-  if (!sourcePortName.empty()) {
-    if (std::find(expectedOutputPorts.begin(), expectedOutputPorts.end(),
-                  sourcePortName) == expectedOutputPorts.end()) {
-      LOG_ERROR_S << "Source port '" << sourcePortName
+  if (!source_port_name.empty()) {
+    if (std::find(expected_output_ports.begin(), expected_output_ports.end(),
+                  source_port_name) == expected_output_ports.end()) {
+      LOG_ERROR_S << "Source port '" << source_port_name
                   << "' is not a declared output port for node '"
-                  << sourceNodeName << "'.";
+                  << source_node_name << "'.";
       return false;
     }
   }
 
   // Validate destination node port
-  const auto &expectedInputPorts = destNode->getExpectedInputPorts();
-  if (expectedInputPorts.empty() && !destPortName.empty()) {
-    LOG_ERROR_S << "Destination node '" << destNodeName
+  const auto &expected_input_ports = dest_node->getExpectedInputPorts();
+  if (expected_input_ports.empty() && !dest_port_name.empty()) {
+    LOG_ERROR_S << "Destination node '" << dest_node_name
                 << "' declares no input ports, but tried to connect to port '"
-                << destPortName << "'.";
+                << dest_port_name << "'.";
     return false;
   }
   // Similarly, only search for non-empty port names
-  if (!destPortName.empty()) {
-    if (std::find(expectedInputPorts.begin(), expectedInputPorts.end(),
-                  destPortName) == expectedInputPorts.end()) {
-      LOG_ERROR_S << "Destination port '" << destPortName
-                  << "' is not a declared input port for node '" << destNodeName
+  if (!dest_port_name.empty()) {
+    if (std::find(expected_input_ports.begin(), expected_input_ports.end(),
+                  dest_port_name) == expected_input_ports.end()) {
+      LOG_ERROR_S << "Destination port '" << dest_port_name
+                  << "' is not a declared input port for node '" << dest_node_name
                   << "'.";
       return false;
     }
   }
   // Check if an identical edge already exists (same source node, source port,
   // destination node, and destination port)
-  for (const auto &existingEdge : m_edges) {
-    if (existingEdge.sourceNode == sourceNode &&
-        existingEdge.sourcePort == sourcePortName &&
-        existingEdge.destNode == destNode &&
-        existingEdge.destPort == destPortName) {
-      LOG_WARNING_S << "Edge from " << sourceNodeName << ":" << sourcePortName
-                    << " to " << destNodeName << ":" << destPortName
+  for (const auto &existing_edge : m_edges) {
+    if (existing_edge.source_node == source_node &&
+        existing_edge.source_port == source_port_name &&
+        existing_edge.dest_node == dest_node &&
+        existing_edge.dest_port == dest_port_name) {
+      LOG_WARNING_S << "Edge from " << source_node_name << ":" << source_port_name
+                    << " to " << dest_node_name << ":" << dest_port_name
                     << "already exists. Skipping.";
       return false;
     }
   }
 
   m_edges.emplace_back(
-      Edge{sourceNode, sourcePortName, destNode, destPortName});
+      Edge{source_node, source_port_name, dest_node, dest_port_name});
 
   // update adj
-  m_adjListOut[sourceNode].push_back(destNode);
-  m_adjListIn[destNode].push_back(sourceNode);
-  m_inDegree[destNode]++;
+  m_adjListOut[source_node].push_back(dest_node);
+  m_adjListIn[dest_node].push_back(source_node);
+  m_inDegree[dest_node]++;
 
   // Cycle detection will be performed after the entire graph is constructed
   return true;
@@ -157,58 +157,58 @@ int Graph::getOutDegree(const std::shared_ptr<ILogicNode> &node) const {
 
 const std::vector<std::shared_ptr<ILogicNode>> &
 Graph::getOutgoingNeighbors(const std::shared_ptr<ILogicNode> &node) const {
-  static const std::vector<std::shared_ptr<ILogicNode>> emptyNeighbors;
+  static const std::vector<std::shared_ptr<ILogicNode>> empty_neighbors;
   if (!node) {
-    return emptyNeighbors;
+    return empty_neighbors;
   }
   auto it = m_adjListOut.find(node);
   if (it != m_adjListOut.end()) {
     return it->second;
   }
-  return emptyNeighbors;
+  return empty_neighbors;
 }
 
 const std::vector<std::shared_ptr<ILogicNode>> &
 Graph::getIncomingNeighbors(const std::shared_ptr<ILogicNode> &node) const {
-  static const std::vector<std::shared_ptr<ILogicNode>> emptyNeighbors;
+  static const std::vector<std::shared_ptr<ILogicNode>> empty_neighbors;
   if (!node) {
-    return emptyNeighbors;
+    return empty_neighbors;
   }
   auto it = m_adjListIn.find(node);
   if (it != m_adjListIn.end()) {
     return it->second;
   }
-  return emptyNeighbors;
+  return empty_neighbors;
 }
 
 std::vector<Edge>
-Graph::getIncomingEdges(const std::shared_ptr<ILogicNode> &destNode) const {
-  std::vector<Edge> incomingEdges;
+Graph::getIncomingEdges(const std::shared_ptr<ILogicNode> &dest_node) const {
+  std::vector<Edge> incoming_edges;
   for (const auto &edge : m_edges) {
-    if (edge.destNode == destNode) {
-      incomingEdges.push_back(edge);
+    if (edge.dest_node == dest_node) {
+      incoming_edges.push_back(edge);
     }
   }
-  return incomingEdges;
+  return incoming_edges;
 }
 
 std::vector<Edge>
-Graph::getOutgoingEdges(const std::shared_ptr<ILogicNode> &sourceNode) const {
-  std::vector<Edge> outgoingEdges;
+Graph::getOutgoingEdges(const std::shared_ptr<ILogicNode> &source_node) const {
+  std::vector<Edge> outgoing_edges;
   for (const auto &edge : m_edges) {
-    if (edge.sourceNode == sourceNode) {
-      outgoingEdges.push_back(edge);
+    if (edge.source_node == source_node) {
+      outgoing_edges.push_back(edge);
     }
   }
-  return outgoingEdges;
+  return outgoing_edges;
 }
 
 bool Graph::hasCycle() const {
   // 0: unvisited, 1: visiting (in recursion stack), 2: visited
-  std::unordered_map<std::shared_ptr<ILogicNode>, int> visitStatus;
-  for (const auto &nodeSp : m_nodes) {
-    if (visitStatus[nodeSp] == 0) {
-      if (hasCycleDFS(nodeSp, visitStatus)) {
+  std::unordered_map<std::shared_ptr<ILogicNode>, int> visit_status;
+  for (const auto &node_sp : m_nodes) {
+    if (visit_status[node_sp] == 0) {
+      if (hasCycleDFS(node_sp, visit_status)) {
         return true;
       }
     }
@@ -227,25 +227,25 @@ void Graph::clear() {
 
 bool Graph::hasCycleDFS(
     const std::shared_ptr<ILogicNode> &node,
-    std::unordered_map<std::shared_ptr<ILogicNode>, int> &visitStatus) const {
+    std::unordered_map<std::shared_ptr<ILogicNode>, int> &visit_status) const {
   // Mark as visiting (in recursion stack)
-  visitStatus[node] = 1;
+  visit_status[node] = 1;
 
-  auto itAdj = m_adjListOut.find(node);
-  if (itAdj != m_adjListOut.end()) {
-    for (auto v : itAdj->second) {
-      if (visitStatus[v] == 1) {
+  auto it_adj = m_adjListOut.find(node);
+  if (it_adj != m_adjListOut.end()) {
+    for (auto v : it_adj->second) {
+      if (visit_status[v] == 1) {
         return true;
       }
-      if (visitStatus[v] == 0) {
-        if (hasCycleDFS(v, visitStatus)) {
+      if (visit_status[v] == 0) {
+        if (hasCycleDFS(v, visit_status)) {
           return true;
         }
       }
     }
   }
   // Mark as visited (finished processing)
-  visitStatus[node] = 2;
+  visit_status[node] = 2;
   return false;
 }
 

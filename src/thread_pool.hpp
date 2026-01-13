@@ -65,7 +65,7 @@ public:
                       std::size_t max_queue_size = 1024)
       : m_config{num_threads, max_queue_size, std::chrono::milliseconds{5000},
                  true},
-        m_state{State::kRunning}, m_pendingTasks{0}, m_completedTasks{0} {
+        m_state{State::KRunning}, m_pendingTasks{0}, m_completedTasks{0} {
     startWorkers(num_threads);
   }
 
@@ -74,7 +74,7 @@ public:
    * @param config Thread pool configuration
    */
   explicit ThreadPool(const ThreadPoolConfig &config)
-      : m_config{config}, m_state{State::kRunning}, m_pendingTasks{0},
+      : m_config{config}, m_state{State::KRunning}, m_pendingTasks{0},
         m_completedTasks{0} {
     startWorkers(config.num_threads);
   }
@@ -165,8 +165,8 @@ public:
    * them
    */
   void shutdown(bool wait_for_tasks) {
-    State expected = State::kRunning;
-    if (!m_state.compare_exchange_strong(expected, State::kStopping,
+    State expected = State::KRunning;
+    if (!m_state.compare_exchange_strong(expected, State::KStopping,
                                          std::memory_order_acq_rel)) {
       // Already stopping or stopped
       waitForWorkers();
@@ -187,7 +187,7 @@ public:
 
     waitForWorkers();
 
-    m_state.store(State::kStopped, std::memory_order_release);
+    m_state.store(State::KStopped, std::memory_order_release);
   }
 
   /**
@@ -215,11 +215,11 @@ public:
   // -------------------------------------------------------------------------
 
   [[nodiscard]] bool isRunning() const {
-    return m_state.load(std::memory_order_acquire) == State::kRunning;
+    return m_state.load(std::memory_order_acquire) == State::KRunning;
   }
 
   [[nodiscard]] bool isStopped() const {
-    return m_state.load(std::memory_order_acquire) == State::kStopped;
+    return m_state.load(std::memory_order_acquire) == State::KStopped;
   }
 
   [[nodiscard]] std::size_t threadCount() const { return m_workers.size(); }
@@ -237,7 +237,7 @@ public:
   }
 
 private:
-  enum class State : std::uint8_t { kRunning, kStopping, kStopped };
+  enum class State : std::uint8_t { KRunning, KStopping, KStopped };
 
   using Task = std::function<void()>;
 
@@ -263,12 +263,12 @@ private:
       {
         std::unique_lock<std::mutex> lock(m_queueMutex);
         m_notEmpty.wait(lock, [this] {
-          return m_state.load(std::memory_order_acquire) != State::kRunning ||
+          return m_state.load(std::memory_order_acquire) != State::KRunning ||
                  !m_taskQueue.empty();
         });
 
         // Exit condition: stopping and no more tasks
-        if (m_state.load(std::memory_order_acquire) != State::kRunning &&
+        if (m_state.load(std::memory_order_acquire) != State::KRunning &&
             m_taskQueue.empty()) {
           return;
         }
@@ -335,7 +335,7 @@ private:
         // Wait with timeout
         if (!m_notFull.wait_for(lock, m_config.submit_timeout, [this] {
               return m_state.load(std::memory_order_acquire) !=
-                         State::kRunning ||
+                         State::KRunning ||
                      m_config.max_queue_size == 0 ||
                      m_taskQueue.size() < m_config.max_queue_size;
             })) {
@@ -343,7 +343,7 @@ private:
         }
       }
 
-      if (m_state.load(std::memory_order_acquire) != State::kRunning) {
+      if (m_state.load(std::memory_order_acquire) != State::KRunning) {
         throw std::runtime_error("ThreadPool: Cannot submit to stopped pool");
       }
 
@@ -358,7 +358,7 @@ private:
     {
       std::lock_guard<std::mutex> lock(m_queueMutex);
 
-      if (m_state.load(std::memory_order_acquire) != State::kRunning) {
+      if (m_state.load(std::memory_order_acquire) != State::KRunning) {
         return false;
       }
 

@@ -50,7 +50,7 @@ public:
     if (inputs.count("input")) {
       auto input = inputs.at("input");
       auto frame_id = input->getOptionalParam<FrameId>("frame_id");
-      LOG_DEBUG_S << name_ << ": Received frame " << (frame_id ? *frame_id : 0);
+      LOG_DEBUG_S << m_name << ": Received frame " << (frame_id ? *frame_id : 0);
       outputs["output"] = input;
     }
   }
@@ -70,7 +70,7 @@ public:
 class SlowProcessNode : public ILogicNode {
 public:
   SlowProcessNode(const std::string &name, int delay_ms)
-      : ILogicNode(name), delay_ms_(delay_ms) {}
+      : ILogicNode(name), m_delayMs(delay_ms) {}
 
   void process(const PortDataMap &inputs, PortDataMap &outputs,
                std::shared_ptr<PipelineContext> context) override {
@@ -81,16 +81,16 @@ public:
     auto input = inputs.at("input");
     auto frame_id = input->getOptionalParam<FrameId>("frame_id");
 
-    LOG_INFO_S << name_ << ": Processing frame " << (frame_id ? *frame_id : 0)
-               << " (delay=" << delay_ms_ << "ms)";
+    LOG_INFO_S << m_name << ": Processing frame " << (frame_id ? *frame_id : 0)
+               << " (delay=" << m_delayMs << "ms)";
 
     // Simulate slow processing
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
+    std::this_thread::sleep_for(std::chrono::milliseconds(m_delayMs));
 
-    processed_count_++;
+    m_processedCount++;
     outputs["output"] = input;
 
-    LOG_INFO_S << name_ << ": Completed frame " << (frame_id ? *frame_id : 0);
+    LOG_INFO_S << m_name << ": Completed frame " << (frame_id ? *frame_id : 0);
   }
 
   std::vector<std::string> getExpectedInputPorts() const override {
@@ -101,11 +101,11 @@ public:
     return {"output"};
   }
 
-  int processedCount() const { return processed_count_.load(); }
+  int processedCount() const { return m_processedCount.load(); }
 
 private:
-  int delay_ms_;
-  std::atomic<int> processed_count_{0};
+  int m_delayMs;
+  std::atomic<int> m_processedCount{0};
 };
 
 /**
@@ -121,9 +121,9 @@ public:
       auto input = inputs.at("input");
       auto frame_id = input->getOptionalParam<FrameId>("frame_id");
 
-      received_count_++;
-      LOG_INFO_S << name_ << ": Output frame " << (frame_id ? *frame_id : 0)
-                 << " (total: " << received_count_ << ")";
+      m_receivedCount++;
+      LOG_INFO_S << m_name << ": Output frame " << (frame_id ? *frame_id : 0)
+                 << " (total: " << m_receivedCount << ")";
 
       outputs["output"] = input;
     }
@@ -137,10 +137,10 @@ public:
     return {"output"};
   }
 
-  int receivedCount() const { return received_count_.load(); }
+  int receivedCount() const { return m_receivedCount.load(); }
 
 private:
-  std::atomic<int> received_count_{0};
+  std::atomic<int> m_receivedCount{0};
 };
 
 TEST_F(StreamExecutionEngineTest, BasicBatchExecution) {
@@ -264,16 +264,16 @@ TEST_F(StreamExecutionEngineTest, ConcurrentMultiProducer) {
   ASSERT_TRUE(engine->start());
 
   // Spawn multiple producers
-  constexpr int NUM_PRODUCERS = 3;
-  constexpr int FRAMES_PER_PRODUCER = 10;
+  constexpr int num_producers = 3;
+  constexpr int frames_per_producer = 10;
 
   std::vector<std::thread> producers;
   std::atomic<int> total_pushed{0};
   std::atomic<int> total_rejected{0};
 
-  for (int p = 0; p < NUM_PRODUCERS; ++p) {
+  for (int p = 0; p < num_producers; ++p) {
     producers.emplace_back([&, producer_id = p]() {
-      for (int i = 0; i < FRAMES_PER_PRODUCER; ++i) {
+      for (int i = 0; i < frames_per_producer; ++i) {
         FrameId frame_id = producer_id * 1000 + i;
 
         auto frame = std::make_shared<PortData>();

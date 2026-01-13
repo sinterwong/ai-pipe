@@ -157,11 +157,11 @@ private:
  * @brief Log level enumeration (matches common logging frameworks)
  */
 enum class PipeLogLevel {
-  kTrace = 0,
-  kDebug = 1,
-  kInfo = 2,
-  kWarning = 3,
-  kError = 4
+  KTrace = 0,
+  KDebug = 1,
+  KInfo = 2,
+  KWarning = 3,
+  KError = 4
 };
 
 /**
@@ -503,16 +503,16 @@ public:
    * @brief Convenience logging methods
    */
   void logDebug(const std::string &node_name, const std::string &message) {
-    log(PipeLogLevel::kDebug, node_name, message);
+    log(PipeLogLevel::KDebug, node_name, message);
   }
   void logInfo(const std::string &node_name, const std::string &message) {
-    log(PipeLogLevel::kInfo, node_name, message);
+    log(PipeLogLevel::KInfo, node_name, message);
   }
   void logWarning(const std::string &node_name, const std::string &message) {
-    log(PipeLogLevel::kWarning, node_name, message);
+    log(PipeLogLevel::KWarning, node_name, message);
   }
   void logError(const std::string &node_name, const std::string &message) {
-    log(PipeLogLevel::kError, node_name, message);
+    log(PipeLogLevel::KError, node_name, message);
   }
 
   // -------------------------------------------------------------------------
@@ -692,16 +692,16 @@ public:
   }
 
   void logDebug(const std::string &message) {
-    log(PipeLogLevel::kDebug, message);
+    log(PipeLogLevel::KDebug, message);
   }
   void logInfo(const std::string &message) {
-    log(PipeLogLevel::kInfo, message);
+    log(PipeLogLevel::KInfo, message);
   }
   void logWarning(const std::string &message) {
-    log(PipeLogLevel::kWarning, message);
+    log(PipeLogLevel::KWarning, message);
   }
   void logError(const std::string &message) {
-    log(PipeLogLevel::kError, message);
+    log(PipeLogLevel::KError, message);
   }
 
 private:

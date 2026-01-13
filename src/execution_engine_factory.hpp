@@ -61,9 +61,9 @@ using EngineConstructParams = common_utils::DataPacket;
  * @throws std::runtime_error if the engine type is not registered
  */
 inline std::shared_ptr<IExecutionEngine>
-createExecutionEngine(const std::string &engineType = "DefaultExecutionEngine",
+createExecutionEngine(const std::string &engine_type = "DefaultExecutionEngine",
                       const EngineConstructParams &params = {}) {
-  return ExecutionEngineFactory::instance().create(engineType, params);
+  return ExecutionEngineFactory::instance().create(engine_type, params);
 }
 
 } // namespace ai_pipe

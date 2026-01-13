@@ -19,25 +19,25 @@ ThroughPassNode::ThroughPassNode(const std::string &name,
 
 void ThroughPassNode::process(const PortDataMap &inputs, PortDataMap &outputs,
                               std::shared_ptr<PipelineContext> context) {
-  const std::string inputPortName = getExpectedInputPorts()[0];
-  const std::string outputPortName = getExpectedOutputPorts()[0];
+  const std::string input_port_name = getExpectedInputPorts()[0];
+  const std::string output_port_name = getExpectedOutputPorts()[0];
 
-  if (inputs.find(inputPortName) == inputs.end()) {
-    LOG_ERROR_S << "ThroughPassNode: Missing '" << inputPortName << "' input.";
-    throw InvalidValueException("ThroughPassNode: Missing '" + inputPortName +
+  if (inputs.find(input_port_name) == inputs.end()) {
+    LOG_ERROR_S << "ThroughPassNode: Missing '" << input_port_name << "' input.";
+    throw InvalidValueException("ThroughPassNode: Missing '" + input_port_name +
                                 "' input.");
   }
 
-  const auto &inputDataPacket = inputs.at(inputPortName);
+  const auto &input_data_packet = inputs.at(input_port_name);
 
   // print info
   LOG_TRACE_S << "ThroughPassNode: Processing data from input port '"
-              << inputPortName << "' to output port '" << outputPortName
+              << input_port_name << "' to output port '" << output_port_name
               << "'.";
 
-  auto outputDataPacket = std::make_shared<PortData>();
-  *outputDataPacket = *inputDataPacket;
-  outputs[outputPortName] = outputDataPacket;
+  auto output_data_packet = std::make_shared<PortData>();
+  *output_data_packet = *input_data_packet;
+  outputs[output_port_name] = output_data_packet;
 }
 
 std::vector<std::string> ThroughPassNode::getExpectedInputPorts() const {

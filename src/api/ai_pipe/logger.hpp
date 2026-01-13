@@ -47,11 +47,11 @@ enum class LogLevel : uint8_t {
 #define AI_PIPE_LOG_LEVEL 0 // Default: all levels enabled
 #endif
 
-constexpr LogLevel kCompileTimeLogLevel =
+constexpr LogLevel k_compile_time_log_level =
     static_cast<LogLevel>(AI_PIPE_LOG_LEVEL);
 
 [[nodiscard]] constexpr bool isLevelEnabled(LogLevel level) noexcept {
-  return level >= kCompileTimeLogLevel;
+  return level >= k_compile_time_log_level;
 }
 
 // ============================================================================
@@ -59,16 +59,16 @@ constexpr LogLevel kCompileTimeLogLevel =
 // ============================================================================
 
 namespace color {
-inline constexpr std::string_view kReset = "\033[0m";
-inline constexpr std::string_view kRed = "\033[31m";
-inline constexpr std::string_view kGreen = "\033[32m";
-inline constexpr std::string_view kYellow = "\033[33m";
-inline constexpr std::string_view kBlue = "\033[34m";
-inline constexpr std::string_view kMagenta = "\033[35m";
-inline constexpr std::string_view kCyan = "\033[36m";
-inline constexpr std::string_view kWhite = "\033[37m";
-inline constexpr std::string_view kBoldRed = "\033[1;31m";
-inline constexpr std::string_view kGray = "\033[90m";
+inline constexpr std::string_view k_reset = "\033[0m";
+inline constexpr std::string_view k_red = "\033[31m";
+inline constexpr std::string_view k_green = "\033[32m";
+inline constexpr std::string_view k_yellow = "\033[33m";
+inline constexpr std::string_view k_blue = "\033[34m";
+inline constexpr std::string_view k_magenta = "\033[35m";
+inline constexpr std::string_view k_cyan = "\033[36m";
+inline constexpr std::string_view k_white = "\033[37m";
+inline constexpr std::string_view k_bold_red = "\033[1;31m";
+inline constexpr std::string_view k_gray = "\033[90m";
 } // namespace color
 
 // ============================================================================
@@ -147,42 +147,42 @@ struct LoggerConfig {
 template <typename T> class SPSCRingBuffer {
 public:
   explicit SPSCRingBuffer(size_t capacity)
-      : capacity_(nextPowerOf2(capacity)), mask_(capacity_ - 1),
-        buffer_(std::make_unique<Slot[]>(capacity_)) {}
+      : m_capacity(nextPowerOf2(capacity)), m_mask(m_capacity - 1),
+        m_buffer(std::make_unique<Slot[]>(m_capacity)) {}
 
   // Producer: try to push, returns false if full
   bool tryPush(T &&item) noexcept {
-    const size_t head = head_.load(std::memory_order_relaxed);
-    const size_t next_head = (head + 1) & mask_;
+    const size_t head = m_head.load(std::memory_order_relaxed);
+    const size_t next_head = (head + 1) & m_mask;
 
-    if (next_head == tail_.load(std::memory_order_acquire)) {
+    if (next_head == m_tail.load(std::memory_order_acquire)) {
       return false; // Full
     }
 
-    buffer_[head].data = std::move(item);
-    head_.store(next_head, std::memory_order_release);
+    m_buffer[head].data = std::move(item);
+    m_head.store(next_head, std::memory_order_release);
     return true;
   }
 
   // Consumer: try to pop, returns false if empty
   bool tryPop(T &item) noexcept {
-    const size_t tail = tail_.load(std::memory_order_relaxed);
+    const size_t tail = m_tail.load(std::memory_order_relaxed);
 
-    if (tail == head_.load(std::memory_order_acquire)) {
+    if (tail == m_head.load(std::memory_order_acquire)) {
       return false; // Empty
     }
 
-    item = std::move(buffer_[tail].data);
-    tail_.store((tail + 1) & mask_, std::memory_order_release);
+    item = std::move(m_buffer[tail].data);
+    m_tail.store((tail + 1) & m_mask, std::memory_order_release);
     return true;
   }
 
   [[nodiscard]] bool empty() const noexcept {
-    return head_.load(std::memory_order_acquire) ==
-           tail_.load(std::memory_order_acquire);
+    return m_head.load(std::memory_order_acquire) ==
+           m_tail.load(std::memory_order_acquire);
   }
 
-  [[nodiscard]] size_t capacity() const noexcept { return capacity_; }
+  [[nodiscard]] size_t capacity() const noexcept { return m_capacity; }
 
 private:
   static size_t nextPowerOf2(size_t n) noexcept {
@@ -200,13 +200,13 @@ private:
     T data;
   };
 
-  const size_t capacity_;
-  const size_t mask_;
-  std::unique_ptr<Slot[]> buffer_;
+  const size_t m_capacity;
+  const size_t m_mask;
+  std::unique_ptr<Slot[]> m_buffer;
 
   // Separate cache lines to avoid false sharing
-  alignas(64) std::atomic<size_t> head_{0};
-  alignas(64) std::atomic<size_t> tail_{0};
+  alignas(64) std::atomic<size_t> m_head{0};
+  alignas(64) std::atomic<size_t> m_tail{0};
 };
 
 // ============================================================================
@@ -215,15 +215,15 @@ private:
 
 class FormatBuffer {
 public:
-  static constexpr size_t kInitialCapacity = 1024;
+  static constexpr size_t k_initial_capacity = 1024;
 
-  FormatBuffer() { buffer_.reserve(kInitialCapacity); }
+  FormatBuffer() { m_buffer.reserve(k_initial_capacity); }
 
-  void clear() noexcept { buffer_.clear(); }
+  void clear() noexcept { m_buffer.clear(); }
 
-  void append(std::string_view sv) { buffer_.append(sv); }
+  void append(std::string_view sv) { m_buffer.append(sv); }
 
-  void append(char c) { buffer_.push_back(c); }
+  void append(char c) { m_buffer.push_back(c); }
 
   template <typename T> void appendNumber(T value) {
     // Fast integer to string conversion
@@ -250,7 +250,7 @@ public:
       } while (value > 0);
     }
 
-    buffer_.append(ptr, end - ptr);
+    m_buffer.append(ptr, end - ptr);
   }
 
   void appendPadded(int value, int width, char pad = '0') {
@@ -264,22 +264,22 @@ public:
     } while (v > 0);
 
     for (int i = len; i < width; ++i) {
-      buffer_.push_back(pad);
+      m_buffer.push_back(pad);
     }
 
     for (int i = len - 1; i >= 0; --i) {
-      buffer_.push_back(temp[i]);
+      m_buffer.push_back(temp[i]);
     }
   }
 
   [[nodiscard]] std::string_view view() const noexcept {
-    return {buffer_.data(), buffer_.size()};
+    return {m_buffer.data(), m_buffer.size()};
   }
 
-  [[nodiscard]] const std::string &str() const noexcept { return buffer_; }
+  [[nodiscard]] const std::string &str() const noexcept { return m_buffer; }
 
 private:
-  std::string buffer_;
+  std::string m_buffer;
 };
 
 // Thread-local buffer accessor
@@ -359,7 +359,7 @@ public:
 
   // Check if level is enabled (for conditional logging)
   [[nodiscard]] bool isEnabled(LogLevel level) const noexcept {
-    return level >= level_.load(std::memory_order_relaxed);
+    return level >= m_level.load(std::memory_order_relaxed);
   }
 
 private:
@@ -384,34 +384,34 @@ private:
   extractFilename(std::string_view path) noexcept;
 
   // Configuration (atomic where possible for lock-free reads)
-  std::atomic<LogLevel> level_{LogLevel::Debug};
-  std::atomic<bool> console_enabled_{true};
-  std::atomic<bool> file_enabled_{false};
-  std::atomic<bool> color_enabled_{true};
-  std::atomic<bool> async_enabled_{false};
-  std::atomic<bool> json_enabled_{false};
-  std::atomic<bool> show_thread_id_{true};
-  std::atomic<bool> show_source_{true};
-  std::atomic<bool> show_category_{true};
+  std::atomic<LogLevel> m_level{LogLevel::Debug};
+  std::atomic<bool> m_consoleEnabled{true};
+  std::atomic<bool> m_fileEnabled{false};
+  std::atomic<bool> m_colorEnabled{true};
+  std::atomic<bool> m_asyncEnabled{false};
+  std::atomic<bool> m_jsonEnabled{false};
+  std::atomic<bool> m_showThreadId{true};
+  std::atomic<bool> m_showSource{true};
+  std::atomic<bool> m_showCategory{true};
 
-  LoggerConfig config_;
-  mutable std::mutex config_mutex_;
+  LoggerConfig m_config;
+  mutable std::mutex m_configMutex;
 
   // File output
-  std::ofstream file_stream_;
-  std::mutex file_mutex_;
+  std::ofstream m_fileStream;
+  std::mutex m_fileMutex;
 
   // Async logging
-  std::unique_ptr<SPSCRingBuffer<LogEntry>> ring_buffer_;
-  std::unique_ptr<std::thread> worker_thread_;
-  std::atomic<bool> running_{false};
-  std::atomic<bool> initialized_{false};
-  std::condition_variable worker_cv_;
-  std::mutex worker_mutex_;
+  std::unique_ptr<SPSCRingBuffer<LogEntry>> m_ringBuffer;
+  std::unique_ptr<std::thread> m_workerThread;
+  std::atomic<bool> m_running{false};
+  std::atomic<bool> m_initialized{false};
+  std::condition_variable m_workerCv;
+  std::mutex m_workerMutex;
 
   // Custom callbacks
-  std::vector<LogCallback> callbacks_;
-  std::mutex callback_mutex_;
+  std::vector<LogCallback> m_callbacks;
+  std::mutex m_callbackMutex;
 };
 
 // ============================================================================
@@ -422,12 +422,12 @@ class LogStream {
 public:
   LogStream(Logger &logger, LogLevel level, SourceLocation loc,
             std::string_view category = {}) noexcept
-      : logger_(logger), level_(level), location_(loc), category_(category),
-        enabled_(logger.isEnabled(level)) {}
+      : m_logger(logger), m_level(level), m_location(loc), m_category(category),
+        m_enabled(logger.isEnabled(level)) {}
 
   ~LogStream() {
-    if (enabled_) {
-      logger_.log(level_, stream_.str(), location_, category_);
+    if (m_enabled) {
+      m_logger.log(m_level, m_stream.str(), m_location, m_category);
     }
   }
 
@@ -438,27 +438,27 @@ public:
   LogStream &operator=(const LogStream &) = delete;
 
   template <typename T> LogStream &operator<<(const T &value) {
-    if (enabled_) {
-      stream_ << value;
+    if (m_enabled) {
+      m_stream << value;
     }
     return *this;
   }
 
   // Manipulator support
   LogStream &operator<<(std::ostream &(*manip)(std::ostream &)) {
-    if (enabled_) {
-      manip(stream_);
+    if (m_enabled) {
+      manip(m_stream);
     }
     return *this;
   }
 
 private:
-  Logger &logger_;
-  LogLevel level_;
-  SourceLocation location_;
-  std::string_view category_;
-  bool enabled_;
-  std::ostringstream stream_;
+  Logger &m_logger;
+  LogLevel m_level;
+  SourceLocation m_location;
+  std::string_view m_category;
+  bool m_enabled;
+  std::ostringstream m_stream;
 };
 
 // ============================================================================
