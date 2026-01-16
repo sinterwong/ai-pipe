@@ -3,14 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(Tests)
 
 # Test source files
-set(TEST_SOURCES
-    main.cc
-    test_through_pass.cpp
-    test_stream_execution_engine.cpp
-)
-
-# Prefix paths
-list(TRANSFORM TEST_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.cc")
 
 # Dependency configuration
 set(DEPENDENCY_INCLUDES
@@ -21,7 +14,6 @@ set(DEPENDENCY_INCLUDES
 )
 
 set(DEPENDENCY_LIBS
-    ai_pipe::ai_pipe_examples
     ai_pipe::ai_pipe
     GTest::gtest
     GTest::gtest_main

@@ -1,0 +1,200 @@
+/**
+ * @file i_scheduler_strategy.hpp
+ * @author Sinter Wong (sintercver@gmail.com)
+ * @brief Scheduler strategy interface definition
+ * @version 1.0
+ * @date 2025-12-24
+ *
+ * This file defines the pure interface for scheduling strategies.
+ * It contains no implementation details and no internal dependencies.
+ *
+ * @copyright Copyright (c) 2025
+ */
+
+#ifndef AI_PIPE_I_SCHEDULER_STRATEGY_HPP
+#define AI_PIPE_I_SCHEDULER_STRATEGY_HPP
+
+#include "ai_pipe/data_types.hpp"
+#include "ai_pipe/i_logic_node.hpp"
+#include <chrono>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace ai_pipe {
+
+// Forward declaration
+class Graph;
+
+// =============================================================================
+// Scheduling Types
+// =============================================================================
+
+/**
+ * @brief Result of a scheduling decision
+ */
+enum class ScheduleDecision {
+  ScheduleNow,     ///< Node should be scheduled immediately
+  WaitForInputs,   ///< Wait for more inputs before scheduling
+  SkipExecution,   ///< Skip this execution cycle
+  DeferToNextCycle ///< Defer to the next scheduling cycle
+};
+
+/**
+ * @brief Context information for making scheduling decisions
+ */
+struct SchedulingContext {
+  std::shared_ptr<ILogicNode> node;
+  std::vector<std::string> expected_input_ports;
+  std::vector<std::string> ready_input_ports;
+  std::size_t pending_predecessor_count{0};
+  bool is_source_node{false};
+  bool is_sink_node{false};
+  bool has_initial_input{false};
+  std::chrono::steady_clock::time_point last_execution_time;
+  std::uint64_t execution_count{0};
+
+  [[nodiscard]] bool allInputsReady() const {
+    return ready_input_ports.size() >= expected_input_ports.size();
+  }
+
+  [[nodiscard]] double inputReadinessRatio() const {
+    if (expected_input_ports.empty())
+      return 1.0;
+    return static_cast<double>(ready_input_ports.size()) /
+           static_cast<double>(expected_input_ports.size());
+  }
+};
+
+/**
+ * @brief Scheduling result with additional metadata
+ */
+struct ScheduleResult {
+  ScheduleDecision decision{ScheduleDecision::WaitForInputs};
+  std::optional<std::chrono::milliseconds> retry_delay;
+  std::string reason;
+
+  static ScheduleResult scheduleNow(const std::string &reason = "") {
+    return {ScheduleDecision::ScheduleNow, std::nullopt, reason};
+  }
+
+  static ScheduleResult waitForInputs(const std::string &reason = "") {
+    return {ScheduleDecision::WaitForInputs, std::nullopt, reason};
+  }
+
+  static ScheduleResult skip(const std::string &reason = "") {
+    return {ScheduleDecision::SkipExecution, std::nullopt, reason};
+  }
+
+  static ScheduleResult
+  defer(std::chrono::milliseconds delay,
+        const std::string &reason = "deferred to next cycle") {
+    return {ScheduleDecision::DeferToNextCycle, delay, reason};
+  }
+};
+
+/**
+ * @brief Defines what "completion" means for an execution
+ */
+enum class CompletionSemantics {
+  SinglePass,     ///< Complete when all sinks execute once
+  Continuous,     ///< Never complete (streaming mode)
+  ConditionBased, ///< Complete when a condition is met
+  TimeoutBased    ///< Complete after timeout
+};
+
+/**
+ * @brief Completion check result
+ */
+struct CompletionStatus {
+  bool is_complete{false};
+  std::string reason;
+  std::optional<std::chrono::milliseconds> time_to_completion;
+};
+
+// =============================================================================
+// Scheduler Strategy Interface
+// =============================================================================
+
+/**
+ * @brief Abstract interface for scheduling strategies
+ *
+ * Strategies determine:
+ * - When a node should be scheduled
+ * - What "completion" means for the execution
+ * - Whether nodes should be rescheduled after completion
+ *
+ * To create a custom strategy, inherit from this interface and implement
+ * all pure virtual methods.
+ */
+class ISchedulerStrategy {
+public:
+  virtual ~ISchedulerStrategy() = default;
+
+  /**
+   * @brief Decide whether a node should be scheduled
+   * @param context Scheduling context with node state
+   * @return Schedule result with decision and reason
+   */
+  [[nodiscard]] virtual ScheduleResult
+  shouldSchedule(const SchedulingContext &context) const = 0;
+
+  /**
+   * @brief Handle node completion
+   * @param node The completed node
+   * @param success Whether execution succeeded
+   * @param outputs The outputs produced
+   * @return true if node should be rescheduled
+   */
+  [[nodiscard]] virtual bool
+  onNodeComplete(const std::shared_ptr<ILogicNode> &node, bool success,
+                 const PortDataMap &outputs) = 0;
+
+  /**
+   * @brief Check if execution is complete
+   * @param active_node_count Number of currently active nodes
+   * @param pending_node_count Number of pending nodes
+   * @param sink_execution_counts Execution counts for sink nodes
+   * @return Completion status
+   */
+  [[nodiscard]] virtual CompletionStatus
+  checkCompletion(std::size_t active_node_count, std::size_t pending_node_count,
+                  const std::unordered_map<std::string, std::uint64_t>
+                      &sink_execution_counts) const = 0;
+
+  /**
+   * @brief Get completion semantics for this strategy
+   */
+  [[nodiscard]] virtual CompletionSemantics completionSemantics() const = 0;
+
+  /**
+   * @brief Check if this strategy supports streaming
+   */
+  [[nodiscard]] virtual bool supportsStreaming() const = 0;
+
+  /**
+   * @brief Get strategy name for logging
+   */
+  [[nodiscard]] virtual std::string name() const = 0;
+
+  /**
+   * @brief Initialize with graph (optional)
+   */
+  virtual void initialize(const Graph *graph) { (void)graph; }
+
+  /**
+   * @brief Reset strategy state
+   */
+  virtual void reset() {}
+
+  /**
+   * @brief Clone this strategy
+   */
+  [[nodiscard]] virtual std::unique_ptr<ISchedulerStrategy> clone() const = 0;
+};
+
+} // namespace ai_pipe
+
+#endif // AI_PIPE_I_SCHEDULER_STRATEGY_HPP

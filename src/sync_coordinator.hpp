@@ -23,8 +23,7 @@
 #ifndef AI_PIPE_SYNC_COORDINATOR_HPP
 #define AI_PIPE_SYNC_COORDINATOR_HPP
 
-#include "bounded_drop_queue.hpp"
-#include "frame_metadata.hpp"
+#include "ai_pipe/frame_metadata.hpp"
 #include <algorithm>
 #include <atomic>
 #include <functional>
@@ -68,9 +67,10 @@ using CoordinatedDropCallback =
  */
 struct BranchState {
   BranchId branch_id;
-  FrameId latest_frame{frame_constants::k_invalid_frame_id}; ///< Latest frame seen
+  FrameId latest_frame{
+      frame_constants::k_invalid_frame_id}; ///< Latest frame seen
   FrameId processed_frame{
-      frame_constants::k_invalid_frame_id};      ///< Latest frame processed
+      frame_constants::k_invalid_frame_id};   ///< Latest frame processed
   std::unordered_set<FrameId> dropped_frames; ///< Frames dropped by this branch
   std::unordered_set<FrameId>
       pending_sync_drops;         ///< Drops pending from other branches
@@ -249,7 +249,8 @@ public:
       if (other_id != branch_id) {
         // If this branch hasn't processed this frame yet, mark for sync drop
         if (other_state->processed_frame < frame_id ||
-            other_state->processed_frame == frame_constants::k_invalid_frame_id) {
+            other_state->processed_frame ==
+                frame_constants::k_invalid_frame_id) {
           other_state->pending_sync_drops.insert(frame_id);
           affected_branches.push_back(other_id);
         }

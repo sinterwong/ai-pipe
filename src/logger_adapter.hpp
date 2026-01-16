@@ -22,7 +22,7 @@
 #define AI_PIPE_GLOG_LOGGER_ADAPTER_HPP
 
 #include "ai_pipe/context.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 
 namespace ai_pipe {
 

@@ -5,13 +5,7 @@ project(AIPipeExamples VERSION ${AI_PIPE_VERSION})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Source files
-set(SOURCE_FILES
-    pipeline_config_builder.cpp
-    nodes/through_pass_node.cpp
-)
-
-# Prefix paths
-list(TRANSFORM SOURCE_FILES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+file(GLOB AI_PIPE_EXAMPLES_SRCS CONFIGURE_DEPENDS "*.cpp")
 
 # Dependency configuration
 set(DEPENDENCY_INCLUDES
@@ -23,7 +17,7 @@ set(DEPENDENCY_LIBS
 )
 
 # Build shared library
-add_library(ai_pipe_examples SHARED ${SOURCE_FILES})
+add_library(ai_pipe_examples SHARED ${AI_PIPE_EXAMPLES_SRCS})
 
 add_library(ai_pipe::ai_pipe_examples ALIAS ai_pipe_examples)
 

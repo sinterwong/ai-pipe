@@ -5,7 +5,6 @@ project(Benchmarks)
 # Benchmark source files
 set(BENCHMARK_SOURCES
     main.cc
-    through_pass.cpp
 )
 
 # Prefix paths
