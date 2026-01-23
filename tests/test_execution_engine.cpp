@@ -1,0 +1,1140 @@
+/**
+ * @file test_execution_engine.cpp
+ * @author Sinter Wong (sintercver@gmail.com)
+ * @brief
+ * @version 0.1
+ * @date 2026-01-19
+ *
+ * @copyright Copyright (c) 2026
+ *
+ */
+#include "ai_pipe/execution_engine.hpp"
+#include "ai_pipe/frame_metadata.hpp"
+#include "ai_pipe/graph.hpp"
+#include "helper_nodes.hpp"
+#include "scheduler_strategies.hpp"
+#include "sync_strategies.hpp"
+#include <gtest/gtest.h>
+#include <memory>
+
+using namespace ai_pipe;
+using namespace std::chrono_literals;
+
+namespace ai_pipe_unit_test::execution_engine {
+class ExecutionEngineTest : public ::testing::Test {
+protected:
+  void SetUp() override { m_graph = std::make_unique<Graph>(); }
+
+  void TearDown() override { m_graph.reset(); }
+
+  static PortDataPtr createData(uint64_t id = 1) {
+    auto data = std::make_shared<PortData>();
+    data->id = id;
+    data->setParam("test", true);
+    return data;
+  }
+
+  void createLinearPipeline() {
+    m_source = std::make_shared<SourceNode>("source");
+    m_process = std::make_shared<PassThroughNode>("process");
+    m_sink = std::make_shared<SinkNode>("sink");
+
+    m_graph->addNode(m_source);
+    m_graph->addNode(m_process);
+    m_graph->addNode(m_sink);
+
+    m_graph->addEdge("source", "output", "process", "input");
+    m_graph->addEdge("process", "output", "sink", "input");
+  }
+
+  void createForkJoinPipeline() {
+    m_source = std::make_shared<SourceNode>("source");
+    auto branch1 = std::make_shared<PassThroughNode>("branch1");
+    auto branch2 = std::make_shared<PassThroughNode>("branch2");
+    auto join = std::make_shared<JoinNode>(
+        "join", std::vector<std::string>{"input1", "input2"});
+    m_sink = std::make_shared<SinkNode>("sink");
+
+    m_graph->addNode(m_source);
+    m_graph->addNode(branch1);
+    m_graph->addNode(branch2);
+    m_graph->addNode(join);
+    m_graph->addNode(m_sink);
+
+    m_graph->addEdge("source", "output", "branch1", "input");
+    m_graph->addEdge("source", "output", "branch2", "input");
+    m_graph->addEdge("branch1", "output", "join", "input1");
+    m_graph->addEdge("branch2", "output", "join", "input2");
+    m_graph->addEdge("join", "output", "sink", "input");
+  }
+
+  std::unique_ptr<Graph> m_graph;
+  std::shared_ptr<SourceNode> m_source;
+  std::shared_ptr<PassThroughNode> m_process;
+  std::shared_ptr<SinkNode> m_sink;
+};
+
+// =============================================================================
+// Construction and Initialization Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, DefaultConstruction) {
+  ExecutionEngine engine;
+  EXPECT_EQ(engine.getState(), EngineState::IDLE);
+  EXPECT_FALSE(engine.isStreaming());
+}
+
+TEST_F(ExecutionEngineTest, ConstructionWithConfig) {
+  auto config = EngineConfig::batch(8);
+  ExecutionEngine engine(config);
+
+  EXPECT_EQ(engine.getState(), EngineState::IDLE);
+  EXPECT_EQ(engine.config().num_workers, 8);
+  EXPECT_EQ(engine.config().mode, ExecutionMode::BATCH);
+}
+
+TEST_F(ExecutionEngineTest, FactoryCreate) {
+  auto engine = ExecutionEngine::create(EngineConfig::stream(4, 32));
+
+  ASSERT_NE(engine, nullptr);
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+  EXPECT_EQ(engine->config().mode, ExecutionMode::STREAM);
+  EXPECT_EQ(engine->config().default_queue_capacity, 32);
+}
+
+TEST_F(ExecutionEngineTest, ConvenienceFactoryFunctions) {
+  auto batch = createBatchEngine(2);
+  auto stream = createStreamEngine(4, 16);
+  auto hybrid = createHybridEngine(6, 32);
+
+  EXPECT_EQ(batch->config().mode, ExecutionMode::BATCH);
+  EXPECT_EQ(batch->config().num_workers, 2);
+
+  EXPECT_EQ(stream->config().mode, ExecutionMode::STREAM);
+  EXPECT_EQ(stream->config().num_workers, 4);
+  EXPECT_EQ(stream->config().default_queue_capacity, 16);
+
+  EXPECT_EQ(hybrid->config().mode, ExecutionMode::HYBRID);
+  EXPECT_EQ(hybrid->config().num_workers, 6);
+}
+
+TEST_F(ExecutionEngineTest, MoveConstruction) {
+  auto engine1 = ExecutionEngine::create(EngineConfig::batch(4));
+  createLinearPipeline();
+  ASSERT_TRUE(engine1->initialize(m_graph.get(), 4));
+
+  ExecutionEngine engine2(std::move(*engine1));
+  EXPECT_EQ(engine2.getState(), EngineState::IDLE);
+}
+
+TEST_F(ExecutionEngineTest, MoveAssignment) {
+  auto engine1 = ExecutionEngine::create(EngineConfig::batch(4));
+  createLinearPipeline();
+  ASSERT_TRUE(engine1->initialize(m_graph.get(), 4));
+
+  ExecutionEngine engine2;
+  engine2 = std::move(*engine1);
+  EXPECT_EQ(engine2.getState(), EngineState::IDLE);
+}
+
+TEST_F(ExecutionEngineTest, InitializeWithValidGraph) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+
+  EXPECT_TRUE(engine->initialize(m_graph.get(), 4));
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+}
+
+TEST_F(ExecutionEngineTest, InitializeWithNullGraph) {
+  auto engine = createBatchEngine();
+
+  EXPECT_FALSE(engine->initialize(nullptr, 4));
+}
+
+TEST_F(ExecutionEngineTest, InitializeWithZeroWorkers) {
+  auto engine = createBatchEngine(8);
+  createLinearPipeline();
+
+  // When 0 workers passed, should use config default
+  EXPECT_TRUE(engine->initialize(m_graph.get(), 0));
+  EXPECT_EQ(engine->config().num_workers, 8);
+}
+
+// =============================================================================
+// Strategy Injection Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, SetSchedulerStrategy) {
+  auto engine = createBatchEngine();
+
+  engine->setSchedulerStrategy(std::make_unique<StreamSchedulerStrategy>());
+  EXPECT_TRUE(engine->strategyInfo().find("StreamSchedulerStrategy") !=
+              std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, SetSyncStrategy) {
+  auto engine = createBatchEngine();
+
+  engine->setSyncStrategy(std::make_unique<NoSyncStrategy>());
+  EXPECT_TRUE(engine->strategyInfo().find("NoSyncStrategy") !=
+              std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
+  auto engine = ExecutionEngine::create();
+  engine->configureForMode(ExecutionMode::STREAM);
+
+  EXPECT_TRUE(engine->strategyInfo().find("StreamSchedulerStrategy") !=
+              std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, ConfigureForHybridMode) {
+  auto engine = ExecutionEngine::create();
+  engine->configureForMode(ExecutionMode::HYBRID);
+
+  EXPECT_TRUE(engine->strategyInfo().find("HybridSchedulerStrategy") !=
+              std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, CannotChangeStrategyWhileRunning) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  ASSERT_TRUE(engine->startStreaming());
+
+  // Strategy change should be ignored while running
+  auto original_info = engine->strategyInfo();
+  engine->setSchedulerStrategy(std::make_unique<BatchSchedulerStrategy>());
+  EXPECT_EQ(engine->strategyInfo(), original_info);
+
+  engine->stopStreaming();
+}
+
+// =============================================================================
+// Batch Execution Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, BatchExecuteSynchronous) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData(66);
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+
+  EXPECT_EQ(m_source->processCount(), 1);
+  EXPECT_EQ(m_process->processCount(), 1);
+  EXPECT_EQ(m_sink->processCount(), 1);
+
+  auto received_data = m_sink->getReceivedData();
+  ASSERT_EQ(received_data.size(), 1);
+  EXPECT_EQ(received_data[0]->id, 66);
+}
+
+TEST_F(ExecutionEngineTest, BatchExecuteAsynchronous) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData(66);
+
+  EXPECT_TRUE(engine->execute(inputs, false));
+
+  std::this_thread::sleep_for(100ms);
+
+  EXPECT_GE(m_sink->processCount(), 1);
+
+  engine->stopExecutionSync();
+  EXPECT_EQ(engine->getState(), EngineState::STOPPED);
+}
+
+TEST_F(ExecutionEngineTest, BatchExecuteWithContext) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto context = std::make_shared<PipelineContext>();
+  context->setConfig("test_key", std::string("test_value"));
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  EXPECT_TRUE(engine->execute(inputs, true, context));
+}
+
+TEST_F(ExecutionEngineTest, BatchExecuteWithEmptyInputs) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+
+  // Empty inputs should still work if source doesn't require input
+  EXPECT_TRUE(engine->execute(inputs, true));
+}
+
+TEST_F(ExecutionEngineTest, ExecuteWithoutInitialization) {
+  auto engine = createBatchEngine();
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  EXPECT_FALSE(engine->execute(inputs, true));
+}
+
+TEST_F(ExecutionEngineTest, DoubleExecuteRejectsSecond) {
+  // Use a slow node to keep execution running
+  auto source = std::make_shared<SlowNode>("source", 200ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(source);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "sink", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  // Start first execution async
+  EXPECT_TRUE(engine->execute(inputs, false));
+
+  // Try to start second execution - should fail
+  EXPECT_FALSE(engine->execute(inputs, true));
+
+  // Wait for completion
+  std::this_thread::sleep_for(300ms);
+}
+
+// =============================================================================
+// Result and Error Callback Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, ResultCallback) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  std::atomic<bool> callback_called{false};
+  PortDataMap received_results;
+  std::mutex result_mutex;
+
+  engine->setPipelineResultCallback([&](const PortDataMap &results) {
+    std::lock_guard<std::mutex> lock(result_mutex);
+    received_results = results;
+    callback_called.store(true);
+  });
+
+  PortDataMap inputs;
+  inputs["source"] = createData(123);
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+
+  std::this_thread::sleep_for(50ms);
+
+  EXPECT_TRUE(callback_called.load());
+  EXPECT_FALSE(received_results.empty());
+}
+
+TEST_F(ExecutionEngineTest, ErrorCallback) {
+  auto failable = std::make_shared<FailableNode>("failable", true);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(failable);
+  m_graph->addNode(sink);
+  m_graph->addEdge("failable", "output", "sink", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  std::atomic<bool> error_called{false};
+  std::string error_node;
+  std::string error_message;
+  std::mutex error_mutex;
+
+  engine->setPipelineErrorCallback(
+      [&](const std::string &msg, const std::string &node) {
+        std::lock_guard<std::mutex> lock(error_mutex);
+        error_message = msg;
+        error_node = node;
+        error_called.store(true);
+      });
+
+  PortDataMap inputs;
+  inputs["failable"] = createData();
+
+  engine->execute(inputs, true);
+
+  std::this_thread::sleep_for(50ms);
+
+  EXPECT_TRUE(error_called.load());
+
+  // the callback receives error message first, then node name
+  std::lock_guard<std::mutex> lock(error_mutex);
+  EXPECT_FALSE(error_node.empty());
+  EXPECT_FALSE(error_message.empty());
+}
+
+// =============================================================================
+// Streaming Execution Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, StartStreaming) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_TRUE(engine->startStreaming());
+  EXPECT_TRUE(engine->isStreaming());
+  EXPECT_EQ(engine->getState(), EngineState::RUNNING);
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, StopStreaming) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+  engine->stopStreaming(true);
+
+  EXPECT_FALSE(engine->isStreaming());
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+}
+
+TEST_F(ExecutionEngineTest, CannotStartStreamingInBatchMode) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_FALSE(engine->startStreaming());
+}
+
+TEST_F(ExecutionEngineTest, PushInputInStreamingMode) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  for (int i = 0; i < 10; ++i) {
+    auto result = engine->pushInput("source", createData(i));
+    EXPECT_TRUE(result.isOk());
+  }
+
+  std::this_thread::sleep_for(200ms);
+
+  EXPECT_GE(m_sink->processCount(), 5);
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, PushInputWithPortName) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  auto result = engine->pushInput("source", "input", createData(1));
+  EXPECT_TRUE(result.isOk());
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, PushInputToUnknownNode) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  auto result = engine->pushInput("unknown_node", createData());
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.status, QueuePushResult::Status::Rejected);
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, PushInputWhenNotStreaming) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto result = engine->pushInput("source", createData());
+  EXPECT_FALSE(result.isOk());
+}
+
+TEST_F(ExecutionEngineTest, StreamingWithContext) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto context = std::make_shared<PipelineContext>();
+  context->setUserData("stream_id", 66);
+
+  EXPECT_TRUE(engine->startStreaming(context));
+
+  (void)engine->pushInput("source", createData());
+  std::this_thread::sleep_for(100ms);
+
+  engine->stopStreaming();
+}
+
+// =============================================================================
+// State Management Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, GetState) {
+  auto engine = createBatchEngine();
+
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+}
+
+TEST_F(ExecutionEngineTest, GetNodeStates) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto states = engine->getNodeStates();
+
+  EXPECT_EQ(states.size(), 3);
+  EXPECT_TRUE(states.count("source") > 0);
+  EXPECT_TRUE(states.count("process") > 0);
+  EXPECT_TRUE(states.count("sink") > 0);
+
+  for (const auto &[name, state] : states) {
+    EXPECT_EQ(state, NodeExecutionState::WAITING);
+  }
+}
+
+TEST_F(ExecutionEngineTest, Reset) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+  engine->execute(inputs, true);
+
+  // reset and check state
+  engine->reset();
+
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+
+  // should be able to execute again
+  EXPECT_TRUE(engine->execute(inputs, true));
+}
+
+TEST_F(ExecutionEngineTest, StopExecutionAsync) {
+  auto source = std::make_shared<PassThroughNode>("source", 100ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(source);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "sink", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  // async execution
+  EXPECT_TRUE(engine->execute(inputs, false));
+
+  // Stop asynchronously
+  engine->stopExecutionAsync();
+
+  // give time for stop to propagate
+  std::this_thread::sleep_for(200ms);
+
+  // should not be in RUNNING state
+  auto state = engine->getState();
+  EXPECT_TRUE(state == EngineState::STOPPED);
+}
+
+TEST_F(ExecutionEngineTest, StopExecutionSync) {
+  createLinearPipeline();
+
+  auto engine = createStreamEngine();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  // push some data
+  for (int i = 0; i < 5; ++i) {
+    auto result = engine->pushInput("source", createData(i));
+    EXPECT_TRUE(result.isOk());
+  }
+
+  std::this_thread::sleep_for(50ms);
+
+  // Stop synchronously
+  engine->stopStreaming(true);
+
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+}
+
+// =============================================================================
+// Queue Management Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, QueueDepth) {
+  auto engine = createStreamEngine(4, 16);
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  // Push some items
+  for (int i = 0; i < 5; ++i) {
+    (void)engine->pushInput("source", createData(i));
+  }
+
+  // Queue depth should be non-negative
+  auto depth = engine->queueDepth("source");
+  EXPECT_GE(depth, 0u);
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, QueueDepthUnknownNode) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_EQ(engine->queueDepth("unknown"), 0u);
+}
+
+TEST_F(ExecutionEngineTest, HasQueueCapacity) {
+  auto engine = createStreamEngine(4, 16);
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_TRUE(engine->hasQueueCapacity("source"));
+}
+
+TEST_F(ExecutionEngineTest, HasQueueCapacityUnknownNode) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  EXPECT_FALSE(engine->hasQueueCapacity("unknown"));
+}
+
+TEST_F(ExecutionEngineTest, WaitForDrain) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  for (int i = 0; i < 5; ++i) {
+    (void)engine->pushInput("source", createData(i));
+  }
+
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms));
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, WaitForDrainTimeout) {
+  // Create a pipeline with normal processing
+  auto source = std::make_shared<PassThroughNode>("source", 50ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(source);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "sink", "input");
+
+  auto engine = createStreamEngine(1, 100);
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  // push many items
+  for (int i = 0; i < 10; ++i) {
+    (void)engine->pushInput("source", createData(i));
+  }
+
+  // very short timeout should fail or barely succeed
+  auto result = engine->waitForDrain(0, 50ms);
+  (void)result;
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, SetNodeQueueConfig) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+
+  QueueConfig config;
+  config.capacity = 32;
+  config.drop_strategy = "DropTail";
+
+  engine->setNodeQueueConfig("process", config);
+  engine->initialize(m_graph.get());
+
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
+}
+
+// =============================================================================
+// Drop Callback Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
+  // Create a pipeline with a very slow node and small queue
+  auto source = std::make_shared<SourceNode>("source");
+  auto slow = std::make_shared<SlowNode>("slow", 100ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(source);
+  m_graph->addNode(slow);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "slow", "input");
+  m_graph->addEdge("slow", "output", "sink", "input");
+
+  auto config = EngineConfig::stream(1, 2); // tiny queue
+  auto engine = ExecutionEngine::create(config);
+
+  QueueConfig slow_config;
+  slow_config.capacity = 2;
+  slow_config.drop_strategy = "DropHead";
+  engine->setNodeQueueConfig("slow", slow_config);
+
+  engine->initialize(m_graph.get());
+  std::atomic<int> drop_count{0};
+  engine->setDropCallback(
+      [&](const std::string &, std::uint64_t, const std::string &) {
+        drop_count.fetch_add(1);
+      });
+
+  engine->startStreaming();
+  for (int i = 0; i < 20; ++i) {
+    (void)engine->pushInput("source", createData(i));
+    std::this_thread::sleep_for(5ms);
+  }
+
+  std::this_thread::sleep_for(500ms);
+  engine->stopStreaming();
+  EXPECT_GE(drop_count.load(), 0);
+}
+
+// =============================================================================
+// Statistics Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, StatisticsInitialState) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto stats = engine->statistics();
+
+  EXPECT_EQ(stats.total_executions, 0u);
+  EXPECT_EQ(stats.successful_executions, 0u);
+  EXPECT_EQ(stats.failed_executions, 0u);
+}
+
+TEST_F(ExecutionEngineTest, StatisticsAfterExecution) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+  engine->execute(inputs, true);
+
+  auto stats = engine->statistics();
+
+  EXPECT_EQ(stats.total_executions, 1u);
+  EXPECT_GE(stats.successful_executions, 0u);
+}
+
+TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  for (int i = 0; i < 5; ++i) {
+    PortDataMap inputs;
+    inputs["source"] = createData(i);
+    engine->execute(inputs, true);
+  }
+
+  auto stats = engine->statistics();
+
+  EXPECT_EQ(stats.total_executions, 5u);
+}
+
+// =============================================================================
+// Information Query Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, Info) {
+  auto engine = createBatchEngine(4);
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  auto info = engine->info();
+
+  EXPECT_TRUE(info.find("ExecutionEngine") != std::string::npos);
+  EXPECT_TRUE(info.find("BATCH") != std::string::npos);
+  EXPECT_TRUE(info.find("workers: 4") != std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, StrategyInfo) {
+  auto engine = createBatchEngine();
+
+  auto info = engine->strategyInfo();
+
+  EXPECT_TRUE(info.find("scheduler:") != std::string::npos);
+  EXPECT_TRUE(info.find("sync:") != std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, Config) {
+  auto config = EngineConfig::stream(8, 64);
+  auto engine = ExecutionEngine::create(config);
+
+  const auto &retrieved = engine->config();
+
+  EXPECT_EQ(retrieved.mode, ExecutionMode::STREAM);
+  EXPECT_EQ(retrieved.num_workers, 8);
+  EXPECT_EQ(retrieved.default_queue_capacity, 64);
+}
+
+// =============================================================================
+// Complex Pipeline Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, ForkJoinPipeline) {
+  createForkJoinPipeline();
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData(66);
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+  EXPECT_EQ(m_sink->processCount(), 1);
+}
+
+TEST_F(ExecutionEngineTest, DeepPipeline) {
+  // create a 10-node deep pipeline
+  std::vector<std::shared_ptr<PassThroughNode>> nodes;
+
+  for (int i = 0; i < 10; ++i) {
+    auto node = std::make_shared<PassThroughNode>("node_" + std::to_string(i));
+    nodes.push_back(node);
+    m_graph->addNode(node);
+
+    if (i > 0) {
+      m_graph->addEdge("node_" + std::to_string(i - 1), "output",
+                       "node_" + std::to_string(i), "input");
+    }
+  }
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["node_0"] = createData();
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+
+  // all nodes should have been processed
+  for (const auto &node : nodes) {
+    EXPECT_EQ(node->processCount(), 1);
+  }
+}
+
+TEST_F(ExecutionEngineTest, ParallelBranches) {
+  // create parallel branches: source -> [b1, b2, b3] -> join
+  auto source = std::make_shared<SourceNode>("source");
+  auto branch1 = std::make_shared<PassThroughNode>("branch1", 50ms);
+  auto branch2 = std::make_shared<PassThroughNode>("branch2", 30ms);
+  auto branch3 = std::make_shared<PassThroughNode>("branch3", 10ms);
+  auto join = std::make_shared<JoinNode>(
+      "join", std::vector<std::string>{"in1", "in2", "in3"});
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(source);
+  m_graph->addNode(branch1);
+  m_graph->addNode(branch2);
+  m_graph->addNode(branch3);
+  m_graph->addNode(join);
+  m_graph->addNode(sink);
+
+  m_graph->addEdge("source", "output", "branch1", "input");
+  m_graph->addEdge("source", "output", "branch2", "input");
+  m_graph->addEdge("source", "output", "branch3", "input");
+  m_graph->addEdge("branch1", "output", "join", "in1");
+  m_graph->addEdge("branch2", "output", "join", "in2");
+  m_graph->addEdge("branch3", "output", "join", "in3");
+  m_graph->addEdge("join", "output", "sink", "input");
+
+  auto engine = createBatchEngine(4);
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData(100);
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+  EXPECT_EQ(sink->processCount(), 1);
+}
+
+TEST_F(ExecutionEngineTest, ConcurrentStreamingPush) {
+  auto engine = createStreamEngine(8, 64);
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  std::atomic<int> push_count{0};
+  const int num_threads = 4;
+  const int pushes_per_thread = 25;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < num_threads; ++t) {
+    threads.emplace_back([&, t]() {
+      for (int i = 0; i < pushes_per_thread; ++i) {
+        auto result = engine->pushInput("source", createData(t * 100 + i));
+        if (result.isOk()) {
+          push_count.fetch_add(1);
+        }
+      }
+    });
+  }
+
+  for (auto &th : threads) {
+    th.join();
+  }
+
+  engine->waitForDrain(0, 5000ms);
+  engine->stopStreaming();
+
+  EXPECT_EQ(push_count.load(), num_threads * pushes_per_thread);
+  EXPECT_GE(m_sink->processCount(), num_threads * pushes_per_thread / 2);
+}
+
+TEST_F(ExecutionEngineTest, ConcurrentStatisticsAccess) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  std::atomic<bool> stop{false};
+
+  // Thread pushing data
+  std::thread pusher([&]() {
+    while (!stop.load()) {
+      (void)engine->pushInput("source", createData());
+      std::this_thread::sleep_for(5ms);
+    }
+  });
+
+  // Thread reading statistics
+  std::thread reader([&]() {
+    while (!stop.load()) {
+      auto stats = engine->statistics();
+      EXPECT_GE(stats.total_queue_pushes, 0u);
+      std::this_thread::sleep_for(2ms);
+    }
+  });
+
+  std::this_thread::sleep_for(200ms);
+  stop.store(true);
+
+  pusher.join();
+  reader.join();
+
+  engine->stopStreaming();
+}
+
+// =============================================================================
+// Edge Cases and Error Handling Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, NodeFailureDoesNotCrash) {
+  auto failable = std::make_shared<FailableNode>("failable", true);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(failable);
+  m_graph->addNode(sink);
+  m_graph->addEdge("failable", "output", "sink", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["failable"] = createData();
+
+  // Should not crash, but may not succeed
+  engine->execute(inputs, true);
+
+  // Engine should still be usable
+  failable->setShouldFail(false);
+  EXPECT_TRUE(engine->execute(inputs, true));
+}
+
+TEST_F(ExecutionEngineTest, MultipleResets) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  for (int i = 0; i < 5; ++i) {
+    PortDataMap inputs;
+    inputs["source"] = createData(i);
+    engine->execute(inputs, true);
+    engine->reset();
+
+    EXPECT_EQ(engine->getState(), EngineState::IDLE);
+  }
+}
+
+TEST_F(ExecutionEngineTest, StreamStartStopMultiple) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_TRUE(engine->startStreaming());
+
+    (void)engine->pushInput("source", createData(i));
+    std::this_thread::sleep_for(50ms);
+
+    engine->stopStreaming(true);
+    EXPECT_FALSE(engine->isStreaming());
+  }
+}
+
+TEST_F(ExecutionEngineTest, ExecuteDuringStreaming) {
+  auto engine = createStreamEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  engine->startStreaming();
+
+  // Execute in streaming mode should push to queue
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  EXPECT_TRUE(engine->execute(inputs, false));
+
+  engine->stopStreaming();
+}
+
+TEST_F(ExecutionEngineTest, EmptyGraph) {
+  auto engine = createBatchEngine();
+
+  // Empty graph (no nodes)
+  EXPECT_TRUE(engine->initialize(m_graph.get()));
+
+  PortDataMap inputs;
+  EXPECT_TRUE(engine->execute(inputs, true));
+}
+
+TEST_F(ExecutionEngineTest, SingleNodeGraph) {
+  auto single = std::make_shared<PassThroughNode>("single");
+  m_graph->addNode(single);
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["single"] = createData();
+
+  EXPECT_TRUE(engine->execute(inputs, true));
+  EXPECT_EQ(single->processCount(), 1);
+}
+
+// =============================================================================
+// QueuePushResult Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, QueuePushResultStatus) {
+  auto success = QueuePushResult::success(5);
+  EXPECT_EQ(success.status, QueuePushResult::Status::Enqueued);
+  EXPECT_TRUE(success.isOk());
+  EXPECT_FALSE(success.isDropped());
+  EXPECT_TRUE(static_cast<bool>(success));
+
+  auto dropped = QueuePushResult::dropped("queue full", 10);
+  EXPECT_EQ(dropped.status, QueuePushResult::Status::Dropped);
+  EXPECT_TRUE(dropped.isOk()); // Dropped is still "ok" (not rejected)
+  EXPECT_TRUE(dropped.isDropped());
+
+  auto rejected = QueuePushResult::rejected("not streaming", 0);
+  EXPECT_EQ(rejected.status, QueuePushResult::Status::Rejected);
+  EXPECT_FALSE(rejected.isOk());
+  EXPECT_FALSE(rejected.isDropped());
+  EXPECT_FALSE(static_cast<bool>(rejected));
+}
+
+// =============================================================================
+// Engine Configuration Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, EngineConfigBatch) {
+  auto config = EngineConfig::batch(6);
+
+  EXPECT_EQ(config.mode, ExecutionMode::BATCH);
+  EXPECT_EQ(config.num_workers, 6);
+  EXPECT_EQ(config.default_queue_capacity, 0); // Unbounded
+  EXPECT_FALSE(config.enable_sync_coordination);
+}
+
+TEST_F(ExecutionEngineTest, EngineConfigStream) {
+  auto config = EngineConfig::stream(4, 32);
+
+  EXPECT_EQ(config.mode, ExecutionMode::STREAM);
+  EXPECT_EQ(config.num_workers, 4);
+  EXPECT_EQ(config.default_queue_capacity, 32);
+  EXPECT_TRUE(config.enable_sync_coordination);
+}
+
+TEST_F(ExecutionEngineTest, EngineConfigHybrid) {
+  auto config = EngineConfig::hybrid(8, 64);
+
+  EXPECT_EQ(config.mode, ExecutionMode::HYBRID);
+  EXPECT_EQ(config.num_workers, 8);
+  EXPECT_EQ(config.default_queue_capacity, 64);
+  EXPECT_TRUE(config.enable_sync_coordination);
+}
+
+// =============================================================================
+// Hybrid Mode Tests
+// =============================================================================
+
+TEST_F(ExecutionEngineTest, HybridModeExecution) {
+  auto engine = createHybridEngine();
+  createLinearPipeline();
+  engine->initialize(m_graph.get());
+
+  // Hybrid mode supports both batch and streaming
+  EXPECT_TRUE(engine->startStreaming());
+
+  (void)engine->pushInput("source", createData(1));
+  std::this_thread::sleep_for(100ms);
+
+  engine->stopStreaming();
+
+  EXPECT_GE(m_sink->processCount(), 1);
+}
+
+} // namespace ai_pipe_unit_test::execution_engine
