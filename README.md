@@ -7,25 +7,8 @@
   A lightweight pipeline framework based on DAG model.
 </p>
 
-The pipeline module framework supports DAG-based logic construction, enabling the direct creation of pipelines through configuration files once computing nodes are defined and registered. Plans include supporting additional platforms in the future.
+The pipeline module framework supports DAG-based logic construction.
 
-## Features ✨
-*   **Easy to use:** Simple API for inference.
-*   **High decoupling and scalability:** Standardized interface design and new node registration process.
-
-## Env 🛠️
-*   CMake 3.15+
-*   GCC 11+
-
-## Build 🚀
-```bash
-git clone https://github.com/sinterwong/ai-pipe.git --recurse-submodules
-cd ai-pipe
-mkdir build
-cd build
-cmake ..
-make -j$(nproc)
-```
 
 ## Project Structure 🏗️
 
@@ -41,11 +24,3 @@ ai-pipe/
 ├── tests/
 └── README.md
 ```
-
-## Roadmap 🗺️
-
-- [x] Design and implement native pipeline module
-- [x] Build CI
-- [x] Implement pipeline builder in examples
-- [x] Support Execution Engine registration mechanism
-- [ ] Implement an engine with a frame-skipping type backpressure mechanism
