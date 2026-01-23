@@ -59,12 +59,10 @@ struct QueueConfig {
  * @brief Result of a queue push operation
  */
 struct QueuePushResult {
-  enum class Status {
-    Enqueued, // 对应原来的 success
-    Dropped,  // 对应 dropped
-    Rejected  // 对应 rejected
-  };
+  enum class Status { Enqueued, Dropped, Rejected };
+
   Status status = Status::Rejected;
+
   std::string message;
   std::size_t queue_size = 0;
 

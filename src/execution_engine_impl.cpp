@@ -9,8 +9,8 @@
  */
 
 #include "execution_engine_impl.hpp"
+#include "ai_pipe/logger.hpp"
 #include "coordinated_sync_strategy.hpp"
-#include "logger.hpp"
 #include "scheduler_strategies.hpp"
 #include "sync_strategies.hpp"
 #include <algorithm>

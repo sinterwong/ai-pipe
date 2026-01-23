@@ -9,7 +9,7 @@
  */
 
 #include "pipeline_impl.hpp"
-#include "logger.hpp"
+#include "ai_pipe/logger.hpp"
 #include <stdexcept>
 
 namespace ai_pipe {

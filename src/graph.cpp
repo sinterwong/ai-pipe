@@ -9,7 +9,7 @@
  *
  */
 #include "ai_pipe/graph.hpp"
-#include "logger.hpp"
+#include "ai_pipe/logger.hpp"
 #include <algorithm>
 
 namespace ai_pipe {
