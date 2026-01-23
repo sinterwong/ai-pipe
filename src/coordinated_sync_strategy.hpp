@@ -1,11 +1,9 @@
 /**
  * @file coordinated_sync_strategy.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief Coordinated synchronization strategy implementation (internal)
+ * @brief Coordinated synchronization strategy implementation
  * @version 1.0
  * @date 2025-12-24
- *
- * This is an INTERNAL header file. Users should not include this directly.
  *
  * @copyright Copyright (c) 2025
  */
@@ -24,16 +22,6 @@
 
 namespace ai_pipe {
 
-/**
- * @brief Coordinated sync strategy using SyncCoordinator
- *
- * This strategy provides full synchronization support:
- * - Auto-detection of sync groups from graph topology
- * - Coordinated frame dropping across parallel branches
- * - Watermark tracking for progress monitoring
- *
- * @note This is an internal class. Users should not instantiate it directly.
- */
 class CoordinatedSyncStrategy final : public ISyncStrategy {
 public:
   CoordinatedSyncStrategy()

@@ -10,7 +10,7 @@
 
 #include "execution_engine_impl.hpp"
 #include "ai_pipe/logger.hpp"
-#include "coordinated_sync_strategy.hpp"
+#include "join_aware_sync_strategy.hpp"
 #include "scheduler_strategies.hpp"
 #include "sync_strategies.hpp"
 #include <algorithm>
@@ -295,13 +295,13 @@ void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
     sched_config.min_interval = m_config.min_execution_interval;
     m_schedulerStrategy =
         std::make_unique<StreamSchedulerStrategy>(sched_config);
-    m_syncStrategy = std::make_unique<CoordinatedSyncStrategy>();
+    m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
     break;
   }
 
   case ExecutionMode::HYBRID:
     m_schedulerStrategy = std::make_unique<HybridSchedulerStrategy>();
-    m_syncStrategy = std::make_unique<CoordinatedSyncStrategy>();
+    m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
     break;
   }
 }
@@ -866,7 +866,8 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
               // Report to sync strategy
               if (m_syncStrategy && m_syncStrategy->isEnabled() &&
                   event.frame_id != frame_constants::k_invalid_frame_id) {
-                m_syncStrategy->reportDrop(name, event.frame_id, event.reason);
+                (void)m_syncStrategy->reportDrop(name, event.frame_id,
+                                                 event.reason);
               }
             });
       }

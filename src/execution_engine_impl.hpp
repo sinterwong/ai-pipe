@@ -1,7 +1,7 @@
 /**
  * @file execution_engine_impl.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief ExecutionEngine PIMPL implementation (internal)
+ * @brief ExecutionEngine PIMPL implementation
  * @version 1.0
  * @date 2025-12-24
  *

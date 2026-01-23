@@ -3,12 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(Benchmarks)
 
 # Benchmark source files
-set(BENCHMARK_SOURCES
-    main.cc
-)
-
-# Prefix paths
-list(TRANSFORM BENCHMARK_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+file(GLOB BENCHMARK_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.cc")
 
 # Dependency configuration
 set(DEPENDENCY_INCLUDES
