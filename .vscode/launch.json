@@ -9,7 +9,6 @@
       // "program": "${workspaceFolder}/install/benchmarks/ai_pipe_benchmarks",
       "args": [
         "--gtest_filter=*.*"
-        // "--gtest_filter=StreamExecutionEngineTest.*"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}/install",

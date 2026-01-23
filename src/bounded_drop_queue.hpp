@@ -19,8 +19,8 @@
 #ifndef AI_PIPE_BOUNDED_DROP_QUEUE_HPP
 #define AI_PIPE_BOUNDED_DROP_QUEUE_HPP
 
+#include "ai_pipe/frame_metadata.hpp"
 #include "drop_strategy.hpp"
-#include "frame_metadata.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
