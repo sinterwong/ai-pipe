@@ -442,19 +442,20 @@ void ExecutionEngine::Impl::stopExecutionSync() {
 
   stopExecutionAsync();
 
-  std::unique_lock<std::mutex> lock(m_engineMutex);
-  const auto current_state = m_engineState.load(std::memory_order_acquire);
-
-  if (current_state == EngineState::RUNNING) {
+  {
+    std::unique_lock<std::mutex> lock(m_completionMutex);
     m_completionCV.wait(lock, [this] {
-      const auto state = m_engineState.load(std::memory_order_acquire);
       return m_activeTasks.load(std::memory_order_acquire) == 0 ||
-             state == EngineState::STOPPED || state == EngineState::ERROR;
+             m_stopFlag.load(std::memory_order_acquire);
     });
   }
 
-  if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-    m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+  // 状态更新使用 engineMutex
+  {
+    std::lock_guard<std::mutex> lock(m_engineMutex);
+    if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
+      m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+    }
   }
 
   LOG_INFO_S << "ExecutionEngine: Execution fully stopped.";
@@ -472,8 +473,10 @@ void ExecutionEngine::Impl::reset() {
     if (!state)
       continue;
 
-    state->exec_state->store(NodeExecutionState::WAITING,
-                             std::memory_order_relaxed);
+    if (state->exec_state) {
+      state->exec_state->store(NodeExecutionState::WAITING,
+                               std::memory_order_relaxed);
+    }
     state->execution_count = 0;
 
     for (auto &[port_name, queue] : state->bounded_queues) {
@@ -574,6 +577,7 @@ bool ExecutionEngine::Impl::startStreaming(
 }
 
 void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
+  // 第一步: 设置停止标志
   {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     if (!m_streamingMode.load(std::memory_order_acquire)) {
@@ -582,13 +586,30 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     m_stopFlag.store(true, std::memory_order_release);
   }
 
+  // 通知所有等待的线程
+  m_completionCV.notify_all();
+
+  // 等待队列排空
   if (wait_for_drain) {
+    // waitForDrain 现在会检查 stopFlag，不会长时间阻塞
     waitForDrain(0, std::chrono::milliseconds{5000});
   }
 
-  std::lock_guard<std::mutex> lock(m_engineMutex);
-  m_streamingMode.store(false, std::memory_order_release);
-  m_engineState.store(EngineState::IDLE, std::memory_order_release);
+  // 等待活动任务完成
+  {
+    std::unique_lock<std::mutex> lock(m_completionMutex);
+    // 使用带超时的等待，避免无限阻塞
+    m_completionCV.wait_for(lock, std::chrono::milliseconds{1000}, [this] {
+      return m_activeTasks.load(std::memory_order_acquire) == 0;
+    });
+  }
+
+  // 更新状态
+  {
+    std::lock_guard<std::mutex> lock(m_engineMutex);
+    m_streamingMode.store(false, std::memory_order_release);
+    m_engineState.store(EngineState::IDLE, std::memory_order_release);
+  }
 
   LOG_INFO_S << "ExecutionEngine: Stopped streaming mode.";
 }
@@ -688,6 +709,11 @@ bool ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
   auto deadline = std::chrono::steady_clock::now() + timeout;
 
   while (std::chrono::steady_clock::now() < deadline) {
+    if (m_stopFlag.load(std::memory_order_acquire)) {
+      LOG_TRACE_S << "ExecutionEngine: waitForDrain interrupted by stop flag";
+      return true;
+    }
+
     bool all_drained = true;
 
     for (const auto &[node, state] : m_nodeStates) {
@@ -713,10 +739,10 @@ bool ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
     if (all_drained && m_activeTasks.load(std::memory_order_acquire) == 0) {
       return true;
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    std::this_thread::sleep_for(std::chrono::microseconds{5});
   }
 
+  LOG_WARNING_S << "ExecutionEngine: waitForDrain timed out";
   return false;
 }
 
@@ -945,6 +971,9 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
   std::lock_guard<std::mutex> node_lock(*state.mutex);
 
   // Re-check after acquiring lock
+  if (!state.exec_state) {
+    return;
+  }
   current_state = state.exec_state->load(std::memory_order_acquire);
   if (current_state != NodeExecutionState::WAITING) {
     return;
@@ -1046,8 +1075,10 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Handle completion
   if (m_stopFlag.load(std::memory_order_acquire)) {
-    state.exec_state->store(NodeExecutionState::WAITING,
-                            std::memory_order_release);
+    if (state.exec_state) {
+      state.exec_state->store(NodeExecutionState::WAITING,
+                              std::memory_order_release);
+    }
   } else if (success) {
     handleNodeSuccess(node, outputs);
   } else {
@@ -1156,12 +1187,16 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
 
   // Check if node should be rescheduled
   if (m_schedulerStrategy->onNodeComplete(node, true, outputs)) {
-    state->exec_state->store(NodeExecutionState::WAITING,
-                             std::memory_order_release);
+    if (state->exec_state) {
+      state->exec_state->store(NodeExecutionState::WAITING,
+                               std::memory_order_release);
+    }
     tryScheduleNode(node);
   } else {
-    state->exec_state->store(NodeExecutionState::COMPLETED,
-                             std::memory_order_release);
+    if (state->exec_state) {
+      state->exec_state->store(NodeExecutionState::COMPLETED,
+                               std::memory_order_release);
+    }
   }
 
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " COMPLETED.";
@@ -1171,8 +1206,10 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
                                               const std::string &error) {
   auto &state = m_nodeStates[node];
 
-  state->exec_state->store(NodeExecutionState::FAILED,
-                           std::memory_order_release);
+  if (state->exec_state) {
+    state->exec_state->store(NodeExecutionState::FAILED,
+                             std::memory_order_release);
+  }
 
   m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
 

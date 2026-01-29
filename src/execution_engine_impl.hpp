@@ -51,7 +51,11 @@ public:
 
     QueueConfig queue_config;
 
-    NodeState() = default;
+    NodeState()
+        : exec_state(std::make_unique<std::atomic<NodeExecutionState>>(
+              NodeExecutionState::WAITING)),
+          mutex(std::make_unique<std::mutex>()) {}
+
     explicit NodeState(NodePtr n, const std::string &node_name)
         : node(std::move(n)), name(node_name),
           exec_state(std::make_unique<std::atomic<NodeExecutionState>>(

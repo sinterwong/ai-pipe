@@ -12,7 +12,6 @@ file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS
 file(GLOB AI_PIPE_ROOT_HDRS CONFIGURE_DEPENDS "*.hpp")
 file(GLOB AI_PIPE_ROOT_SRCS CONFIGURE_DEPENDS "*.cpp")
 
-
 set(AI_PIPE_SOURCES
     ${AI_PIPE_ROOT_SRCS}
 )
@@ -22,7 +21,7 @@ set(AI_PIPE_PRIVATE_HEADERS
 )
 
 # Build shared library
-add_library(ai_pipe SHARED 
+add_library(ai_pipe 
     ${AI_PIPE_SOURCES}
     ${AI_PIPE_PRIVATE_HEADERS}
 )
