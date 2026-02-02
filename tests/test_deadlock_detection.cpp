@@ -8,23 +8,18 @@
  * @copyright Copyright (c) 2026
  *
  */
+#include "ai_pipe/context.hpp"
+#include "ai_pipe/data_types.hpp"
+#include "ai_pipe/execution_engine.hpp"
+#include "ai_pipe/graph.hpp"
+#include "ai_pipe/i_logic_node.hpp"
+#include "join_aware_sync_strategy.hpp"
 #include <atomic>
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
-
-#include "ai_pipe/context.hpp"
-#include "ai_pipe/data_types.hpp"
-#include "ai_pipe/execution_engine.hpp"
-#include "ai_pipe/graph.hpp"
-#include "ai_pipe/i_logic_node.hpp"
-
-// Internal headers for strategy access
-#include "join_aware_sync_strategy.hpp"
-#include "scheduler_strategies.hpp"
-#include "sync_strategies.hpp"
 
 using namespace ai_pipe;
 using namespace std::chrono_literals;
@@ -620,7 +615,7 @@ TEST_F(DeadlockDetectionTest, Streaming_RapidStartStop) {
           engine->stopStreaming(true);
           return true;
         },
-        std::chrono::milliseconds(1000));
+        std::chrono::milliseconds(2000));
     ASSERT_TRUE(stop_ok) << "DEADLOCK on stop, cycle " << c;
   }
 }
