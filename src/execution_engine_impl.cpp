@@ -444,13 +444,13 @@ void ExecutionEngine::Impl::stopExecutionSync() {
 
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    m_completionCV.wait(lock, [this] {
-      return m_activeTasks.load(std::memory_order_acquire) == 0 ||
-             m_stopFlag.load(std::memory_order_acquire);
-    });
+    // Wait indefinitely until all active tasks complete
+    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
+      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
+    }
   }
 
-  // 状态更新使用 engineMutex
+  // State update using engineMutex
   {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
@@ -577,7 +577,7 @@ bool ExecutionEngine::Impl::startStreaming(
 }
 
 void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
-  // 第一步: 设置停止标志
+  // Set stop flag
   {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     if (!m_streamingMode.load(std::memory_order_acquire)) {
@@ -586,25 +586,23 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     m_stopFlag.store(true, std::memory_order_release);
   }
 
-  // 通知所有等待的线程
+  // Notify all waiting threads
   m_completionCV.notify_all();
 
-  // 等待队列排空
+  // Wait for queues to drain
   if (wait_for_drain) {
-    // waitForDrain 现在会检查 stopFlag，不会长时间阻塞
     waitForDrain(0, std::chrono::milliseconds{5000});
   }
 
-  // 等待活动任务完成
+  // Cannot proceed with state cleanup while tasks are running.
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    // 使用带超时的等待，避免无限阻塞
-    m_completionCV.wait_for(lock, std::chrono::milliseconds{1000}, [this] {
-      return m_activeTasks.load(std::memory_order_acquire) == 0;
-    });
+    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
+      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
+    }
   }
 
-  // 更新状态
+  // Update state - safe now that all tasks have completed
   {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     m_streamingMode.store(false, std::memory_order_release);
