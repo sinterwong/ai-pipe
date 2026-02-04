@@ -161,6 +161,17 @@ private:
 
   static std::string stateToString(EngineState state);
 
+  bool isInputPort(const NodePtr &node, const std::string &port_name) const;
+  bool isOutputPort(const NodePtr &node, const std::string &port_name) const;
+
+  // 获取端口
+  std::string getFirstOutputPort(const NodePtr &node) const;
+
+  // 数据路由
+  QueuePushResult routeToDownstream(const NodePtr &source_node,
+                                    const std::string &output_port,
+                                    PortDataPtr data);
+
 private:
   EngineConfig m_config;
   std::unordered_map<std::string, QueueConfig> m_nodeQueueConfigs;

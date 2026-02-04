@@ -629,24 +629,37 @@ QueuePushResult ExecutionEngine::Impl::pushInput(const std::string &source_node,
     return QueuePushResult::rejected("Unknown node: " + source_node, 0);
   }
 
-  auto &node_state = m_nodeStates[node_it->second];
-  std::string actual_port =
-      port_name.empty() ? getFirstInputPort(node_it->second) : port_name;
+  const auto &node = node_it->second;
 
+  // 确定实际端口名
+  std::string actual_port = port_name;
   if (actual_port.empty()) {
-    return QueuePushResult::rejected("No input ports for node: " + source_node,
-                                     0);
+    // 优先选择输入端口，如果没有则选择输出端口（支持源节点）
+    actual_port = getFirstInputPort(node);
+    if (actual_port.empty()) {
+      actual_port = getFirstOutputPort(node);
+    }
   }
 
-  pushToQueue(node_it->second, actual_port, std::move(data));
+  if (actual_port.empty()) {
+    return QueuePushResult::rejected("No ports for node: " + source_node, 0);
+  }
 
-  m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
-
-  // Try to schedule the node
-  tryScheduleNode(node_it->second);
-
-  auto size = getQueueSize(node_it->second, actual_port);
-  return QueuePushResult::success(size);
+  // 判断端口类型并路由数据
+  if (isInputPort(node, actual_port)) {
+    // 输入端口：直接推送到该节点的输入队列
+    pushToQueue(node, actual_port, std::move(data));
+    m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+    tryScheduleNode(node);
+    auto size = getQueueSize(node, actual_port);
+    return QueuePushResult::success(size);
+  } else if (isOutputPort(node, actual_port)) {
+    // 输出端口：路由到所有下游节点的输入端口
+    return routeToDownstream(node, actual_port, std::move(data));
+  } else {
+    return QueuePushResult::rejected(
+        "Port '" + actual_port + "' not found on node: " + source_node, 0);
+  }
 }
 
 QueuePushResult ExecutionEngine::Impl::pushInput(const std::string &source_node,
@@ -1172,11 +1185,13 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
   state->execution_count++;
   state->last_execution = std::chrono::steady_clock::now();
 
+  // successful_executions 统计所有节点的执行次数
   m_statistics.successful_executions.fetch_add(1, std::memory_order_relaxed);
-  m_statistics.total_frames_processed.fetch_add(1, std::memory_order_relaxed);
 
-  // Collect results if sink node
+  // Collect results and count frames ONLY for sink nodes
   if (isSinkNode(node)) {
+    // total_frames_processed 只统计完成处理的帧数（sink 节点完成数）
+    m_statistics.total_frames_processed.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
 
@@ -1480,6 +1495,77 @@ ExecutionEngine::Impl::getNodeQueueConfig(const std::string &node_name) const {
 std::string
 ExecutionEngine::Impl::getFirstInputPort(const NodePtr &node) const {
   auto ports = node->getExpectedInputPorts();
+  return ports.empty() ? "" : ports[0];
+}
+
+QueuePushResult
+ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
+                                         const std::string &output_port,
+                                         PortDataPtr data) {
+
+  // 获取从该输出端口出发的所有边
+  const auto &outgoing_edges = m_graph->getOutgoingEdges(source_node);
+
+  std::size_t routed_count = 0;
+  std::size_t total_queue_size = 0;
+
+  for (const auto &edge : outgoing_edges) {
+    // 只处理匹配的输出端口
+    if (edge.source_port != output_port) {
+      continue;
+    }
+
+    const auto &dest_node = edge.dest_node;
+    const auto &dest_port = edge.dest_port;
+
+    // 对于多个下游节点，需要复制数据（共享指针，低开销）
+    PortDataPtr data_copy = data;
+
+    // 推送到下游节点的输入队列
+    pushToQueue(dest_node, dest_port, std::move(data_copy));
+
+    m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+
+    // 尝试调度下游节点
+    tryScheduleNode(dest_node);
+
+    // 累计队列大小
+    total_queue_size += getQueueSize(dest_node, dest_port);
+    routed_count++;
+
+    LOG_TRACE_S << "ExecutionEngine: Routed data from "
+                << source_node->getName() << ":" << output_port << " -> "
+                << dest_node->getName() << ":" << dest_port;
+  }
+
+  if (routed_count == 0) {
+    // 没有下游连接，可能是 sink 节点或未连接的端口
+    LOG_WARNING_S << "ExecutionEngine: No downstream connections for "
+                  << source_node->getName() << ":" << output_port;
+    return QueuePushResult::rejected(
+        "No downstream connections for port: " + output_port, 0);
+  }
+
+  return QueuePushResult::success(total_queue_size);
+}
+
+bool ExecutionEngine::Impl::isInputPort(const NodePtr &node,
+                                        const std::string &port_name) const {
+  const auto &input_ports = node->getExpectedInputPorts();
+  return std::find(input_ports.begin(), input_ports.end(), port_name) !=
+         input_ports.end();
+}
+
+bool ExecutionEngine::Impl::isOutputPort(const NodePtr &node,
+                                         const std::string &port_name) const {
+  const auto &output_ports = node->getExpectedOutputPorts();
+  return std::find(output_ports.begin(), output_ports.end(), port_name) !=
+         output_ports.end();
+}
+
+std::string
+ExecutionEngine::Impl::getFirstOutputPort(const NodePtr &node) const {
+  const auto &ports = node->getExpectedOutputPorts();
   return ports.empty() ? "" : ports[0];
 }
 
