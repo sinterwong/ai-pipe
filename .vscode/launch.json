@@ -9,6 +9,7 @@
       // "program": "${workspaceFolder}/install/benchmarks/ai_pipe_benchmarks",
       "args": [
         "--gtest_filter=*.*"
+        // "--benchmark_filter=BM_Stream"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}/install",
