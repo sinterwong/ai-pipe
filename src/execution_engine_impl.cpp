@@ -782,9 +782,9 @@ std::string ExecutionEngine::Impl::info() const {
       << "  statistics: {\n"
       << "    executions: " << m_statistics.total_executions.load() << "\n"
       << "    success_rate: " << m_statistics.successRate() << "%\n"
-      << "    frames_processed: " << m_statistics.total_frames_processed.load()
+      << "    frames_processed: " << m_statistics.total_output_frames.load()
       << "\n"
-      << "    frames_dropped: " << m_statistics.total_frames_dropped.load()
+      << "    frames_dropped: " << m_statistics.total_dropped_frames.load()
       << "\n"
       << "    drop_rate: " << m_statistics.dropRate() << "%\n"
       << "    throughput: " << m_statistics.throughput() << " fps\n"
@@ -888,7 +888,7 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
       if (queue) {
         queue->setDropCallback(
             [this, name = state->name](const DropEvent &event) {
-              m_statistics.total_frames_dropped.fetch_add(
+              m_statistics.total_dropped_frames.fetch_add(
                   1, std::memory_order_relaxed);
 
               if (m_config.enable_drop_logging) {
@@ -1191,7 +1191,7 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
   // Collect results and count frames ONLY for sink nodes
   if (isSinkNode(node)) {
     // total_frames_processed 只统计完成处理的帧数（sink 节点完成数）
-    m_statistics.total_frames_processed.fetch_add(1, std::memory_order_relaxed);
+    m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
 

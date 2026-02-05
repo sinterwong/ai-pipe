@@ -284,8 +284,8 @@ static void BM_Strategy_Sync_Unbalanced(::benchmark::State &state) {
 
     auto stats = engine->statistics();
     state.counters["processed"] =
-        static_cast<double>(stats.total_frames_processed);
-    state.counters["dropped"] = static_cast<double>(stats.total_frames_dropped);
+        static_cast<double>(stats.total_output_frames);
+    state.counters["dropped"] = static_cast<double>(stats.total_dropped_frames);
 
     engine->reset();
   }

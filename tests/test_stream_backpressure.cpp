@@ -201,7 +201,7 @@ TEST_F(StreamBackpressureTest, StatisticsResetBehavior) {
 
   // Get statistics BEFORE reset - should have non-zero values
   auto stats_before = m_engine->statistics();
-  EXPECT_GT(stats_before.total_frames_processed, 0u)
+  EXPECT_GT(stats_before.total_output_frames, 0u)
       << "Statistics should show processed frames before reset";
 
   // Reset the engine
@@ -211,7 +211,7 @@ TEST_F(StreamBackpressureTest, StatisticsResetBehavior) {
   auto stats_after = m_engine->statistics();
 
   // This assertion documents the bug - it will PASS because of the bug
-  EXPECT_EQ(stats_after.total_frames_processed, 0u)
+  EXPECT_EQ(stats_after.total_output_frames, 0u)
       << "BUG CONFIRMED: Statistics are zeroed after reset()";
 }
 
@@ -234,11 +234,11 @@ TEST_F(StreamBackpressureTest, StatisticsBeforeReset_Workaround) {
   // CORRECT: Get statistics BEFORE reset
   auto stats = m_engine->statistics();
 
-  EXPECT_GT(stats.total_frames_processed, 0u)
+  EXPECT_GT(stats.total_output_frames, 0u)
       << "Should have processed frames when statistics retrieved before reset";
 
   // Verify sink node also counted correctly
-  EXPECT_EQ(m_sink->processed(), stats.total_frames_processed)
+  EXPECT_EQ(m_sink->processed(), stats.total_output_frames)
       << "Sink count should match engine statistics";
 
   // Now safe to reset
@@ -265,7 +265,7 @@ TEST_F(StreamBackpressureTest, StatisticsAccumulateDuringStreaming) {
     std::this_thread::sleep_for(std::chrono::milliseconds{50});
 
     auto stats = m_engine->statistics();
-    checkpoints.push_back(stats.total_frames_processed);
+    checkpoints.push_back(stats.total_output_frames);
   }
 
   m_engine->waitForDrain(0, std::chrono::milliseconds{5000});
@@ -278,7 +278,7 @@ TEST_F(StreamBackpressureTest, StatisticsAccumulateDuringStreaming) {
   }
 
   auto final_stats = m_engine->statistics();
-  EXPECT_EQ(final_stats.total_frames_processed, batch_size * num_batches)
+  EXPECT_EQ(final_stats.total_output_frames, batch_size * num_batches)
       << "Final count should equal total frames pushed";
 }
 
@@ -435,10 +435,10 @@ TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
   m_engine->stopStreaming(true);
 
   // Verify processing happened
-  EXPECT_GT(stats.total_frames_processed, 0u)
+  EXPECT_GT(stats.total_output_frames, 0u)
       << "CRITICAL: processed should be > 0 when stats retrieved before reset";
 
-  EXPECT_EQ(sink->processed(), stats.total_frames_processed)
+  EXPECT_EQ(sink->processed(), stats.total_output_frames)
       << "Sink count should match statistics";
 
   // Now safe to reset
@@ -446,7 +446,7 @@ TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
 
   // After reset, stats are zeroed (this is the bug in the benchmark)
   auto stats_after_reset = m_engine->statistics();
-  EXPECT_EQ(stats_after_reset.total_frames_processed, 0u)
+  EXPECT_EQ(stats_after_reset.total_output_frames, 0u)
       << "Stats are zeroed after reset (known behavior)";
 }
 
@@ -528,7 +528,7 @@ TEST_F(StreamBackpressureTest, DISABLED_ProposedFix_StatisticsPreserveOption) {
   // m_engine->reset(true);  // Preserve statistics
 
   // auto stats = m_engine->statistics();
-  // EXPECT_GT(stats.total_frames_processed, 0u);
+  // EXPECT_GT(stats.total_output_frames, 0u);
 }
 
 /**

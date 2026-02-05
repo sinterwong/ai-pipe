@@ -488,13 +488,13 @@ static void BM_Concurrent_StreamMaxThroughput(::benchmark::State &state) {
 
     auto push_rate = static_cast<double>(test_frames) /
                      std::chrono::duration<double>(push_time).count();
-    auto process_rate = static_cast<double>(stats.total_frames_processed) /
+    auto process_rate = static_cast<double>(stats.total_output_frames) /
                         std::chrono::duration<double>(total_time).count();
 
     state.counters["push_rate_fps"] = push_rate;
     state.counters["process_rate_fps"] = process_rate;
     state.counters["processed"] =
-        static_cast<double>(stats.total_frames_processed);
+        static_cast<double>(stats.total_output_frames);
 
     engine->reset();
   }
