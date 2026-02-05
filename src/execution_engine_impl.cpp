@@ -10,6 +10,7 @@
 
 #include "execution_engine_impl.hpp"
 #include "ai_pipe/logger.hpp"
+#include "drop_strategy.hpp"
 #include "join_aware_sync_strategy.hpp"
 #include "scheduler_strategies.hpp"
 #include "sync_strategies.hpp"
@@ -323,7 +324,7 @@ bool ExecutionEngine::Impl::initialize(Graph *graph, std::uint8_t num_workers) {
     m_config.num_workers = num_workers;
   }
 
-  m_threadPool = std::make_unique<ThreadPool>(m_config.num_workers);
+  m_threadPool = std::make_unique<WorkStealingThreadPool>(m_config.num_workers);
 
   // Initialize strategies
   if (m_schedulerStrategy) {
