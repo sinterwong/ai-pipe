@@ -228,8 +228,7 @@ static void BM_Stream_Backpressure(::benchmark::State &state) {
   }
 
   auto stats = engine->statistics();
-  state.counters["processed"] =
-      static_cast<double>(stats.total_frames_processed);
+  state.counters["processed"] = static_cast<double>(stats.total_output_frames);
   state.counters["drop_rate"] = stats.drop_rate;
   state.counters["consumer_delay_us"] = static_cast<double>(consumer_delay_us);
   engine->reset();
@@ -473,7 +472,7 @@ static void BM_Stream_LongRunning(::benchmark::State &state) {
 
     auto stats = engine->statistics();
     state.counters["total_processed"] =
-        static_cast<double>(stats.total_frames_processed);
+        static_cast<double>(stats.total_output_frames);
     state.counters["success_rate"] = stats.success_rate;
     state.counters["throughput_fps"] = stats.throughput;
 
