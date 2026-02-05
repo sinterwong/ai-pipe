@@ -17,9 +17,8 @@
 #include "ai_pipe/i_logic_node.hpp"
 #include "bounded_drop_queue.hpp"
 #include "drop_strategy.hpp"
-#include "thread_pool.hpp"
 #include "thread_safe_queue.hpp"
-
+#include "work_stealing_thread_pool.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -180,7 +179,7 @@ private:
   std::unique_ptr<ISyncStrategy> m_syncStrategy;
 
   Graph *m_graph{nullptr};
-  std::unique_ptr<ThreadPool> m_threadPool;
+  std::unique_ptr<WorkStealingThreadPool> m_threadPool;
   std::shared_ptr<PipelineContext> m_currentContext;
 
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
