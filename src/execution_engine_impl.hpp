@@ -2,10 +2,13 @@
  * @file execution_engine_impl.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief ExecutionEngine PIMPL implementation
- * @version 1.0
+ * @version 1.1
  * @date 2025-12-24
  *
  * This is an INTERNAL header file. Users should not include this directly.
+ *
+ * v1.1: Replaced BoundedDropQueue/ThreadSafeQueue with LockFreeNodeQueue
+ *       for high-performance lock-free scheduling in deep pipelines.
  *
  * @copyright Copyright (c) 2025
  */
@@ -15,9 +18,7 @@
 
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
-#include "bounded_drop_queue.hpp"
-#include "drop_strategy.hpp"
-#include "thread_safe_queue.hpp"
+#include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>
 #include <condition_variable>
@@ -30,17 +31,15 @@ namespace ai_pipe {
 class ExecutionEngine::Impl {
 public:
   using NodePtr = std::shared_ptr<ILogicNode>;
-  using BoundedQueueType = BoundedDropQueue<PortDataPtr>;
-  using UnboundedQueueType = ThreadSafeQueue<PortDataPtr>;
+  using LockFreeQueueType = LockFreeNodeQueue<PortDataPtr>;
 
   struct NodeState {
     NodePtr node;
     std::string name;
 
-    std::unordered_map<std::string, std::shared_ptr<BoundedQueueType>>
-        bounded_queues;
-    std::unordered_map<std::string, std::shared_ptr<UnboundedQueueType>>
-        unbounded_queues;
+    // Lock-free queues per input port
+    std::unordered_map<std::string, std::shared_ptr<LockFreeQueueType>>
+        lock_free_queues;
 
     std::unique_ptr<std::atomic<NodeExecutionState>> exec_state;
     std::chrono::steady_clock::time_point last_execution;
