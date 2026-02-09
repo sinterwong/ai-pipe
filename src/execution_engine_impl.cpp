@@ -10,7 +10,6 @@
 
 #include "execution_engine_impl.hpp"
 #include "ai_pipe/logger.hpp"
-#include "drop_strategy.hpp"
 #include "join_aware_sync_strategy.hpp"
 #include "scheduler_strategies.hpp"
 #include "sync_strategies.hpp"
@@ -26,9 +25,9 @@ namespace ai_pipe {
 
 std::unique_ptr<ExecutionEngine>
 ExecutionEngine::create(const EngineConfig &config) {
-  // 创建 Wrapper，Wrapper 内部会创建 Impl
+  // Wrapper Wrapper Impl
   auto engine = std::make_unique<ExecutionEngine>(config);
-  // 配置模式 (会转发给 Impl)
+  // ( Impl)
   engine->configureForMode(config.mode);
   return engine;
 }
@@ -40,7 +39,7 @@ ExecutionEngine::ExecutionEngine(const EngineConfig &config)
 
 ExecutionEngine::~ExecutionEngine() = default;
 
-// 移动构造和赋值由 unique_ptr 自动处理
+// unique_ptr
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&) noexcept = default;
 ExecutionEngine &
 ExecutionEngine::operator=(ExecutionEngine &&) noexcept = default;
@@ -480,15 +479,10 @@ void ExecutionEngine::Impl::reset() {
     }
     state->execution_count = 0;
 
-    for (auto &[port_name, queue] : state->bounded_queues) {
+    for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
         queue->clear();
         queue->resetStatistics();
-      }
-    }
-    for (auto &[port_name, queue] : state->unbounded_queues) {
-      if (queue) {
-        queue->clear();
       }
     }
   }
@@ -632,10 +626,8 @@ QueuePushResult ExecutionEngine::Impl::pushInput(const std::string &source_node,
 
   const auto &node = node_it->second;
 
-  // 确定实际端口名
   std::string actual_port = port_name;
   if (actual_port.empty()) {
-    // 优先选择输入端口，如果没有则选择输出端口（支持源节点）
     actual_port = getFirstInputPort(node);
     if (actual_port.empty()) {
       actual_port = getFirstOutputPort(node);
@@ -646,16 +638,13 @@ QueuePushResult ExecutionEngine::Impl::pushInput(const std::string &source_node,
     return QueuePushResult::rejected("No ports for node: " + source_node, 0);
   }
 
-  // 判断端口类型并路由数据
   if (isInputPort(node, actual_port)) {
-    // 输入端口：直接推送到该节点的输入队列
     pushToQueue(node, actual_port, std::move(data));
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     tryScheduleNode(node);
     auto size = getQueueSize(node, actual_port);
     return QueuePushResult::success(size);
   } else if (isOutputPort(node, actual_port)) {
-    // 输出端口：路由到所有下游节点的输入端口
     return routeToDownstream(node, actual_port, std::move(data));
   } else {
     return QueuePushResult::rejected(
@@ -707,12 +696,12 @@ bool ExecutionEngine::Impl::hasQueueCapacity(
 
   auto &state = *state_it->second;
 
-  auto bounded_it = state.bounded_queues.find(actual_port);
-  if (bounded_it != state.bounded_queues.end() && bounded_it->second) {
-    return !bounded_it->second->isFull();
+  auto queue_it = state.lock_free_queues.find(actual_port);
+  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    return !queue_it->second->isFull();
   }
 
-  // Unbounded queues always have capacity
+  // If no queue found, treat as having capacity
   return true;
 }
 
@@ -732,13 +721,7 @@ bool ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
       if (!state)
         continue;
 
-      for (const auto &[port, queue] : state->bounded_queues) {
-        if (queue && queue->size() > max_depth) {
-          all_drained = false;
-          break;
-        }
-      }
-      for (const auto &[port, queue] : state->unbounded_queues) {
+      for (const auto &[port, queue] : state->lock_free_queues) {
         if (queue && queue->size() > max_depth) {
           all_drained = false;
           break;
@@ -821,50 +804,46 @@ void ExecutionEngine::Impl::initializeNodeStates() {
 }
 
 void ExecutionEngine::Impl::initializeQueues() {
-  bool use_bounded = m_config.default_queue_capacity > 0;
-
   for (auto &[node_ptr, state] : m_nodeStates) {
     if (!state)
       continue;
 
-    state->bounded_queues.clear();
-    state->unbounded_queues.clear();
+    state->lock_free_queues.clear();
 
     for (const auto &port_name : node_ptr->getExpectedInputPorts()) {
       auto config = state->queue_config;
 
-      if (use_bounded || config.capacity > 0) {
-        // Use bounded queue
-        std::size_t cap = config.capacity > 0 ? config.capacity
-                                              : m_config.default_queue_capacity;
-
-        BoundedDropQueueConfig queue_config{
-            .capacity = cap,
-            .track_statistics = config.track_statistics,
-            .node_name = state->name,
-            .port_name = port_name,
-        };
-
-        auto queue = std::make_shared<BoundedQueueType>(queue_config);
-
-        // Set drop strategy
-        if (config.drop_strategy == "KeepLatest" ||
-            config.drop_strategy == "keep_latest") {
-          queue->setStrategy(std::make_unique<KeepLatestNStrategy<PortDataPtr>>(
-              config.keep_latest_n));
-        } else if (config.drop_strategy == "DropTail" ||
-                   config.drop_strategy == "drop_tail") {
-          queue->setStrategy(std::make_unique<DropTailStrategy<PortDataPtr>>());
-        } else {
-          queue->setStrategy(std::make_unique<DropHeadStrategy<PortDataPtr>>());
-        }
-
-        state->bounded_queues[port_name] = queue;
-      } else {
-        // Use unbounded queue
-        state->unbounded_queues[port_name] =
-            std::make_shared<UnboundedQueueType>();
+      // Determine capacity: use node config or engine default; 0 means use
+      // a reasonable default for unbounded-like behavior
+      std::size_t cap = config.capacity > 0 ? config.capacity
+                                            : m_config.default_queue_capacity;
+      if (cap == 0) {
+        // For "unbounded" queues, use a generous default capacity
+        // Lock-free queues are always bounded, so we use a large power-of-2
+        cap = 1024;
       }
+
+      // Map drop strategy string to LockFreeDropPolicy
+      LockFreeDropPolicy drop_policy = LockFreeDropPolicy::DropHead;
+      if (config.drop_strategy == "KeepLatest" ||
+          config.drop_strategy == "keep_latest") {
+        drop_policy = LockFreeDropPolicy::KeepLatest;
+      } else if (config.drop_strategy == "DropTail" ||
+                 config.drop_strategy == "drop_tail") {
+        drop_policy = LockFreeDropPolicy::DropTail;
+      }
+
+      LockFreeNodeQueue<PortDataPtr>::Config queue_config{
+          .capacity = cap,
+          .drop_policy = drop_policy,
+          .keep_latest_n = config.keep_latest_n,
+          .track_statistics = config.track_statistics,
+          .node_name = state->name,
+          .port_name = port_name,
+      };
+
+      state->lock_free_queues[port_name] =
+          std::make_shared<LockFreeQueueType>(queue_config);
     }
   }
 }
@@ -885,7 +864,7 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
     if (!state)
       continue;
 
-    for (auto &[port_name, queue] : state->bounded_queues) {
+    for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
         queue->setDropCallback(
             [this, name = state->name](const DropEvent &event) {
@@ -1071,12 +1050,33 @@ void ExecutionEngine::Impl::executeNodeTask(
   auto start_time = std::chrono::steady_clock::now();
 
   // Gather inputs
-  bool success = gatherNodeInputs(node, inputs);
+  bool inputs_ready = gatherNodeInputs(node, inputs);
+
+  // In streaming mode, a transient empty queue is possible due to the
+  // non-atomic pop+push window in DropHead eviction.
+  // Reschedule instead of failing.
+  if (!inputs_ready) {
+    if (m_streamingMode.load(std::memory_order_acquire) &&
+        !m_stopFlag.load(std::memory_order_acquire)) {
+      LOG_TRACE_S << "ExecutionEngine: Node " << state.name
+                  << " inputs transiently unavailable, rescheduling.";
+      if (state.exec_state) {
+        state.exec_state->store(NodeExecutionState::WAITING,
+                                std::memory_order_release);
+      }
+      m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+      tryScheduleNode(node);
+      checkCompletionAndNotify();
+      return;
+    }
+    handleNodeFailure(node, "Execution failed: input queue empty");
+    m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+    checkCompletionAndNotify();
+    return;
+  }
 
   // Process node
-  if (success) {
-    success = processNode(node, inputs, outputs, context);
-  }
+  bool success = processNode(node, inputs, outputs, context);
 
   auto end_time = std::chrono::steady_clock::now();
   auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1119,7 +1119,7 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
     if (data.has_value()) {
       inputs[port_name] = data.value();
     } else {
-      LOG_ERROR_S << "ExecutionEngine: Input queue empty for " << state.name
+      LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
                   << ":" << port_name;
       return false;
     }
@@ -1186,12 +1186,13 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
   state->execution_count++;
   state->last_execution = std::chrono::steady_clock::now();
 
-  // successful_executions 统计所有节点的执行次数
+  // successful_executions
   m_statistics.successful_executions.fetch_add(1, std::memory_order_relaxed);
 
   // Collect results and count frames ONLY for sink nodes
   if (isSinkNode(node)) {
-    // total_frames_processed 只统计完成处理的帧数（sink 节点完成数）
+    // total_frames_processed
+    // sink
     m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
@@ -1325,11 +1326,7 @@ void ExecutionEngine::Impl::resetInternalState() {
                                std::memory_order_relaxed);
       state->execution_count = 0;
 
-      for (auto &[port, queue] : state->bounded_queues) {
-        if (queue)
-          queue->clear();
-      }
-      for (auto &[port, queue] : state->unbounded_queues) {
+      for (auto &[port, queue] : state->lock_free_queues) {
         if (queue)
           queue->clear();
       }
@@ -1351,15 +1348,9 @@ void ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  auto bounded_it = state.bounded_queues.find(port_name);
-  if (bounded_it != state.bounded_queues.end() && bounded_it->second) {
-    bounded_it->second->push(std::move(data));
-    return;
-  }
-
-  auto unbounded_it = state.unbounded_queues.find(port_name);
-  if (unbounded_it != state.unbounded_queues.end() && unbounded_it->second) {
-    unbounded_it->second->push(std::move(data));
+  auto queue_it = state.lock_free_queues.find(port_name);
+  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    queue_it->second->push(std::move(data));
     return;
   }
 
@@ -1377,14 +1368,9 @@ ExecutionEngine::Impl::popFromQueue(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  auto bounded_it = state.bounded_queues.find(port_name);
-  if (bounded_it != state.bounded_queues.end() && bounded_it->second) {
-    return bounded_it->second->tryPop();
-  }
-
-  auto unbounded_it = state.unbounded_queues.find(port_name);
-  if (unbounded_it != state.unbounded_queues.end() && unbounded_it->second) {
-    return unbounded_it->second->tryPop();
+  auto queue_it = state.lock_free_queues.find(port_name);
+  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    return queue_it->second->tryPop();
   }
 
   return std::nullopt;
@@ -1399,14 +1385,9 @@ bool ExecutionEngine::Impl::hasDataInQueue(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  auto bounded_it = state.bounded_queues.find(port_name);
-  if (bounded_it != state.bounded_queues.end() && bounded_it->second) {
-    return !bounded_it->second->empty();
-  }
-
-  auto unbounded_it = state.unbounded_queues.find(port_name);
-  if (unbounded_it != state.unbounded_queues.end() && unbounded_it->second) {
-    return !unbounded_it->second->empty();
+  auto queue_it = state.lock_free_queues.find(port_name);
+  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    return !queue_it->second->empty();
   }
 
   return false;
@@ -1422,14 +1403,9 @@ ExecutionEngine::Impl::getQueueSize(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  auto bounded_it = state.bounded_queues.find(port_name);
-  if (bounded_it != state.bounded_queues.end() && bounded_it->second) {
-    return bounded_it->second->size();
-  }
-
-  auto unbounded_it = state.unbounded_queues.find(port_name);
-  if (unbounded_it != state.unbounded_queues.end() && unbounded_it->second) {
-    return unbounded_it->second->size();
+  auto queue_it = state.lock_free_queues.find(port_name);
+  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    return queue_it->second->size();
   }
 
   return 0;
@@ -1504,14 +1480,12 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
                                          const std::string &output_port,
                                          PortDataPtr data) {
 
-  // 获取从该输出端口出发的所有边
   const auto &outgoing_edges = m_graph->getOutgoingEdges(source_node);
 
   std::size_t routed_count = 0;
   std::size_t total_queue_size = 0;
 
   for (const auto &edge : outgoing_edges) {
-    // 只处理匹配的输出端口
     if (edge.source_port != output_port) {
       continue;
     }
@@ -1519,18 +1493,14 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
     const auto &dest_node = edge.dest_node;
     const auto &dest_port = edge.dest_port;
 
-    // 对于多个下游节点，需要复制数据（共享指针，低开销）
     PortDataPtr data_copy = data;
 
-    // 推送到下游节点的输入队列
     pushToQueue(dest_node, dest_port, std::move(data_copy));
 
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
 
-    // 尝试调度下游节点
     tryScheduleNode(dest_node);
 
-    // 累计队列大小
     total_queue_size += getQueueSize(dest_node, dest_port);
     routed_count++;
 
@@ -1540,7 +1510,7 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   }
 
   if (routed_count == 0) {
-    // 没有下游连接，可能是 sink 节点或未连接的端口
+    // sink
     LOG_WARNING_S << "ExecutionEngine: No downstream connections for "
                   << source_node->getName() << ":" << output_port;
     return QueuePushResult::rejected(
