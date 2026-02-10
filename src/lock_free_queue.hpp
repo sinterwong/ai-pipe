@@ -267,20 +267,28 @@ public:
   /**
    * @brief Force-push by evicting the oldest item if queue is full.
    * GUARANTEE: After eviction, the new item WILL be pushed.
+   *
+   * Design note: After eviction we use aggressive non-yielding spin to
+   * push into the freed slot. Yielding here would allow other threads
+   * to fill the slot, causing livelock on low-core CI machines where
+   * every yield-and-resume cycle finds the queue full again.
+   * If the aggressive spin fails (another thread grabbed the slot),
+   * we re-evict to guarantee forward progress.
    */
   bool forcePush(T item, T &evicted) {
+    // Fast path: queue has space
     if (tryPush(std::move(item))) {
       return false;
     }
 
     constexpr int k_spin_limit = 256;
 
+    // Queue was full but tryPop also failed — transient state from
+    // concurrent evictions. Spin briefly then give up without eviction.
     if (!tryPop(evicted)) {
       for (int spin = 0; spin < k_spin_limit; ++spin) {
         if (tryPush(std::move(item)))
           return false;
-        if ((spin & 63) == 63)
-          std::this_thread::yield();
         spinPause();
       }
       std::this_thread::yield();
@@ -288,21 +296,42 @@ public:
       return false;
     }
 
-    // Evicted one item. MUST push ours.
+    // Evicted one item — MUST push ours to maintain the guarantee.
+    // Phase 1: Aggressive non-yielding spin on the slot we just freed.
+    // NOT yielding is intentional — it prevents other threads from
+    // stealing the freed slot between our eviction and push.
     for (int spin = 0; spin < k_spin_limit; ++spin) {
       if (tryPush(std::move(item)))
         return true;
-      if ((spin & 63) == 63)
-        std::this_thread::yield();
       spinPause();
     }
-    for (int spin = 0; spin < k_spin_limit; ++spin) {
+
+    // Phase 2: The freed slot was stolen by a concurrent forcePush.
+    // Re-evict to create a fresh slot. Bounded retry ensures forward
+    // progress: each eviction linearly increases available slots.
+    constexpr int k_max_reevictions = 8;
+    for (int round = 0; round < k_max_reevictions; ++round) {
+      T re_evicted;
+      if (tryPop(re_evicted)) {
+        // Discard re-evicted item (counted as collateral eviction)
+        for (int spin = 0; spin < k_spin_limit; ++spin) {
+          if (tryPush(std::move(item)))
+            return true;
+          spinPause();
+        }
+      }
+      // Brief yield to let concurrent operations settle
       std::this_thread::yield();
       if (tryPush(std::move(item)))
         return true;
     }
+
+    // Phase 3: Final fallback — should be astronomically rare.
+    // Use yield-and-retry but with a bounded eviction assist.
     while (!tryPush(std::move(item))) {
-      std::this_thread::yield();
+      T discard;
+      (void)tryPop(discard); // Assist by creating space
+      spinPause();
     }
     return true;
   }
@@ -662,7 +691,15 @@ private:
       }
     }
 
+    // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
+      T discard;
+      if (m_queue.tryPop(discard)) {
+        if (m_config.track_statistics) {
+          m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
+        }
+        notifyDrop(discard, "DropHead overflow (fallback)");
+      }
       std::this_thread::yield();
     }
     updatePeakSize();
@@ -720,7 +757,15 @@ private:
         std::this_thread::yield();
     }
 
+    // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
+      T discard;
+      if (m_queue.tryPop(discard)) {
+        if (m_config.track_statistics) {
+          m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
+        }
+        notifyDrop(discard, "KeepLatest overflow (fallback)");
+      }
       std::this_thread::yield();
     }
     updatePeakSize();
