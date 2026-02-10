@@ -355,15 +355,17 @@ TEST_F(StreamBackpressureTest, QueueDepthWithExplicitPort) {
   // Small delay to allow some propagation but not full processing
   std::this_thread::sleep_for(std::chrono::microseconds{100});
 
-  // Query with explicit port name
+  // Stop streaming WITHOUT draining to freeze queue state.
+  // This ensures worker threads are fully stopped before we inspect.
+  m_engine->stopStreaming(false);
+
+  // Now query with a stable queue - no concurrent consumption
   auto depth_explicit = m_engine->queueDepth("pass", "input");
   auto depth_default =
       m_engine->queueDepth("pass"); // Should use first input port
 
   EXPECT_EQ(depth_explicit, depth_default)
       << "Explicit and default port queries should return same value";
-
-  m_engine->stopStreaming(false);
 }
 
 TEST_F(StreamBackpressureTest, QueueDepthOnNonExistentNode_ReturnsZero) {
