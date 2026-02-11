@@ -27,7 +27,6 @@
 #define AI_PIPE_LOCK_FREE_QUEUE_HPP
 
 #include "ai_pipe/frame_metadata.hpp"
-#include "ai_pipe/i_drop_strategy.hpp"
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -42,6 +41,32 @@
 #include <utility>
 
 namespace ai_pipe {
+
+/**
+ * @brief Information about a drop event for callbacks/logging
+ */
+struct DropEvent {
+  FrameId frame_id{frame_constants::k_invalid_frame_id};
+  StreamId stream_id{frame_constants::k_default_stream_id};
+  Timestamp drop_time{std::chrono::steady_clock::now()};
+  std::string node_name;
+  std::string port_name;
+  std::string reason;
+  std::size_t queue_size_before{0};
+  std::size_t queue_size_after{0};
+  std::size_t total_drops{0};
+
+  [[nodiscard]] std::string toString() const {
+    return "DropEvent{frame=" + std::to_string(frame_id) +
+           ", stream=" + std::to_string(stream_id) + ", node=" + node_name +
+           ", port=" + port_name + ", reason=" + reason + "}";
+  }
+};
+
+/**
+ * @brief Callback type for drop event notifications
+ */
+using DropEventCallback = std::function<void(const DropEvent &)>;
 
 inline constexpr std::size_t k_cache_line_size = 64;
 
