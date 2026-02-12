@@ -2,14 +2,24 @@
  * @file pipeline_impl.cpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief Pipeline implementation
- * @version 1.0
+ * @version 2.0
  * @date 2025-12-24
+ *
+ * v2.0: Unified error handling with Result<T>.
+ *       - initialize() returns Result<void>
+ *       - run() returns Result<ExecutionOutput>
+ *       - submit()/start() return Result<void>
+ *       - pushInput() returns Result<PushStatus>
+ *       - waitForDrain() returns Result<void>
+ *       - Observer notifications use Error type
+ *       - PipelineBuilder::build() returns Result<Pipeline> (never throws)
  *
  * @copyright Copyright (c) 2025
  */
 
 #include "pipeline_impl.hpp"
 #include "ai_pipe/logger.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace ai_pipe {
@@ -82,11 +92,16 @@ Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
   return *this;
 }
 
-bool Pipeline::Impl::initialize(Graph &&graph,
-                                std::shared_ptr<PipelineContext> context,
-                                const PipelineOptions &options,
-                                std::unique_ptr<ISchedulerStrategy> scheduler,
-                                std::unique_ptr<ISyncStrategy> sync) {
+// -------------------------------------------------------------------------
+// Initialization
+// -------------------------------------------------------------------------
+
+Result<void>
+Pipeline::Impl::initialize(Graph &&graph,
+                           std::shared_ptr<PipelineContext> context,
+                           const PipelineOptions &options,
+                           std::unique_ptr<ISchedulerStrategy> scheduler,
+                           std::unique_ptr<ISyncStrategy> sync) {
   LOG_INFO_S << "Pipeline::Impl: Initializing with mode="
              << executionModeToString(options.mode)
              << ", workers=" << static_cast<int>(options.num_workers);
@@ -103,7 +118,8 @@ bool Pipeline::Impl::initialize(Graph &&graph,
   if (m_graph->hasCycle()) {
     LOG_ERROR_S << "Pipeline::Impl: Graph contains cycle";
     m_state.store(PipelineState::ERROR, std::memory_order_release);
-    return false;
+    return Result<void>::err(ErrorCode::GraphCycleDetected,
+                             "Pipeline graph contains a cycle");
   }
 
   // Store custom strategies if provided
@@ -117,22 +133,38 @@ bool Pipeline::Impl::initialize(Graph &&graph,
   if (!m_engine) {
     LOG_ERROR_S << "Pipeline::Impl: Failed to create execution engine";
     m_state.store(PipelineState::ERROR, std::memory_order_release);
-    return false;
+    return Result<void>::err(ErrorCode::InternalError,
+                             "Failed to create execution engine");
   }
 
   // Set custom strategies if provided
   if (m_customScheduler) {
-    m_engine->setSchedulerStrategy(m_customScheduler->clone());
+    auto strategy_result =
+        m_engine->setSchedulerStrategy(m_customScheduler->clone());
+    if (!strategy_result) {
+      LOG_ERROR_S << "Pipeline::Impl: Failed to set scheduler strategy: "
+                  << strategy_result.error().message();
+      m_state.store(PipelineState::ERROR, std::memory_order_release);
+      return strategy_result;
+    }
   }
   if (m_customSync) {
-    m_engine->setSyncStrategy(m_customSync->clone());
+    auto strategy_result = m_engine->setSyncStrategy(m_customSync->clone());
+    if (!strategy_result) {
+      LOG_ERROR_S << "Pipeline::Impl: Failed to set sync strategy: "
+                  << strategy_result.error().message();
+      m_state.store(PipelineState::ERROR, std::memory_order_release);
+      return strategy_result;
+    }
   }
 
   // Initialize engine
-  if (!m_engine->initialize(m_graph.get(), options.num_workers)) {
-    LOG_ERROR_S << "Pipeline::Impl: Engine initialization failed";
+  auto init_result = m_engine->initialize(m_graph.get(), options.num_workers);
+  if (!init_result) {
+    LOG_ERROR_S << "Pipeline::Impl: Engine initialization failed: "
+                << init_result.error().message();
     m_state.store(PipelineState::ERROR, std::memory_order_release);
-    return false;
+    return init_result;
   }
 
   // Store context
@@ -144,7 +176,7 @@ bool Pipeline::Impl::initialize(Graph &&graph,
 
   m_state.store(PipelineState::IDLE, std::memory_order_release);
   LOG_INFO_S << "Pipeline::Impl: Initialized successfully";
-  return true;
+  return Result<void>::ok();
 }
 
 EngineConfig Pipeline::Impl::buildEngineConfig() const {
@@ -163,8 +195,7 @@ void Pipeline::Impl::setupEngineCallbacks() {
     {
       std::lock_guard<std::mutex> lock(m_resultsMutex);
       m_lastResults = results;
-      m_lastError.clear();
-      m_lastErrorNode.clear();
+      m_lastError.reset();
     }
     notifyExecutionCompleted(results);
   });
@@ -173,11 +204,10 @@ void Pipeline::Impl::setupEngineCallbacks() {
       [this](const std::string &error, const std::string &node_name) {
         {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
-          m_lastError = error;
-          m_lastErrorNode = node_name;
+          m_lastError = Error::nodeException(error, node_name);
         }
         m_state.store(PipelineState::ERROR, std::memory_order_release);
-        notifyExecutionFailed(error, node_name);
+        notifyExecutionFailed(Error::nodeException(error, node_name));
       });
 
   m_engine->setDropCallback([this](const std::string &node_name,
@@ -191,11 +221,12 @@ void Pipeline::Impl::setupEngineCallbacks() {
 // Batch Execution
 // -------------------------------------------------------------------------
 
-ExecutionResult
+Result<ExecutionOutput>
 Pipeline::Impl::run(const PortDataMap &inputs,
                     std::optional<std::chrono::milliseconds> timeout) {
-  if (!validateState("run")) {
-    return createErrorResult("Pipeline not ready for execution");
+  auto validation = validateState("run");
+  if (!validation) {
+    return Result<ExecutionOutput>::err(validation.error());
   }
 
   transitionTo(PipelineState::RUNNING);
@@ -203,7 +234,7 @@ Pipeline::Impl::run(const PortDataMap &inputs,
   notifyExecutionStarted();
 
   // Execute synchronously
-  bool success = m_engine->execute(inputs, true, m_context);
+  auto exec_result = m_engine->execute(inputs, true, m_context);
 
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - m_executionStart);
@@ -212,27 +243,37 @@ Pipeline::Impl::run(const PortDataMap &inputs,
   if (timeout.has_value() && elapsed > timeout.value()) {
     cancel();
     transitionTo(PipelineState::ERROR);
-    return createErrorResult("Execution timed out");
+    return Result<ExecutionOutput>::err(
+        ErrorCode::ExecutionTimeout,
+        "Execution timed out after " + std::to_string(elapsed.count()) + "ms");
   }
 
-  if (success) {
+  if (exec_result) {
     transitionTo(PipelineState::IDLE);
     std::lock_guard<std::mutex> lock(m_resultsMutex);
-    return createSuccessResult(m_lastResults, elapsed);
+    ExecutionOutput output;
+    output.outputs = m_lastResults;
+    output.elapsed = elapsed;
+    return Result<ExecutionOutput>::ok(std::move(output));
   } else {
+    transitionTo(PipelineState::ERROR);
+    // Propagate the engine error with added context
     std::lock_guard<std::mutex> lock(m_resultsMutex);
-    return createErrorResult(m_lastError.empty() ? "Execution failed"
-                                                 : m_lastError);
+    if (m_lastError.has_value()) {
+      return Result<ExecutionOutput>::err(m_lastError.value());
+    }
+    return Result<ExecutionOutput>::err(exec_result.error());
   }
 }
 
-std::future<ExecutionResult>
+std::future<Result<ExecutionOutput>>
 Pipeline::Impl::runAsync(const PortDataMap &inputs) {
-  auto promise = std::make_shared<std::promise<ExecutionResult>>();
-  std::future<ExecutionResult> future = promise->get_future();
+  auto promise = std::make_shared<std::promise<Result<ExecutionOutput>>>();
+  std::future<Result<ExecutionOutput>> future = promise->get_future();
 
-  if (!validateState("runAsync")) {
-    promise->set_value(createErrorResult("Pipeline not ready for execution"));
+  auto validation = validateState("runAsync");
+  if (!validation) {
+    promise->set_value(Result<ExecutionOutput>::err(validation.error()));
     return future;
   }
 
@@ -256,71 +297,74 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
           m_lastResults = results;
         }
 
-        promise_ptr->set_value(createSuccessResult(results, elapsed));
+        ExecutionOutput output;
+        output.outputs = results;
+        output.elapsed = elapsed;
+        promise_ptr->set_value(Result<ExecutionOutput>::ok(std::move(output)));
         notifyExecutionCompleted(results);
       });
 
   m_engine->setPipelineErrorCallback(
       [this, promise_ptr, start_time](const std::string &error,
                                       const std::string &node_name) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start_time);
-
         transitionTo(PipelineState::ERROR);
 
-        ExecutionResult result{
-            .success = false,
-            .outputs = {},
-            .error_message = error + " (node: " + node_name + ")",
-            .elapsed = elapsed,
-        };
-        promise_ptr->set_value(result);
-        notifyExecutionFailed(error, node_name);
+        auto err = Error::nodeException(error, node_name);
+        promise_ptr->set_value(Result<ExecutionOutput>::err(std::move(err)));
+        notifyExecutionFailed(Error::nodeException(error, node_name));
       });
 
   // Start async execution
-  bool started = m_engine->execute(inputs, false, m_context);
+  auto started = m_engine->execute(inputs, false, m_context);
 
   if (!started) {
     transitionTo(PipelineState::ERROR);
-    promise->set_value(createErrorResult("Failed to start execution"));
+    promise->set_value(Result<ExecutionOutput>::err(
+        ErrorCode::ExecutionFailed, "Failed to start async execution"));
   }
 
   return future;
 }
 
-bool Pipeline::Impl::submit(const PortDataMap &inputs) {
-  if (!validateState("submit")) {
-    return false;
+Result<void> Pipeline::Impl::submit(const PortDataMap &inputs) {
+  auto validation = validateState("submit");
+  if (!validation) {
+    return validation;
   }
 
   transitionTo(PipelineState::RUNNING);
   m_executionStart = std::chrono::steady_clock::now();
   notifyExecutionStarted();
 
-  bool success = m_engine->execute(inputs, false, m_context);
+  auto result = m_engine->execute(inputs, false, m_context);
 
-  if (!success) {
+  if (!result) {
     transitionTo(PipelineState::ERROR);
-    LOG_ERROR_S << "Pipeline::Impl: Submit failed to start execution";
+    LOG_ERROR_S << "Pipeline::Impl: Submit failed to start execution: "
+                << result.error().message();
+    return result;
   }
 
-  return success;
+  return Result<void>::ok();
 }
 
 // -------------------------------------------------------------------------
 // Streaming Interface
 // -------------------------------------------------------------------------
 
-bool Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
-  if (!validateState("start streaming")) {
-    return false;
+Result<void> Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
+  auto validation = validateState("start streaming");
+  if (!validation) {
+    return validation;
   }
 
   if (m_options.mode != ExecutionMode::STREAM &&
       m_options.mode != ExecutionMode::HYBRID) {
     LOG_ERROR_S << "Pipeline::Impl: Cannot start streaming in batch mode";
-    return false;
+    return Result<void>::err(ErrorCode::InvalidState,
+                             "Cannot start streaming in batch mode. "
+                             "Pipeline must be configured with STREAM or "
+                             "HYBRID execution mode");
   }
 
   if (context) {
@@ -330,14 +374,16 @@ bool Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
   transitionTo(PipelineState::RUNNING);
   m_executionStart = std::chrono::steady_clock::now();
 
-  if (!m_engine->startStreaming(m_context)) {
+  auto streaming_result = m_engine->startStreaming(m_context);
+  if (!streaming_result) {
     transitionTo(PipelineState::ERROR);
-    LOG_ERROR_S << "Pipeline::Impl: Failed to start streaming";
-    return false;
+    LOG_ERROR_S << "Pipeline::Impl: Failed to start streaming: "
+                << streaming_result.error().message();
+    return streaming_result;
   }
 
   LOG_INFO_S << "Pipeline::Impl: Streaming started";
-  return true;
+  return Result<void>::ok();
 }
 
 void Pipeline::Impl::stop(bool wait_for_drain) {
@@ -350,11 +396,12 @@ void Pipeline::Impl::stop(bool wait_for_drain) {
   LOG_INFO_S << "Pipeline::Impl: Streaming stopped";
 }
 
-QueuePushResult Pipeline::Impl::pushInput(const std::string &source_node,
-                                          const std::string &port_name,
-                                          PortDataPtr data) {
+Result<PushStatus> Pipeline::Impl::pushInput(const std::string &source_node,
+                                             const std::string &port_name,
+                                             PortDataPtr data) {
   if (!m_engine) {
-    return QueuePushResult::rejected("Engine not initialized", 0);
+    return Result<PushStatus>::err(ErrorCode::NotInitialized,
+                                   "Engine not initialized");
   }
 
   return m_engine->pushInput(source_node, port_name, std::move(data));
@@ -376,10 +423,11 @@ bool Pipeline::Impl::hasQueueCapacity(const std::string &node_name) const {
   return m_engine->hasQueueCapacity(node_name);
 }
 
-bool Pipeline::Impl::waitForDrain(std::size_t max_depth,
-                                  std::chrono::milliseconds timeout) {
-  if (!m_engine)
-    return true;
+Result<void> Pipeline::Impl::waitForDrain(std::size_t max_depth,
+                                          std::chrono::milliseconds timeout) {
+  if (!m_engine) {
+    return Result<void>::ok();
+  }
   return m_engine->waitForDrain(max_depth, timeout);
 }
 
@@ -437,8 +485,7 @@ void Pipeline::Impl::reset() {
   {
     std::lock_guard<std::mutex> lock(m_resultsMutex);
     m_lastResults.clear();
-    m_lastError.clear();
-    m_lastErrorNode.clear();
+    m_lastError.reset();
   }
 
   transitionTo(PipelineState::IDLE);
@@ -545,33 +592,42 @@ void Pipeline::Impl::removeObserver(
 // Internal Helpers
 // -------------------------------------------------------------------------
 
-bool Pipeline::Impl::validateState(const char *operation) const {
+Result<void> Pipeline::Impl::validateState(const char *operation) const {
   auto current_state = m_state.load(std::memory_order_acquire);
 
   if (current_state == PipelineState::UNINITIALIZED) {
     LOG_ERROR_S << "Pipeline: Cannot " << operation << " - not initialized";
-    return false;
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             std::string("Cannot ") + operation +
+                                 " - pipeline not initialized");
   }
 
   if (current_state == PipelineState::ERROR) {
     LOG_ERROR_S << "Pipeline: Cannot " << operation
                 << " - in error state. Call reset() first.";
-    return false;
+    return Result<void>::err(ErrorCode::InvalidState,
+                             std::string("Cannot ") + operation +
+                                 " - pipeline in error state. "
+                                 "Call reset() first");
   }
 
   if (current_state == PipelineState::RUNNING ||
       current_state == PipelineState::STOPPING) {
     LOG_ERROR_S << "Pipeline: Cannot " << operation << " - already running";
-    return false;
+    return Result<void>::err(ErrorCode::AlreadyRunning,
+                             std::string("Cannot ") + operation +
+                                 " - pipeline already running");
   }
 
   if (!m_engine || !m_graph) {
     LOG_ERROR_S << "Pipeline: Cannot " << operation
                 << " - missing engine or graph";
-    return false;
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             std::string("Cannot ") + operation +
+                                 " - missing engine or graph");
   }
 
-  return true;
+  return Result<void>::ok();
 }
 
 void Pipeline::Impl::transitionTo(PipelineState new_state) {
@@ -608,13 +664,12 @@ void Pipeline::Impl::notifyExecutionCompleted(const PortDataMap &results) {
   }
 }
 
-void Pipeline::Impl::notifyExecutionFailed(const std::string &error,
-                                           const std::string &node_name) {
+void Pipeline::Impl::notifyExecutionFailed(const Error &error) {
   std::lock_guard<std::mutex> lock(m_observersMutex);
   for (auto &observer : m_observers) {
     if (observer) {
       try {
-        observer->onExecutionFailed(error, node_name);
+        observer->onExecutionFailed(error);
       } catch (const std::exception &e) {
         LOG_ERROR_S << "Pipeline: Observer exception: " << e.what();
       }
@@ -637,30 +692,6 @@ void Pipeline::Impl::notifyFrameDropped(const std::string &node_name,
   }
 }
 
-ExecutionResult
-Pipeline::Impl::createSuccessResult(const PortDataMap &outputs,
-                                    std::chrono::milliseconds elapsed) const {
-  return ExecutionResult{
-      .success = true,
-      .outputs = outputs,
-      .error_message = {},
-      .elapsed = elapsed,
-  };
-}
-
-ExecutionResult
-Pipeline::Impl::createErrorResult(const std::string &message) const {
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - m_executionStart);
-
-  return ExecutionResult{
-      .success = false,
-      .outputs = {},
-      .error_message = message,
-      .elapsed = elapsed,
-  };
-}
-
 // =============================================================================
 // Pipeline Public Interface Implementation
 // =============================================================================
@@ -676,40 +707,41 @@ Pipeline &Pipeline::operator=(Pipeline &&other) noexcept = default;
 PipelineBuilder Pipeline::create() { return PipelineBuilder{}; }
 
 // Batch execution
-ExecutionResult Pipeline::run(const PortDataMap &inputs) {
+Result<ExecutionOutput> Pipeline::run(const PortDataMap &inputs) {
   return m_impl->run(inputs, std::nullopt);
 }
 
-ExecutionResult Pipeline::run(const PortDataMap &inputs,
-                              std::chrono::milliseconds timeout) {
+Result<ExecutionOutput> Pipeline::run(const PortDataMap &inputs,
+                                      std::chrono::milliseconds timeout) {
   return m_impl->run(inputs, timeout);
 }
 
-std::future<ExecutionResult> Pipeline::runAsync(const PortDataMap &inputs) {
+std::future<Result<ExecutionOutput>>
+Pipeline::runAsync(const PortDataMap &inputs) {
   return m_impl->runAsync(inputs);
 }
 
-bool Pipeline::submit(const PortDataMap &inputs) {
+Result<void> Pipeline::submit(const PortDataMap &inputs) {
   return m_impl->submit(inputs);
 }
 
 // Streaming interface
-bool Pipeline::start() { return m_impl->start(nullptr); }
+Result<void> Pipeline::start() { return m_impl->start(nullptr); }
 
-bool Pipeline::start(std::shared_ptr<PipelineContext> context) {
+Result<void> Pipeline::start(std::shared_ptr<PipelineContext> context) {
   return m_impl->start(std::move(context));
 }
 
 void Pipeline::stop(bool wait_for_drain) { m_impl->stop(wait_for_drain); }
 
-QueuePushResult Pipeline::pushInput(const std::string &source_node,
-                                    PortDataPtr data) {
+Result<PushStatus> Pipeline::pushInput(const std::string &source_node,
+                                       PortDataPtr data) {
   return m_impl->pushInput(source_node, "", std::move(data));
 }
 
-QueuePushResult Pipeline::pushInput(const std::string &source_node,
-                                    const std::string &port_name,
-                                    PortDataPtr data) {
+Result<PushStatus> Pipeline::pushInput(const std::string &source_node,
+                                       const std::string &port_name,
+                                       PortDataPtr data) {
   return m_impl->pushInput(source_node, port_name, std::move(data));
 }
 
@@ -723,8 +755,8 @@ bool Pipeline::hasQueueCapacity(const std::string &node_name) const {
   return m_impl->hasQueueCapacity(node_name);
 }
 
-bool Pipeline::waitForDrain(std::size_t max_depth,
-                            std::chrono::milliseconds timeout) {
+Result<void> Pipeline::waitForDrain(std::size_t max_depth,
+                                    std::chrono::milliseconds timeout) {
   return m_impl->waitForDrain(max_depth, timeout);
 }
 
@@ -776,11 +808,11 @@ void Pipeline::removeObserver(
   m_impl->removeObserver(observer);
 }
 
-bool Pipeline::initialize(Graph &&graph,
-                          std::shared_ptr<PipelineContext> context,
-                          const PipelineOptions &options,
-                          std::unique_ptr<ISchedulerStrategy> scheduler,
-                          std::unique_ptr<ISyncStrategy> sync) {
+Result<void> Pipeline::initialize(Graph &&graph,
+                                  std::shared_ptr<PipelineContext> context,
+                                  const PipelineOptions &options,
+                                  std::unique_ptr<ISchedulerStrategy> scheduler,
+                                  std::unique_ptr<ISyncStrategy> sync) {
   return m_impl->initialize(std::move(graph), std::move(context), options,
                             std::move(scheduler), std::move(sync));
 }
@@ -875,7 +907,7 @@ PipelineBuilder::withSyncStrategy(std::unique_ptr<ISyncStrategy> strategy) {
   return *this;
 }
 
-// Callbacks
+// Callbacks (now using Error-aware signatures)
 PipelineBuilder &
 PipelineBuilder::onResult(std::function<void(const PortDataMap &)> callback) {
   if (!m_state->callback_observer) {
@@ -885,8 +917,8 @@ PipelineBuilder::onResult(std::function<void(const PortDataMap &)> callback) {
   return *this;
 }
 
-PipelineBuilder &PipelineBuilder::onError(
-    std::function<void(const std::string &, const std::string &)> callback) {
+PipelineBuilder &
+PipelineBuilder::onError(std::function<void(const Error &)> callback) {
   if (!m_state->callback_observer) {
     m_state->callback_observer = std::make_shared<CallbackObserver>();
   }
@@ -910,29 +942,24 @@ PipelineBuilder::withObserver(std::shared_ptr<IPipelineObserver> observer) {
   return *this;
 }
 
-// Build
-Pipeline PipelineBuilder::build() {
-  auto result = tryBuild();
-  if (!result.has_value()) {
-    throw std::runtime_error(
-        "Pipeline: Failed to build - invalid configuration");
-  }
-  return std::move(result.value());
-}
-
-std::optional<Pipeline> PipelineBuilder::tryBuild() {
+// Build - returns Result<Pipeline> instead of throwing
+Result<Pipeline> PipelineBuilder::build() {
   if (!m_state->graph.has_value()) {
     LOG_ERROR_S << "PipelineBuilder: No graph provided";
-    return std::nullopt;
+    return Result<Pipeline>::err(ErrorCode::InvalidArgument,
+                                 "PipelineBuilder: No graph provided. "
+                                 "Call withGraph() before build()");
   }
 
   Pipeline pipeline;
 
-  if (!pipeline.initialize(std::move(m_state->graph.value()), m_state->context,
-                           m_state->options,
-                           std::move(m_state->scheduler_strategy),
-                           std::move(m_state->sync_strategy))) {
-    return std::nullopt;
+  auto init_result = pipeline.initialize(std::move(m_state->graph.value()),
+                                         m_state->context, m_state->options,
+                                         std::move(m_state->scheduler_strategy),
+                                         std::move(m_state->sync_strategy));
+
+  if (!init_result) {
+    return Result<Pipeline>::err(init_result.error());
   }
 
   // Add observers
@@ -944,7 +971,7 @@ std::optional<Pipeline> PipelineBuilder::tryBuild() {
     pipeline.addObserver(std::move(observer));
   }
 
-  return pipeline;
+  return Result<Pipeline>::ok(std::move(pipeline));
 }
 
 } // namespace ai_pipe

@@ -105,7 +105,7 @@ static void BM_Stream_QueueCapacity(::benchmark::State &state) {
       if (result.isOk()) {
         pushed.fetch_add(1, std::memory_order_relaxed);
       }
-      if (result.isDropped()) {
+      if (result.value().isDropped()) {
         dropped.fetch_add(1, std::memory_order_relaxed);
       }
     }
