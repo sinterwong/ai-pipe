@@ -2,11 +2,12 @@
  * @file execution_engine.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief Execution Engine with Strategy-Based Architecture
- * @version 1.0
+ * @version 2.0
  * @date 2025-12-24
  *
- * This file provides the execution engine interface using PIMPL pattern
- * to hide implementation details from users.
+ * v2.0: Unified error handling with Result<T>.
+ *       All fallible operations return Result<void> or Result<PushStatus>
+ *       instead of bare bool or ad-hoc types.
  *
  * @copyright Copyright (c) 2025
  */
@@ -16,6 +17,7 @@
 
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/enum.hpp"
+#include "ai_pipe/error.hpp"
 #include "ai_pipe/execution_types.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_scheduler_strategy.hpp"
@@ -36,8 +38,9 @@ namespace ai_pipe {
  * - ISchedulerStrategy: Controls node scheduling behavior
  * - ISyncStrategy: Controls frame synchronization across branches
  *
- * Users should not subclass this engine. Instead, they should implement
- * custom strategies to achieve desired behaviors.
+ * All fallible operations return Result<T> for unified error handling:
+ * - Result<void> for operations with no return value
+ * - Result<PushStatus> for queue push operations
  */
 class ExecutionEngine {
 public:
@@ -67,19 +70,33 @@ public:
   // Strategy Injection
   // -------------------------------------------------------------------------
 
-  void setSchedulerStrategy(SchedulerStrategyPtr strategy);
-  void setSyncStrategy(SyncStrategyPtr strategy);
+  Result<void> setSchedulerStrategy(SchedulerStrategyPtr strategy);
+  Result<void> setSyncStrategy(SyncStrategyPtr strategy);
   void configureForMode(ExecutionMode mode);
 
   // -------------------------------------------------------------------------
   // Core Interface
   // -------------------------------------------------------------------------
 
-  bool initialize(Graph *graph, std::uint8_t num_workers = 0);
+  /**
+   * @brief Initialize the engine with a graph and worker count
+   * @return Result<void> - success or Error with:
+   *   - InvalidArgument: null graph pointer
+   *   - AlreadyRunning: engine is currently running
+   */
+  Result<void> initialize(Graph *graph, std::uint8_t num_workers = 0);
 
-  bool execute(const PortDataMap &initial_inputs,
-               bool wait_for_completion = true,
-               std::shared_ptr<PipelineContext> context = nullptr);
+  /**
+   * @brief Execute the pipeline with initial inputs
+   * @return Result<void> - success or Error with:
+   *   - AlreadyRunning: engine already executing
+   *   - NotInitialized: engine not initialized
+   *   - ExecutionFailed: input distribution or execution failed
+   *   - ExecutionStopped: execution was stopped externally
+   */
+  Result<void> execute(const PortDataMap &initial_inputs,
+                       bool wait_for_completion = true,
+                       std::shared_ptr<PipelineContext> context = nullptr);
 
   void stopExecutionAsync();
   void stopExecutionSync();
@@ -90,7 +107,7 @@ public:
   getNodeStates() const;
 
   // -------------------------------------------------------------------------
-  // Callback Registration
+  // Callback Registration (for async event notifications)
   // -------------------------------------------------------------------------
 
   void
@@ -108,16 +125,30 @@ public:
   // Streaming Interface
   // -------------------------------------------------------------------------
 
-  bool startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
+  /**
+   * @brief Start streaming mode
+   * @return Result<void> - success or Error with:
+   *   - InvalidState: engine not idle
+   *   - StreamingNotSupported: scheduler doesn't support streaming
+   */
+  Result<void> startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
   void stopStreaming(bool wait_for_drain = true);
   [[nodiscard]] bool isStreaming() const;
 
-  [[nodiscard]] QueuePushResult pushInput(const std::string &source_node,
-                                          const std::string &port_name,
-                                          PortDataPtr data);
+  /**
+   * @brief Push input data into a source node's queue
+   * @return Result<PushStatus> - PushStatus on success, or Error with:
+   *   - NotStreaming: not in streaming/running mode
+   *   - NodeNotFound: unknown node name
+   *   - PortNotFound: no valid port on node
+   *   - QueueRejected: push was rejected
+   */
+  [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
+                                             const std::string &port_name,
+                                             PortDataPtr data);
 
-  [[nodiscard]] QueuePushResult pushInput(const std::string &source_node,
-                                          PortDataPtr data);
+  [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
+                                             PortDataPtr data);
 
   // -------------------------------------------------------------------------
   // State & Monitoring
@@ -131,7 +162,7 @@ public:
   [[nodiscard]] bool hasQueueCapacity(const std::string &node_name,
                                       const std::string &port_name = "") const;
 
-  bool waitForDrain(
+  Result<void> waitForDrain(
       std::size_t max_depth = 0,
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 

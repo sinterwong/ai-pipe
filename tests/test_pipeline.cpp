@@ -1,5 +1,6 @@
 #include "ai_pipe/data_packet.hpp"
 #include "ai_pipe/data_types.hpp"
+#include "ai_pipe/error.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/pipeline.hpp"
@@ -148,7 +149,7 @@ private:
 };
 
 // =============================================================================
-// PipelineOptions Tests
+// PipelineOptions Tests (unchanged — struct itself is the same)
 // =============================================================================
 
 TEST(PipelineOptionsTest, DefaultValues) {
@@ -195,33 +196,41 @@ TEST(PipelineOptionsTest, StreamFactoryDefaultValues) {
 }
 
 // =============================================================================
-// ExecutionResult Tests
+// ExecutionOutput Tests (replaces ExecutionResult)
 // =============================================================================
 
-TEST(ExecutionResultTest, DefaultValues) {
-  ExecutionResult result;
+TEST(ExecutionOutputTest, DefaultValues) {
+  // v2.0: ExecutionResult removed → ExecutionOutput is the success payload
+  ExecutionOutput output;
 
-  EXPECT_FALSE(result.success);
-  EXPECT_TRUE(result.outputs.empty());
-  EXPECT_TRUE(result.error_message.empty());
-  EXPECT_EQ(result.elapsed.count(), 0);
+  EXPECT_TRUE(output.outputs.empty());
+  EXPECT_EQ(output.elapsed.count(), 0);
 }
 
-TEST(ExecutionResultTest, BoolConversion) {
-  ExecutionResult success_result;
-  success_result.success = true;
+TEST(ExecutionOutputTest, InsideResultSuccess) {
+  // v2.0: Pipeline::run() returns Result<ExecutionOutput>
+  ExecutionOutput output;
+  output.outputs["test"] = makeDataPacket(1);
+  output.elapsed = std::chrono::milliseconds(150);
 
-  ExecutionResult failure_result;
-  failure_result.success = false;
+  Result<ExecutionOutput> result = std::move(output);
 
-  EXPECT_TRUE(static_cast<bool>(success_result));
-  EXPECT_FALSE(static_cast<bool>(failure_result));
+  EXPECT_TRUE(result.isOk());
+  EXPECT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(result.value().outputs.size(), 1);
+  EXPECT_EQ(result.value().elapsed.count(), 150);
+}
 
-  if (success_result) {
-    SUCCEED();
-  } else {
-    FAIL();
-  }
+TEST(ExecutionOutputTest, InsideResultError) {
+  // v2.0: error branch carries Error instead of string
+  auto result = Result<ExecutionOutput>::err(ErrorCode::ExecutionFailed,
+                                             "node crashed", "detector");
+
+  EXPECT_FALSE(result.isOk());
+  EXPECT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().code(), ErrorCode::ExecutionFailed);
+  EXPECT_EQ(result.error().message(), "node crashed");
+  EXPECT_EQ(result.error().nodeName(), "detector");
 }
 
 // =============================================================================
@@ -235,7 +244,9 @@ TEST(IPipelineObserverTest, DefaultImplementationsDoNotCrash) {
 
   EXPECT_NO_THROW(observer.onExecutionStarted());
   EXPECT_NO_THROW(observer.onExecutionCompleted({}));
-  EXPECT_NO_THROW(observer.onExecutionFailed("error", "node"));
+  // v2.0: onExecutionFailed now takes const Error& instead of two strings
+  EXPECT_NO_THROW(observer.onExecutionFailed(
+      Error(ErrorCode::ExecutionFailed, "error", "node")));
   EXPECT_NO_THROW(observer.onFrameDropped("node", 100, "reason"));
 }
 
@@ -268,19 +279,23 @@ TEST(CallbackObserverTest, OnResult) {
 }
 
 TEST(CallbackObserverTest, OnError) {
-  std::string received_error;
+  // v2.0: onError callback now receives const Error& instead of two strings
+  ErrorCode received_code = ErrorCode::Ok;
+  std::string received_msg;
   std::string received_node;
 
   CallbackObserver observer;
-  observer.onError([&received_error, &received_node](const std::string &e,
-                                                     const std::string &n) {
-    received_error = e;
-    received_node = n;
+  observer.onError([&](const Error &e) {
+    received_code = e.code();
+    received_msg = e.message();
+    received_node = e.nodeName();
   });
 
-  observer.onExecutionFailed("test error", "test_node");
+  observer.onExecutionFailed(
+      Error(ErrorCode::NodeException, "test error", "test_node"));
 
-  EXPECT_EQ(received_error, "test error");
+  EXPECT_EQ(received_code, ErrorCode::NodeException);
+  EXPECT_EQ(received_msg, "test error");
   EXPECT_EQ(received_node, "test_node");
 }
 
@@ -324,12 +339,13 @@ TEST(CallbackObserverTest, NullCallbacksDoNotCrash) {
 
   EXPECT_NO_THROW(observer.onExecutionStarted());
   EXPECT_NO_THROW(observer.onExecutionCompleted({}));
-  EXPECT_NO_THROW(observer.onExecutionFailed("", ""));
+  // v2.0: pass Error object instead of two strings
+  EXPECT_NO_THROW(observer.onExecutionFailed(Error()));
   EXPECT_NO_THROW(observer.onFrameDropped("", 0, ""));
 }
 
 // =============================================================================
-// PipelineBuilder Tests
+// PipelineBuilder Tests (build() now returns Result<Pipeline>)
 // =============================================================================
 
 class PipelineBuilderTest : public ::testing::Test {
@@ -351,100 +367,110 @@ protected:
 };
 
 TEST_F(PipelineBuilderTest, BasicBuild) {
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withMode(ExecutionMode::BATCH)
-                      .withWorkers(2)
-                      .build();
+  // v2.0: build() returns Result<Pipeline>
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withMode(ExecutionMode::BATCH)
+                    .withWorkers(2)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
-  EXPECT_EQ(pipeline.mode(), ExecutionMode::BATCH);
+  ASSERT_TRUE(result.isOk()) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
+  EXPECT_EQ(result.value().mode(), ExecutionMode::BATCH);
 }
 
 TEST_F(PipelineBuilderTest, WithOptions) {
   auto opts = PipelineOptions::batch(8);
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withOptions(opts)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withOptions(opts)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithContext) {
   auto context = std::make_shared<PipelineContext>();
   context->setConfig("test_key", 42);
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withContext(context)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withContext(context)
+                    .build();
 
-  EXPECT_TRUE(pipeline.context().hasConfig("test_key"));
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().context().hasConfig("test_key"));
 }
 
 TEST_F(PipelineBuilderTest, WithTimeout) {
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withTimeout(5000ms)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withTimeout(5000ms)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithQueueCapacity) {
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withMode(ExecutionMode::STREAM)
-                      .withQueueCapacity(32)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withMode(ExecutionMode::STREAM)
+                    .withQueueCapacity(32)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithDropStrategy) {
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withMode(ExecutionMode::STREAM)
-                      .withQueueCapacity(16)
-                      .withDropStrategy("DropTail")
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withMode(ExecutionMode::STREAM)
+                    .withQueueCapacity(16)
+                    .withDropStrategy("DropTail")
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithSyncCoordination) {
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withMode(ExecutionMode::STREAM)
-                      .withQueueCapacity(16)
-                      .withSyncCoordination(true)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withMode(ExecutionMode::STREAM)
+                    .withQueueCapacity(16)
+                    .withSyncCoordination(true)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithSchedulerStrategy) {
   auto strategy = std::make_unique<BatchSchedulerStrategy>();
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withSchedulerStrategy(std::move(strategy))
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withSchedulerStrategy(std::move(strategy))
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithSyncStrategy) {
   auto strategy = createNoSyncStrategy();
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withSyncStrategy(std::move(strategy))
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withSyncStrategy(std::move(strategy))
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, WithObserver) {
@@ -452,45 +478,41 @@ TEST_F(PipelineBuilderTest, WithObserver) {
   bool started = false;
   observer->onStart([&started]() { started = true; });
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withObserver(observer)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withObserver(observer)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, OnResultCallback) {
   bool received = false;
 
-  auto pipeline =
+  auto result =
       Pipeline::create()
           .withGraph(std::move(*m_graph))
           .onResult([&received](const PortDataMap &) { received = true; })
           .build();
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, OnErrorCallback) {
-  std::string error_msg;
+  // v2.0: onError callback now receives const Error& instead of two strings
+  ErrorCode captured_code = ErrorCode::Ok;
 
-  auto pipeline =
-      Pipeline::create()
-          .withGraph(std::move(*m_graph))
-          .onError([&error_msg](const std::string &e, const std::string &) {
-            error_msg = e;
-          })
-          .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .onError([&captured_code](const Error &e) {
+                      captured_code = e.code();
+                    })
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
-}
-
-TEST_F(PipelineBuilderTest, TryBuildSuccess) {
-  auto result = Pipeline::create().withGraph(std::move(*m_graph)).tryBuild();
-
-  ASSERT_TRUE(result.has_value());
-  EXPECT_TRUE(result->isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST_F(PipelineBuilderTest, MoveConstruction) {
@@ -498,8 +520,10 @@ TEST_F(PipelineBuilderTest, MoveConstruction) {
   builder1.withGraph(std::move(*m_graph));
   PipelineBuilder builder2(std::move(builder1));
 
-  auto pipeline = builder2.build();
-  EXPECT_TRUE(pipeline.isReady());
+  // v2.0: build() returns Result<Pipeline>
+  auto result = builder2.build();
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 // =============================================================================
@@ -519,6 +543,13 @@ protected:
     m_graph->addEdge("source", "output", "sink", "input");
   }
 
+  // Helper: build and unwrap, fail the test on error
+  Pipeline buildPipeline(Graph &&graph) {
+    auto result = Pipeline::create().withGraph(std::move(graph)).build();
+    EXPECT_TRUE(result) << result.errorMessage();
+    return std::move(result).value();
+  }
+
   std::unique_ptr<Graph> m_graph;
   std::shared_ptr<SourceNode> m_source;
   std::shared_ptr<SinkNode> m_sink;
@@ -530,7 +561,8 @@ TEST_F(PipelineTest, DefaultConstruction) {
 }
 
 TEST_F(PipelineTest, MoveConstruction) {
-  auto pipeline1 = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  // v2.0: build() returns Result<Pipeline>, unwrap via helper
+  auto pipeline1 = buildPipeline(std::move(*m_graph));
 
   EXPECT_TRUE(pipeline1.isReady());
 
@@ -539,7 +571,7 @@ TEST_F(PipelineTest, MoveConstruction) {
 }
 
 TEST_F(PipelineTest, MoveAssignment) {
-  auto pipeline1 = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline1 = buildPipeline(std::move(*m_graph));
 
   Pipeline pipeline2;
   pipeline2 = std::move(pipeline1);
@@ -548,7 +580,7 @@ TEST_F(PipelineTest, MoveAssignment) {
 }
 
 TEST_F(PipelineTest, GraphAccessor) {
-  auto pipeline = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline = buildPipeline(std::move(*m_graph));
 
   const Graph &g = pipeline.graph();
   EXPECT_EQ(g.getNodes().size(), 2);
@@ -559,28 +591,30 @@ TEST_F(PipelineTest, ContextAccessor) {
   auto ctx = std::make_shared<PipelineContext>();
   ctx->setConfig("test", 100);
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(*m_graph))
-                      .withContext(ctx)
-                      .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withContext(ctx)
+                    .build();
 
-  EXPECT_TRUE(pipeline.context().hasConfig("test"));
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().context().hasConfig("test"));
 }
 
 TEST_F(PipelineTest, Info) {
-  auto pipeline = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline = buildPipeline(std::move(*m_graph));
 
   std::string info = pipeline.info();
   EXPECT_FALSE(info.empty());
 }
 
 TEST_F(PipelineTest, ModeAccessor) {
-  auto batch_pipeline = Pipeline::create()
-                            .withGraph(std::move(*m_graph))
-                            .withMode(ExecutionMode::BATCH)
-                            .build();
+  auto result = Pipeline::create()
+                    .withGraph(std::move(*m_graph))
+                    .withMode(ExecutionMode::BATCH)
+                    .build();
 
-  EXPECT_EQ(batch_pipeline.mode(), ExecutionMode::BATCH);
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_EQ(result.value().mode(), ExecutionMode::BATCH);
 }
 
 // =============================================================================
@@ -588,7 +622,7 @@ TEST_F(PipelineTest, ModeAccessor) {
 // =============================================================================
 
 TEST_F(PipelineTest, AddObserver) {
-  auto pipeline = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline = buildPipeline(std::move(*m_graph));
 
   auto observer = std::make_shared<CallbackObserver>();
 
@@ -596,7 +630,7 @@ TEST_F(PipelineTest, AddObserver) {
 }
 
 TEST_F(PipelineTest, RemoveObserver) {
-  auto pipeline = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline = buildPipeline(std::move(*m_graph));
 
   auto observer = std::make_shared<CallbackObserver>();
   pipeline.addObserver(observer);
@@ -609,7 +643,7 @@ TEST_F(PipelineTest, RemoveObserver) {
 // =============================================================================
 
 TEST_F(PipelineTest, InitialState) {
-  auto pipeline = Pipeline::create().withGraph(std::move(*m_graph)).build();
+  auto pipeline = buildPipeline(std::move(*m_graph));
 
   EXPECT_TRUE(pipeline.isReady());
   EXPECT_FALSE(pipeline.isRunning());
@@ -617,7 +651,7 @@ TEST_F(PipelineTest, InitialState) {
 }
 
 // =============================================================================
-// Convenience Factory Functions Tests
+// Convenience Factory Functions Tests (now return Result<Pipeline>)
 // =============================================================================
 
 TEST(PipelineFactoryTest, MakeBatchPipeline) {
@@ -628,10 +662,12 @@ TEST(PipelineFactoryTest, MakeBatchPipeline) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  auto pipeline = makeBatchPipeline(std::move(graph), 4);
+  // v2.0: returns Result<Pipeline>
+  auto result = makeBatchPipeline(std::move(graph), 4);
 
-  EXPECT_TRUE(pipeline.isReady());
-  EXPECT_EQ(pipeline.mode(), ExecutionMode::BATCH);
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
+  EXPECT_EQ(result.value().mode(), ExecutionMode::BATCH);
 }
 
 TEST(PipelineFactoryTest, MakeBatchPipelineDefaultWorkers) {
@@ -642,9 +678,10 @@ TEST(PipelineFactoryTest, MakeBatchPipelineDefaultWorkers) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  auto pipeline = makeBatchPipeline(std::move(graph));
+  auto result = makeBatchPipeline(std::move(graph));
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 TEST(PipelineFactoryTest, MakeStreamPipeline) {
@@ -655,10 +692,12 @@ TEST(PipelineFactoryTest, MakeStreamPipeline) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  auto pipeline = makeStreamPipeline(std::move(graph), 4, 32);
+  // v2.0: returns Result<Pipeline>
+  auto result = makeStreamPipeline(std::move(graph), 4, 32);
 
-  EXPECT_TRUE(pipeline.isReady());
-  EXPECT_EQ(pipeline.mode(), ExecutionMode::STREAM);
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
+  EXPECT_EQ(result.value().mode(), ExecutionMode::STREAM);
 }
 
 TEST(PipelineFactoryTest, MakeStreamPipelineDefaultParams) {
@@ -669,9 +708,10 @@ TEST(PipelineFactoryTest, MakeStreamPipelineDefaultParams) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  auto pipeline = makeStreamPipeline(std::move(graph));
+  auto result = makeStreamPipeline(std::move(graph));
 
-  EXPECT_TRUE(pipeline.isReady());
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
 }
 
 // =============================================================================
@@ -701,14 +741,16 @@ TEST(PipelineComplexGraphTest, DiamondTopology) {
   graph.addEdge("left", "output", "sink", "input");
   graph.addEdge("right", "output", "sink", "input");
 
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(graph))
-                      .withMode(ExecutionMode::BATCH)
-                      .build();
+  // v2.0: build() returns Result<Pipeline>
+  auto result = Pipeline::create()
+                    .withGraph(std::move(graph))
+                    .withMode(ExecutionMode::BATCH)
+                    .build();
 
-  EXPECT_TRUE(pipeline.isReady());
-  EXPECT_EQ(pipeline.graph().getNodes().size(), 4);
-  EXPECT_EQ(pipeline.graph().getEdges().size(), 4);
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
+  EXPECT_EQ(result.value().graph().getNodes().size(), 4);
+  EXPECT_EQ(result.value().graph().getEdges().size(), 4);
 }
 
 TEST(PipelineComplexGraphTest, LinearChain) {
@@ -736,8 +778,10 @@ TEST(PipelineComplexGraphTest, LinearChain) {
                   "node_" + std::to_string(i + 1), "input");
   }
 
-  auto pipeline = Pipeline::create().withGraph(std::move(graph)).build();
+  // v2.0: build() returns Result<Pipeline>
+  auto result = Pipeline::create().withGraph(std::move(graph)).build();
 
-  EXPECT_TRUE(pipeline.isReady());
-  EXPECT_EQ(pipeline.graph().getNodes().size(), 5);
+  ASSERT_TRUE(result) << result.errorMessage();
+  EXPECT_TRUE(result.value().isReady());
+  EXPECT_EQ(result.value().graph().getNodes().size(), 5);
 }

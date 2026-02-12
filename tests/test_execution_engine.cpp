@@ -9,7 +9,6 @@
  *
  */
 #include "ai_pipe/execution_engine.hpp"
-#include "ai_pipe/frame_metadata.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
 #include "scheduler_strategies.hpp"
@@ -458,7 +457,6 @@ TEST_F(ExecutionEngineTest, PushInputToUnknownNode) {
 
   auto result = engine->pushInput("unknown_node", createData());
   EXPECT_FALSE(result.isOk());
-  EXPECT_EQ(result.status, QueuePushResult::Status::Rejected);
 
   engine->stopStreaming();
 }

@@ -2,13 +2,14 @@
  * @file execution_engine_impl.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief ExecutionEngine PIMPL implementation
- * @version 1.1
+ * @version 2.0
  * @date 2025-12-24
  *
  * This is an INTERNAL header file. Users should not include this directly.
  *
- * v1.1: Replaced BoundedDropQueue/ThreadSafeQueue with LockFreeNodeQueue
- *       for high-performance lock-free scheduling in deep pipelines.
+ * v2.0: Unified error handling with Result<T>. Internal processNode()
+ *       now returns Result<void> instead of bool, propagating rich error
+ *       context from node exceptions through the entire call chain.
  *
  * @copyright Copyright (c) 2025
  */
@@ -68,13 +69,15 @@ public:
   Impl(Impl &&other) noexcept;
   Impl &operator=(Impl &&other) noexcept;
 
-  void setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
-  void setSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
+  Result<void>
+  setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
+  Result<void> setSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
   void configureForMode(ExecutionMode mode);
 
-  bool initialize(Graph *graph, std::uint8_t num_workers);
-  bool execute(const PortDataMap &initial_inputs, bool wait_for_completion,
-               std::shared_ptr<PipelineContext> context);
+  Result<void> initialize(Graph *graph, std::uint8_t num_workers);
+  Result<void> execute(const PortDataMap &initial_inputs,
+                       bool wait_for_completion,
+                       std::shared_ptr<PipelineContext> context);
   void stopExecutionAsync();
   void stopExecutionSync();
   void reset();
@@ -91,21 +94,23 @@ public:
                                           const std::string &)>
                            callback);
 
-  bool startStreaming(std::shared_ptr<PipelineContext> context);
+  Result<void> startStreaming(std::shared_ptr<PipelineContext> context);
   void stopStreaming(bool wait_for_drain);
   [[nodiscard]] bool isStreaming() const;
 
-  QueuePushResult pushInput(const std::string &source_node,
-                            const std::string &port_name, PortDataPtr data);
+  Result<PushStatus> pushInput(const std::string &source_node,
+                               const std::string &port_name, PortDataPtr data);
 
-  QueuePushResult pushInput(const std::string &source_node, PortDataPtr data);
+  Result<PushStatus> pushInput(const std::string &source_node,
+                               PortDataPtr data);
 
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
   [[nodiscard]] std::size_t queueDepth(const std::string &node_name,
                                        const std::string &port_name) const;
   [[nodiscard]] bool hasQueueCapacity(const std::string &node_name,
                                       const std::string &port_name) const;
-  bool waitForDrain(std::size_t max_depth, std::chrono::milliseconds timeout);
+  Result<void> waitForDrain(std::size_t max_depth,
+                            std::chrono::milliseconds timeout);
 
   void setNodeQueueConfig(const std::string &node_name,
                           const QueueConfig &config);
@@ -127,17 +132,23 @@ private:
   void executeNodeTask(NodePtr node, std::shared_ptr<PipelineContext> context);
 
   bool gatherNodeInputs(const NodePtr &node, PortDataMap &inputs);
-  bool processNode(const NodePtr &node, const PortDataMap &inputs,
-                   PortDataMap &outputs,
-                   const std::shared_ptr<PipelineContext> &context);
+
+  /**
+   * @brief Process a single node, converting exceptions to Error
+   * @return Result<void> - success, or Error with
+   * NodeException/NodeUnknownException
+   */
+  Result<void> processNode(const NodePtr &node, const PortDataMap &inputs,
+                           PortDataMap &outputs,
+                           const std::shared_ptr<PipelineContext> &context);
 
   void propagateOutputs(const NodePtr &source, const PortDataMap &outputs);
 
   void handleNodeSuccess(const NodePtr &node, const PortDataMap &outputs);
-  void handleNodeFailure(const NodePtr &node, const std::string &error);
+  void handleNodeFailure(const NodePtr &node, const Error &error);
 
   void checkCompletionAndNotify();
-  bool waitForCompletion();
+  Result<void> waitForCompletion();
   void resetInternalState();
 
   void pushToQueue(const NodePtr &node, const std::string &port_name,
@@ -162,13 +173,11 @@ private:
   bool isInputPort(const NodePtr &node, const std::string &port_name) const;
   bool isOutputPort(const NodePtr &node, const std::string &port_name) const;
 
-  // 获取端口
   std::string getFirstOutputPort(const NodePtr &node) const;
 
-  // 数据路由
-  QueuePushResult routeToDownstream(const NodePtr &source_node,
-                                    const std::string &output_port,
-                                    PortDataPtr data);
+  Result<PushStatus> routeToDownstream(const NodePtr &source_node,
+                                       const std::string &output_port,
+                                       PortDataPtr data);
 
 private:
   EngineConfig m_config;

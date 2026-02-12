@@ -252,6 +252,10 @@ protected:
   AtomicNodeStatistics m_atomicStats;
 };
 
+// =============================================================================
+// Initial State
+// =============================================================================
+
 TEST_F(AtomicNodeStatisticsTest, InitialState) {
   EXPECT_EQ(m_atomicStats.execution_count.load(), 0);
   EXPECT_EQ(m_atomicStats.success_count.load(), 0);
@@ -260,9 +264,13 @@ TEST_F(AtomicNodeStatisticsTest, InitialState) {
   EXPECT_EQ(m_atomicStats.min_processing_us.load(),
             std::numeric_limits<std::uint64_t>::max());
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 0);
-  EXPECT_EQ(m_atomicStats.total_input_count.load(), 0);
-  EXPECT_EQ(m_atomicStats.total_output_count.load(), 0);
+  // v2.0: total_input_count / total_output_count removed from
+  //       AtomicNodeStatistics
 }
+
+// =============================================================================
+// Raw Atomic Increments (still valid for direct field access)
+// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, AtomicIncrements) {
   m_atomicStats.execution_count.fetch_add(1);
@@ -274,45 +282,87 @@ TEST_F(AtomicNodeStatisticsTest, AtomicIncrements) {
   EXPECT_EQ(m_atomicStats.total_processing_us.load(), 1000);
 }
 
-TEST_F(AtomicNodeStatisticsTest, UpdateMinMax_FirstValue) {
-  m_atomicStats.updateMinMax(500);
+// =============================================================================
+// recordExecution (replaces updateMinMax + manual fetch_add)
+// =============================================================================
 
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_FirstValue) {
+  // v2.0: replaces updateMinMax(500)
+  //       recordExecution atomically updates:
+  //         execution_count, success/failure_count,
+  //         total_processing_us, min/max
+  m_atomicStats.recordExecution(true, 500);
+
+  EXPECT_EQ(m_atomicStats.execution_count.load(), 1);
+  EXPECT_EQ(m_atomicStats.success_count.load(), 1);
+  EXPECT_EQ(m_atomicStats.failure_count.load(), 0);
+  EXPECT_EQ(m_atomicStats.total_processing_us.load(), 500);
   EXPECT_EQ(m_atomicStats.min_processing_us.load(), 500);
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 500);
 }
 
-TEST_F(AtomicNodeStatisticsTest, UpdateMinMax_NewMin) {
-  m_atomicStats.updateMinMax(500);
-  m_atomicStats.updateMinMax(100);
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_Failure) {
+  // v2.0: failure branch increments failure_count instead of success_count
+  m_atomicStats.recordExecution(false, 200);
+
+  EXPECT_EQ(m_atomicStats.execution_count.load(), 1);
+  EXPECT_EQ(m_atomicStats.success_count.load(), 0);
+  EXPECT_EQ(m_atomicStats.failure_count.load(), 1);
+  EXPECT_EQ(m_atomicStats.total_processing_us.load(), 200);
+}
+
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMin) {
+  // v2.0: replaces updateMinMax(500); updateMinMax(100);
+  m_atomicStats.recordExecution(true, 500);
+  m_atomicStats.recordExecution(true, 100);
 
   EXPECT_EQ(m_atomicStats.min_processing_us.load(), 100);
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 500);
 }
 
-TEST_F(AtomicNodeStatisticsTest, UpdateMinMax_NewMax) {
-  m_atomicStats.updateMinMax(500);
-  m_atomicStats.updateMinMax(1000);
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMax) {
+  // v2.0: replaces updateMinMax(500); updateMinMax(1000);
+  m_atomicStats.recordExecution(true, 500);
+  m_atomicStats.recordExecution(true, 1000);
 
   EXPECT_EQ(m_atomicStats.min_processing_us.load(), 500);
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 1000);
 }
 
-TEST_F(AtomicNodeStatisticsTest, UpdateMinMax_NoChange) {
-  m_atomicStats.updateMinMax(100);
-  m_atomicStats.updateMinMax(1000);
-  m_atomicStats.updateMinMax(500); // Between min and max
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_NoChange) {
+  // v2.0: replaces three updateMinMax calls
+  m_atomicStats.recordExecution(true, 100);
+  m_atomicStats.recordExecution(true, 1000);
+  m_atomicStats.recordExecution(true, 500); // Between min and max
 
   EXPECT_EQ(m_atomicStats.min_processing_us.load(), 100);
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 1000);
 }
+
+TEST_F(AtomicNodeStatisticsTest, RecordExecution_MixedSuccessFailure) {
+  // v2.0: new test — validates mixed success/failure counting
+  m_atomicStats.recordExecution(true, 100);
+  m_atomicStats.recordExecution(false, 200);
+  m_atomicStats.recordExecution(true, 300);
+  m_atomicStats.recordExecution(false, 50);
+
+  EXPECT_EQ(m_atomicStats.execution_count.load(), 4);
+  EXPECT_EQ(m_atomicStats.success_count.load(), 2);
+  EXPECT_EQ(m_atomicStats.failure_count.load(), 2);
+  EXPECT_EQ(m_atomicStats.total_processing_us.load(), 650); // 100+200+300+50
+  EXPECT_EQ(m_atomicStats.min_processing_us.load(), 50);
+  EXPECT_EQ(m_atomicStats.max_processing_us.load(), 300);
+}
+
+// =============================================================================
+// Reset
+// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, Reset) {
-  m_atomicStats.execution_count.fetch_add(10);
-  m_atomicStats.success_count.fetch_add(8);
-  m_atomicStats.failure_count.fetch_add(2);
-  m_atomicStats.total_processing_us.fetch_add(5000);
-  m_atomicStats.updateMinMax(100);
-  m_atomicStats.updateMinMax(1000);
+  // v2.0: use recordExecution instead of raw fetch_add + updateMinMax
+  m_atomicStats.recordExecution(true, 100);
+  m_atomicStats.recordExecution(true, 1000);
+  m_atomicStats.recordExecution(false, 500);
 
   m_atomicStats.reset();
 
@@ -325,35 +375,47 @@ TEST_F(AtomicNodeStatisticsTest, Reset) {
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 0);
 }
 
+// =============================================================================
+// Snapshot
+// =============================================================================
+
 TEST_F(AtomicNodeStatisticsTest, Snapshot) {
   m_atomicStats.execution_count.store(10);
   m_atomicStats.success_count.store(8);
   m_atomicStats.failure_count.store(2);
   m_atomicStats.total_processing_us.store(8000);
-  m_atomicStats.total_input_count.store(15);
-  m_atomicStats.total_output_count.store(12);
-  m_atomicStats.updateMinMax(100);
-  m_atomicStats.updateMinMax(2000);
+  // v2.0: total_input_count.store(15) / total_output_count.store(12) removed
+  m_atomicStats.recordExecution(true, 100);  // updates min to 100
+  m_atomicStats.recordExecution(true, 2000); // updates max to 2000
 
-  auto snapshot = m_atomicStats.snapshot("my_node", 5);
+  // v2.0: snapshot(name) — no queue_depth parameter
+  auto snapshot = m_atomicStats.snapshot("my_node");
 
   EXPECT_EQ(snapshot.node_name, "my_node");
-  EXPECT_EQ(snapshot.execution_count, 10);
-  EXPECT_EQ(snapshot.success_count, 8);
+  // execution_count = 10 (stored) + 2 (from recordExecution) = 12
+  EXPECT_EQ(snapshot.execution_count, 12);
+  // success_count = 8 (stored) + 2 (from recordExecution) = 10
+  EXPECT_EQ(snapshot.success_count, 10);
   EXPECT_EQ(snapshot.failure_count, 2);
-  EXPECT_EQ(snapshot.total_processing_us, 8000);
+  // total_processing_us = 8000 + 100 + 2000 = 10100
+  EXPECT_EQ(snapshot.total_processing_us, 10100);
   EXPECT_EQ(snapshot.min_processing_us, 100);
   EXPECT_EQ(snapshot.max_processing_us, 2000);
-  EXPECT_EQ(snapshot.total_input_count, 15);
-  EXPECT_EQ(snapshot.total_output_count, 12);
-  EXPECT_EQ(snapshot.current_queue_depth, 5);
+  // v2.0: snapshot no longer fills total_input_count,
+  //       total_output_count, current_queue_depth
 }
 
 TEST_F(AtomicNodeStatisticsTest, Snapshot_UninitializedMin) {
-  // Min should be 0 in snapshot if never updated
-  auto snapshot = m_atomicStats.snapshot("node", 0);
-  EXPECT_EQ(snapshot.min_processing_us, 0);
+  // v2.0: snapshot no longer normalizes sentinel min to 0
+  //       raw sentinel value (max uint64) is preserved
+  auto snapshot = m_atomicStats.snapshot("node");
+  EXPECT_EQ(snapshot.min_processing_us,
+            std::numeric_limits<std::uint64_t>::max());
 }
+
+// =============================================================================
+// Concurrent Updates
+// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, ConcurrentUpdates) {
   const int num_threads = 8;
@@ -363,9 +425,9 @@ TEST_F(AtomicNodeStatisticsTest, ConcurrentUpdates) {
   for (int t = 0; t < num_threads; ++t) {
     threads.emplace_back([this, updates_per_thread]() {
       for (int i = 0; i < updates_per_thread; ++i) {
-        m_atomicStats.execution_count.fetch_add(1);
-        m_atomicStats.success_count.fetch_add(1);
-        m_atomicStats.updateMinMax(i + 1);
+        // v2.0: use recordExecution instead of
+        //       manual fetch_add + updateMinMax
+        m_atomicStats.recordExecution(true, static_cast<std::uint64_t>(i + 1));
       }
     });
   }
@@ -799,56 +861,56 @@ TEST_F(EngineStatisticsSnapshotTest, NodeStatsCanBePopulated) {
 
 class EngineStatisticsEdgeCasesTest : public ::testing::Test {
 protected:
-  EngineStatistics stats;
+  EngineStatistics m_stats;
 };
 
 TEST_F(EngineStatisticsEdgeCasesTest, VeryLargeValues) {
-  stats.total_executions.store(UINT64_MAX - 1);
-  stats.successful_executions.store(UINT64_MAX - 1);
+  m_stats.total_executions.store(UINT64_MAX - 1);
+  m_stats.successful_executions.store(UINT64_MAX - 1);
 
-  EXPECT_EQ(stats.total_executions.load(), UINT64_MAX - 1);
-  EXPECT_NEAR(stats.successRate(), 100.0, 0.001);
+  EXPECT_EQ(m_stats.total_executions.load(), UINT64_MAX - 1);
+  EXPECT_NEAR(m_stats.successRate(), 100.0, 0.001);
 }
 
 TEST_F(EngineStatisticsEdgeCasesTest, OverflowProtection) {
-  stats.total_executions.store(UINT64_MAX);
+  m_stats.total_executions.store(UINT64_MAX);
 
   // This would overflow, but atomic fetch_add handles it
-  stats.total_executions.fetch_add(1);
+  m_stats.total_executions.fetch_add(1);
 
-  EXPECT_EQ(stats.total_executions.load(), 0); // Wraps around
+  EXPECT_EQ(m_stats.total_executions.load(), 0); // Wraps around
 }
 
 TEST_F(EngineStatisticsEdgeCasesTest, ZeroDivisionProtection) {
   // All computations with zero denominators should return safe values
-  EXPECT_DOUBLE_EQ(stats.successRate(), 100.0);
-  EXPECT_DOUBLE_EQ(stats.dropRate(), 0.0);
-  EXPECT_DOUBLE_EQ(stats.throughput(), 0.0);
-  EXPECT_DOUBLE_EQ(stats.inputOutputRatio(), 0.0);
-  EXPECT_DOUBLE_EQ(stats.avgProcessingTimeUs(), 0.0);
-  EXPECT_DOUBLE_EQ(stats.avgWaitTimeUs(), 0.0);
-  EXPECT_DOUBLE_EQ(stats.avgScheduleTimeUs(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.successRate(), 100.0);
+  EXPECT_DOUBLE_EQ(m_stats.dropRate(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.throughput(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.inputOutputRatio(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.avgProcessingTimeUs(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.avgWaitTimeUs(), 0.0);
+  EXPECT_DOUBLE_EQ(m_stats.avgScheduleTimeUs(), 0.0);
 }
 
 TEST_F(EngineStatisticsEdgeCasesTest, LatencyHistogramBoundaries) {
   // Test exact boundary values
-  stats.recordLatency(10);  // Should go to bucket 1, not 0
-  stats.recordLatency(25);  // Should go to bucket 2, not 1
-  stats.recordLatency(50);  // Should go to bucket 3, not 2
-  stats.recordLatency(100); // Should go to bucket 4, not 3
+  m_stats.recordLatency(10);  // Should go to bucket 1, not 0
+  m_stats.recordLatency(25);  // Should go to bucket 2, not 1
+  m_stats.recordLatency(50);  // Should go to bucket 3, not 2
+  m_stats.recordLatency(100); // Should go to bucket 4, not 3
 
-  EXPECT_EQ(stats.latency_histogram.buckets[0].load(), 0);
-  EXPECT_EQ(stats.latency_histogram.buckets[1].load(), 1);
-  EXPECT_EQ(stats.latency_histogram.buckets[2].load(), 1);
-  EXPECT_EQ(stats.latency_histogram.buckets[3].load(), 1);
-  EXPECT_EQ(stats.latency_histogram.buckets[4].load(), 1);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[0].load(), 0);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[1].load(), 1);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[2].load(), 1);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[3].load(), 1);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[4].load(), 1);
 }
 
 TEST_F(EngineStatisticsEdgeCasesTest, MaxLatencyValue) {
-  stats.recordLatency(UINT64_MAX);
+  m_stats.recordLatency(UINT64_MAX);
 
   // Should go to the last bucket
-  EXPECT_EQ(stats.latency_histogram.buckets[15].load(), 1);
+  EXPECT_EQ(m_stats.latency_histogram.buckets[15].load(), 1);
 }
 
 // ============================================================================

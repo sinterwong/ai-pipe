@@ -428,8 +428,8 @@ TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
   }
 
   // Wait for drain
-  bool drained = m_engine->waitForDrain(0, std::chrono::milliseconds{10000});
-  EXPECT_TRUE(drained) << "Should drain within timeout";
+  auto drained = m_engine->waitForDrain(0, std::chrono::milliseconds{10000});
+  EXPECT_TRUE(drained.isOk()) << "Should drain within timeout";
 
   // IMPORTANT: Get statistics BEFORE stopStreaming/reset
   auto stats = m_engine->statistics();

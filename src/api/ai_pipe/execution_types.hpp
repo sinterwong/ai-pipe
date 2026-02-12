@@ -2,11 +2,12 @@
  * @file execution_types.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief Execution engine types and configurations
- * @version 1.1
+ * @version 2.0
  * @date 2025-12-24
  *
- * This file defines common types, enums, and configurations used by
- * the execution engine and pipeline components.
+ * v2.0: Unified error handling - replaced QueuePushResult with PushStatus
+ *       used inside Result<PushStatus>. The old QueuePushResult is retained
+ *       as a deprecated alias for migration convenience.
  *
  * @copyright Copyright (c) 2025
  */
@@ -14,7 +15,7 @@
 #ifndef AI_PIPE_EXECUTION_TYPES_HPP
 #define AI_PIPE_EXECUTION_TYPES_HPP
 
-#include <algorithm>
+#include "ai_pipe/error.hpp"
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -60,8 +61,51 @@ struct QueueConfig {
   bool track_statistics = true;
 };
 
+// =============================================================================
+// Push Status (replaces QueuePushResult)
+// =============================================================================
+
 /**
- * @brief Result of a queue push operation
+ * @brief Outcome of a successful queue push operation
+ *
+ * This type represents the two non-error outcomes of pushing data:
+ *   - Enqueued: data was added to the queue normally
+ *   - Dropped:  data was accepted but an older frame was evicted (backpressure)
+ *
+ * Rejection (node not found, not streaming, etc.) is represented by
+ * returning Result<PushStatus> with an Error, not by PushStatus itself.
+ */
+struct PushStatus {
+  enum class Outcome : std::uint8_t {
+    Enqueued, ///< Data successfully added to queue
+    Dropped   ///< Data accepted, but a frame was evicted due to backpressure
+  };
+
+  Outcome outcome = Outcome::Enqueued;
+  std::string detail;         ///< Human-readable info (e.g., drop reason)
+  std::size_t queue_size = 0; ///< Queue size after the operation
+
+  [[nodiscard]] bool isDropped() const { return outcome == Outcome::Dropped; }
+
+  static PushStatus enqueued(std::size_t size) {
+    return {Outcome::Enqueued, "success", size};
+  }
+
+  static PushStatus dropped(const std::string &reason, std::size_t size) {
+    return {Outcome::Dropped, reason, size};
+  }
+};
+
+// =============================================================================
+// Backward-compatible QueuePushResult (deprecated wrapper)
+// =============================================================================
+
+/**
+ * @brief DEPRECATED: Use Result<PushStatus> instead.
+ *
+ * This type is retained temporarily for internal code that has not yet
+ * migrated to the new Result<PushStatus> API. It will be removed in a
+ * future version.
  */
 struct QueuePushResult {
   enum class Status { Enqueued, Dropped, Rejected };
@@ -84,6 +128,21 @@ struct QueuePushResult {
 
   static QueuePushResult rejected(const std::string &reason, std::size_t size) {
     return {Status::Rejected, reason, size};
+  }
+
+  /**
+   * @brief Convert legacy QueuePushResult to Result<PushStatus>
+   */
+  [[nodiscard]] Result<PushStatus> toResult() const {
+    switch (status) {
+    case Status::Enqueued:
+      return PushStatus::enqueued(queue_size);
+    case Status::Dropped:
+      return PushStatus::dropped(message, queue_size);
+    case Status::Rejected:
+      return Result<PushStatus>::err(ErrorCode::QueueRejected, message);
+    }
+    return Result<PushStatus>::err(ErrorCode::InternalError, "Unknown status");
   }
 };
 
@@ -255,10 +314,41 @@ struct AtomicNodeStatistics {
   std::atomic<std::uint64_t> min_processing_us{
       std::numeric_limits<std::uint64_t>::max()};
   std::atomic<std::uint64_t> max_processing_us{0};
-  std::atomic<std::uint64_t> total_input_count{0};
-  std::atomic<std::uint64_t> total_output_count{0};
 
-  AtomicNodeStatistics() = default;
+  void recordExecution(bool success, std::uint64_t processing_us) {
+    execution_count.fetch_add(1, std::memory_order_relaxed);
+    if (success) {
+      success_count.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      failure_count.fetch_add(1, std::memory_order_relaxed);
+    }
+    total_processing_us.fetch_add(processing_us, std::memory_order_relaxed);
+
+    // Update min/max (relaxed, approximate is fine for stats)
+    auto current_min = min_processing_us.load(std::memory_order_relaxed);
+    while (processing_us < current_min &&
+           !min_processing_us.compare_exchange_weak(
+               current_min, processing_us, std::memory_order_relaxed)) {
+    }
+
+    auto current_max = max_processing_us.load(std::memory_order_relaxed);
+    while (processing_us > current_max &&
+           !max_processing_us.compare_exchange_weak(
+               current_max, processing_us, std::memory_order_relaxed)) {
+    }
+  }
+
+  [[nodiscard]] NodeStatistics snapshot(const std::string &name) const {
+    NodeStatistics stats(name);
+    stats.execution_count = execution_count.load(std::memory_order_relaxed);
+    stats.success_count = success_count.load(std::memory_order_relaxed);
+    stats.failure_count = failure_count.load(std::memory_order_relaxed);
+    stats.total_processing_us =
+        total_processing_us.load(std::memory_order_relaxed);
+    stats.min_processing_us = min_processing_us.load(std::memory_order_relaxed);
+    stats.max_processing_us = max_processing_us.load(std::memory_order_relaxed);
+    return stats;
+  }
 
   void reset() {
     execution_count.store(0, std::memory_order_relaxed);
@@ -268,50 +358,6 @@ struct AtomicNodeStatistics {
     min_processing_us.store(std::numeric_limits<std::uint64_t>::max(),
                             std::memory_order_relaxed);
     max_processing_us.store(0, std::memory_order_relaxed);
-    total_input_count.store(0, std::memory_order_relaxed);
-    total_output_count.store(0, std::memory_order_relaxed);
-  }
-
-  void updateMinMax(std::uint64_t processing_us) {
-    std::uint64_t current_min =
-        min_processing_us.load(std::memory_order_relaxed);
-    while (processing_us < current_min) {
-      if (min_processing_us.compare_exchange_weak(current_min, processing_us,
-                                                  std::memory_order_relaxed)) {
-        break;
-      }
-    }
-
-    std::uint64_t current_max =
-        max_processing_us.load(std::memory_order_relaxed);
-    while (processing_us > current_max) {
-      if (max_processing_us.compare_exchange_weak(current_max, processing_us,
-                                                  std::memory_order_relaxed)) {
-        break;
-      }
-    }
-  }
-
-  [[nodiscard]] NodeStatistics snapshot(const std::string &name,
-                                        std::size_t queue_depth = 0) const {
-    NodeStatistics stats(name);
-    stats.execution_count = execution_count.load(std::memory_order_relaxed);
-    stats.success_count = success_count.load(std::memory_order_relaxed);
-    stats.failure_count = failure_count.load(std::memory_order_relaxed);
-    stats.total_processing_us =
-        total_processing_us.load(std::memory_order_relaxed);
-    stats.min_processing_us = min_processing_us.load(std::memory_order_relaxed);
-    stats.max_processing_us = max_processing_us.load(std::memory_order_relaxed);
-    stats.total_input_count = total_input_count.load(std::memory_order_relaxed);
-    stats.total_output_count =
-        total_output_count.load(std::memory_order_relaxed);
-    stats.current_queue_depth = queue_depth;
-
-    if (stats.min_processing_us == std::numeric_limits<std::uint64_t>::max()) {
-      stats.min_processing_us = 0;
-    }
-
-    return stats;
   }
 };
 
@@ -320,26 +366,33 @@ struct AtomicNodeStatistics {
 // ============================================================================
 
 struct EngineStatistics {
+  // Execution counts
   std::atomic<std::uint64_t> total_executions{0};
   std::atomic<std::uint64_t> successful_executions{0};
   std::atomic<std::uint64_t> failed_executions{0};
 
+  // Frame counts
   std::atomic<std::uint64_t> total_input_frames{0};
   std::atomic<std::uint64_t> total_output_frames{0};
   std::atomic<std::uint64_t> total_dropped_frames{0};
 
+  // Queue stats
   std::atomic<std::uint64_t> total_queue_pushes{0};
   std::atomic<std::uint64_t> total_queue_pops{0};
   std::atomic<std::uint64_t> queue_full_events{0};
 
+  // Timing
   std::atomic<std::uint64_t> total_processing_time_us{0};
   std::atomic<std::uint64_t> total_wait_time_us{0};
   std::atomic<std::uint64_t> total_schedule_time_us{0};
 
+  // Latency distribution
   LatencyHistogram latency_histogram;
+
+  // Start time for throughput calculation
   std::chrono::steady_clock::time_point start_time;
 
-  EngineStatistics() { start_time = std::chrono::steady_clock::now(); }
+  EngineStatistics() : start_time(std::chrono::steady_clock::now()) {}
 
   void reset() {
     total_executions.store(0, std::memory_order_relaxed);

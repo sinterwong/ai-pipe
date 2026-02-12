@@ -2,11 +2,13 @@
  * @file pipeline.hpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief High-level Pipeline API for AI Pipe library
- * @version 1.0
+ * @version 2.0
  * @date 2025-12-24
  *
- * This file provides the main user-facing API for building and executing
- * computation pipelines. It supports both batch and streaming execution modes.
+ * v2.0: Unified error handling with Result<T>.
+ *       Pipeline::run() returns Result<ExecutionOutput> instead of
+ *       ExecutionResult. All fallible operations use Result<void>.
+ *       PipelineBuilder::build() returns Result<Pipeline> instead of throwing.
  *
  * @copyright Copyright (c) 2025
  */
@@ -17,16 +19,15 @@
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/data_types.hpp"
 #include "ai_pipe/enum.hpp"
+#include "ai_pipe/error.hpp"
 #include "ai_pipe/execution_types.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_scheduler_strategy.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
-
 #include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -64,16 +65,25 @@ struct PipelineOptions {
   }
 };
 
-struct ExecutionResult {
-  bool success = false;
+// =============================================================================
+// Execution Output (success payload for Pipeline::run())
+// =============================================================================
+
+/**
+ * @brief Output from a successful pipeline execution
+ *
+ * This replaces the old ExecutionResult which mixed success data with error
+ * info. In the new model, Pipeline::run() returns Result<ExecutionOutput>:
+ *   - On success: contains ExecutionOutput with outputs and timing
+ *   - On failure: contains Error with code, message, and node context
+ */
+struct ExecutionOutput {
   PortDataMap outputs;
-  std::string error_message;
   std::chrono::milliseconds elapsed{0};
-  explicit operator bool() const { return success; }
 };
 
 // =============================================================================
-// Pipeline Observer
+// Pipeline Observer (retained for async event notifications)
 // =============================================================================
 
 class IPipelineObserver {
@@ -82,9 +92,26 @@ public:
 
   virtual void onExecutionStarted() {}
   virtual void onExecutionCompleted(const PortDataMap &) {}
-  virtual void onExecutionFailed(const std::string &, const std::string &) {}
+
+  /**
+   * @brief Called when a node execution fails asynchronously
+   * @param error The Error object with full context
+   */
+  virtual void onExecutionFailed(const Error &error) {
+    // Default: delegate to legacy signature for backward compatibility
+    onExecutionFailedLegacy(error.message(), error.nodeName());
+  }
+
   virtual void onFrameDropped(const std::string &, std::uint64_t,
                               const std::string &) {}
+
+protected:
+  /**
+   * @brief Legacy signature for backward compatibility.
+   *        Override onExecutionFailed(const Error&) instead.
+   */
+  virtual void onExecutionFailedLegacy(const std::string &,
+                                       const std::string &) {}
 };
 
 class CallbackObserver : public IPipelineObserver {
@@ -97,8 +124,7 @@ public:
     m_result = std::move(cb);
     return *this;
   }
-  CallbackObserver &
-  onError(std::function<void(const std::string &, const std::string &)> cb) {
+  CallbackObserver &onError(std::function<void(const Error &)> cb) {
     m_error = std::move(cb);
     return *this;
   }
@@ -118,9 +144,9 @@ public:
     if (m_result)
       m_result(r);
   }
-  void onExecutionFailed(const std::string &e, const std::string &n) override {
+  void onExecutionFailed(const Error &e) override {
     if (m_error)
-      m_error(e, n);
+      m_error(e);
   }
   void onFrameDropped(const std::string &n, std::uint64_t f,
                       const std::string &r) override {
@@ -131,7 +157,7 @@ public:
 private:
   std::function<void()> m_start;
   std::function<void(const PortDataMap &)> m_result;
-  std::function<void(const std::string &, const std::string &)> m_error;
+  std::function<void(const Error &)> m_error;
   std::function<void(const std::string &, std::uint64_t, const std::string &)>
       m_drop;
 };
@@ -153,37 +179,62 @@ public:
 
   static PipelineBuilder create();
 
-  // Batch execution
-  ExecutionResult run(const PortDataMap &inputs);
-  ExecutionResult run(const PortDataMap &inputs,
-                      std::chrono::milliseconds timeout);
-  std::future<ExecutionResult> runAsync(const PortDataMap &inputs);
-  bool submit(const PortDataMap &inputs);
+  // ---- Batch execution ----
 
-  // Streaming interface
-  bool start();
-  bool start(std::shared_ptr<PipelineContext> context);
+  /**
+   * @brief Run the pipeline synchronously
+   * @return Result<ExecutionOutput> - outputs+timing on success, Error on
+   * failure
+   */
+  Result<ExecutionOutput> run(const PortDataMap &inputs);
+  Result<ExecutionOutput> run(const PortDataMap &inputs,
+                              std::chrono::milliseconds timeout);
+
+  /**
+   * @brief Run the pipeline asynchronously
+   * @return future that resolves to Result<ExecutionOutput>
+   */
+  std::future<Result<ExecutionOutput>> runAsync(const PortDataMap &inputs);
+
+  /**
+   * @brief Submit inputs for fire-and-forget execution
+   * @return Result<void>
+   */
+  Result<void> submit(const PortDataMap &inputs);
+
+  // ---- Streaming interface ----
+
+  /**
+   * @brief Start streaming mode
+   * @return Result<void> - success or Error with appropriate code
+   */
+  Result<void> start();
+  Result<void> start(std::shared_ptr<PipelineContext> context);
   void stop(bool wait_for_drain = true);
 
-  [[nodiscard]] QueuePushResult pushInput(const std::string &source_node,
-                                          PortDataPtr data);
-  [[nodiscard]] QueuePushResult pushInput(const std::string &source_node,
-                                          const std::string &port_name,
-                                          PortDataPtr data);
+  /**
+   * @brief Push input data for streaming processing
+   * @return Result<PushStatus> - push status on success, Error on rejection
+   */
+  [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
+                                             PortDataPtr data);
+  [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
+                                             const std::string &port_name,
+                                             PortDataPtr data);
 
   [[nodiscard]] bool isStreaming() const;
   [[nodiscard]] std::size_t queueDepth(const std::string &node_name) const;
   [[nodiscard]] bool hasQueueCapacity(const std::string &node_name) const;
-  bool waitForDrain(
+  Result<void> waitForDrain(
       std::size_t max_depth = 0,
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 
-  // Control
+  // ---- Control ----
   void cancel();
   void wait();
   void reset();
 
-  // Status
+  // ---- Status ----
   [[nodiscard]] bool isReady() const;
   [[nodiscard]] bool isRunning() const;
   [[nodiscard]] bool hasError() const;
@@ -194,23 +245,24 @@ public:
   [[nodiscard]] ExecutionMode mode() const;
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
 
-  // Accessors
+  // ---- Accessors ----
   [[nodiscard]] const Graph &graph() const;
   [[nodiscard]] PipelineContext &context();
   [[nodiscard]] const PipelineContext &context() const;
   [[nodiscard]] std::string info() const;
 
-  // Observer management
+  // ---- Observer management ----
   void addObserver(std::shared_ptr<IPipelineObserver> observer);
   void removeObserver(const std::shared_ptr<IPipelineObserver> &observer);
 
 private:
   friend class PipelineBuilder;
 
-  bool initialize(Graph &&graph, std::shared_ptr<PipelineContext> context,
-                  const PipelineOptions &options,
-                  std::unique_ptr<ISchedulerStrategy> scheduler,
-                  std::unique_ptr<ISyncStrategy> sync);
+  Result<void> initialize(Graph &&graph,
+                          std::shared_ptr<PipelineContext> context,
+                          const PipelineOptions &options,
+                          std::unique_ptr<ISchedulerStrategy> scheduler,
+                          std::unique_ptr<ISyncStrategy> sync);
 
   class Impl;
   std::unique_ptr<Impl> m_impl;
@@ -249,18 +301,23 @@ public:
   withSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
   PipelineBuilder &withSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
 
-  // Callbacks
+  // Callbacks (now using Error-aware signatures)
   PipelineBuilder &onResult(std::function<void(const PortDataMap &)> callback);
-  PipelineBuilder &onError(
-      std::function<void(const std::string &, const std::string &)> callback);
+  PipelineBuilder &onError(std::function<void(const Error &)> callback);
   PipelineBuilder &onDrop(std::function<void(const std::string &, std::uint64_t,
                                              const std::string &)>
                               callback);
   PipelineBuilder &withObserver(std::shared_ptr<IPipelineObserver> observer);
 
   // Build
-  Pipeline build();
-  std::optional<Pipeline> tryBuild();
+
+  /**
+   * @brief Build the pipeline
+   * @return Result<Pipeline> - configured Pipeline on success, Error on failure
+   *
+   * Unlike the old build() which threw exceptions, this never throws.
+   */
+  Result<Pipeline> build();
 
 private:
   struct BuilderState;
@@ -271,7 +328,8 @@ private:
 // Convenience Factory Functions
 // =============================================================================
 
-inline Pipeline makeBatchPipeline(Graph graph, std::uint8_t workers = 4) {
+inline Result<Pipeline> makeBatchPipeline(Graph graph,
+                                          std::uint8_t workers = 4) {
   return Pipeline::create()
       .withGraph(std::move(graph))
       .withMode(ExecutionMode::BATCH)
@@ -279,8 +337,9 @@ inline Pipeline makeBatchPipeline(Graph graph, std::uint8_t workers = 4) {
       .build();
 }
 
-inline Pipeline makeStreamPipeline(Graph graph, std::uint8_t workers = 4,
-                                   std::size_t queue_capacity = 16) {
+inline Result<Pipeline> makeStreamPipeline(Graph graph,
+                                           std::uint8_t workers = 4,
+                                           std::size_t queue_capacity = 16) {
   return Pipeline::create()
       .withGraph(std::move(graph))
       .withMode(ExecutionMode::STREAM)
