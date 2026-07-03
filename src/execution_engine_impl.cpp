@@ -1372,9 +1372,13 @@ void ExecutionEngine::Impl::stampIncomingFrame(const PortDataPtr &data) {
   if (!data || data->hasFrameId()) {
     return;
   }
-  data->id = m_nextFrameId.fetch_add(1, std::memory_order_relaxed);
-  if (data->timestamp == Timestamp{}) {
-    data->timestamp = std::chrono::steady_clock::now();
+  // Controlled mutable window: a packet at the injection boundary was
+  // just created by the producer and is not yet visible to any consumer,
+  // so stamping identity here cannot race with readers.
+  auto &packet = const_cast<PortData &>(*data);
+  packet.id = m_nextFrameId.fetch_add(1, std::memory_order_relaxed);
+  if (packet.timestamp == Timestamp{}) {
+    packet.timestamp = std::chrono::steady_clock::now();
   }
 }
 
@@ -1401,10 +1405,14 @@ void ExecutionEngine::Impl::inheritFrameIdentity(const PortDataMap &inputs,
 
   for (auto &[port, packet] : outputs) {
     if (packet && !packet->hasFrameId()) {
-      packet->id = (*primary)->id;
-      packet->stream_id = (*primary)->stream_id;
-      if (packet->timestamp == Timestamp{}) {
-        packet->timestamp = (*primary)->timestamp;
+      // A packet without an id is by construction fresh from this node
+      // (forwarded packets already carry identity), so it has no other
+      // readers yet and the mutable window is safe.
+      auto &fresh = const_cast<PortData &>(*packet);
+      fresh.id = (*primary)->id;
+      fresh.stream_id = (*primary)->stream_id;
+      if (fresh.timestamp == Timestamp{}) {
+        fresh.timestamp = (*primary)->timestamp;
       }
     }
   }

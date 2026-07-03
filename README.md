@@ -78,6 +78,17 @@ The framework provides two primary execution modes — **Batch** for single-pass
 | `ISyncStrategy` | `i_sync_strategy.hpp` | Pluggable frame synchronization interface |
 | `Result<T>` / `Error` | `error.hpp` | Monadic error handling with categorized error codes |
 | `DataPacket` | `data_packet.hpp` | Type-erased key-value data container for inter-node communication |
+
+### Packet Ownership Model
+
+Packets flowing through the graph are **immutable**. Create a packet with
+`std::make_shared<PortData>()` (a `MutablePortDataPtr`), fill it, and hand
+it to the pipeline — from then on every consumer shares the same read-only
+object (`PortDataPtr` is `shared_ptr<const PortData>`), which is what makes
+zero-copy fan-out to parallel branches race-free. A node that needs to
+modify a received packet uses `ai_pipe::mutableCopy(packet)` — an explicit
+copy-on-write escape hatch that leaves the original untouched for sibling
+consumers.
 | `IFrameMetadata` | `frame_metadata.hpp` | Frame identification and multi-stream synchronization |
 | `LockFreeQueue` | `lock_free_queue.hpp` | Bounded MPMC queue with drop policy support |
 | `WorkStealingThreadPool` | `work_stealing_thread_pool.hpp` | High-performance thread pool with work stealing |

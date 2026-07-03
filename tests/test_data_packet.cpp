@@ -8,9 +8,11 @@
  * @copyright Copyright (c) 2026
  */
 #include "ai_pipe/data_packet.hpp"
+#include "ai_pipe/data_types.hpp"
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 using namespace ai_pipe::common_utils;
 
@@ -127,3 +129,40 @@ TEST(TypedParamTest, TryGetOnMissing) {
 }
 
 } // namespace ai_pipe_unit_test::data_packet
+
+// =============================================================================
+// Ownership model (P3.3)
+// =============================================================================
+
+// Packets flowing through the graph are immutable by type
+static_assert(
+    std::is_same_v<ai_pipe::PortDataPtr,
+                   std::shared_ptr<const ai_pipe::PortData>>,
+    "PortDataPtr must be a shared_ptr to const PortData");
+static_assert(
+    std::is_same_v<ai_pipe::MutablePortDataPtr,
+                   std::shared_ptr<ai_pipe::PortData>>,
+    "MutablePortDataPtr must be the mutable creation-side handle");
+
+TEST(OwnershipModelTest, MutableCopyIsIndependent) {
+  auto original = std::make_shared<ai_pipe::PortData>();
+  original->id = 42;
+  original->stream_id = 3;
+  original->setParam("value", 10);
+
+  ai_pipe::PortDataPtr received = original; // hand-off: now immutable
+
+  auto copy = ai_pipe::mutableCopy(received);
+  ASSERT_NE(copy, nullptr);
+  EXPECT_EQ(copy->id, 42u);
+  EXPECT_EQ(copy->stream_id, 3u);
+  EXPECT_EQ(copy->getParam<int>("value"), 10);
+
+  copy->setParam("value", 99);
+  EXPECT_EQ(copy->getParam<int>("value"), 99);
+  EXPECT_EQ(received->getParam<int>("value"), 10) << "original must be intact";
+}
+
+TEST(OwnershipModelTest, MutableCopyOfNullIsNull) {
+  EXPECT_EQ(ai_pipe::mutableCopy(nullptr), nullptr);
+}
