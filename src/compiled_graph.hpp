@@ -34,6 +34,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace ai_pipe {
@@ -60,6 +61,8 @@ public:
    * @return CompiledGraph on success, or Error with:
    *   - GraphEmpty: graph has no nodes
    *   - GraphCycleDetected: graph contains a cycle
+   *   - InvalidConfiguration: a non-source node declares an input port
+   *     with no incoming edge (it could never become schedulable)
    */
   static Result<CompiledGraph> compile(const Graph &graph) {
     CompiledGraph cg;
@@ -139,6 +142,32 @@ public:
       }
       if (cg.m_outEdges[i].empty()) {
         cg.m_sinkNodes.push_back(i);
+      }
+    }
+
+    // Connectivity validation: a node that has upstream edges only
+    // executes when ALL of its declared input ports hold data, so any
+    // unconnected declared port would starve it forever. Source nodes
+    // (in-degree 0) are exempt - their ports are fed externally via
+    // pushInput / initial inputs.
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      if (cg.m_inDegree[i] == 0) {
+        continue;
+      }
+      std::unordered_set<std::string> covered;
+      for (const auto &edge : graph.getEdges()) {
+        if (cg.indexOfPtr(edge.dest_node.get()) == i) {
+          covered.insert(edge.dest_port);
+        }
+      }
+      for (const auto &port : nodes[i]->getExpectedInputPorts()) {
+        if (covered.find(port) == covered.end()) {
+          return Result<CompiledGraph>::err(
+              ErrorCode::InvalidConfiguration,
+              "Input port '" + port + "' of node '" + nodes[i]->getName() +
+                  "' has no incoming edge; the node could never execute",
+              nodes[i]->getName());
+        }
       }
     }
 
