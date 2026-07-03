@@ -732,6 +732,40 @@ TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
   EXPECT_GE(drop_count.load(), 0);
 }
 
+TEST_F(ExecutionEngineTest, StreamingNodeRecoversAfterFailure) {
+  // P4.5: in streaming mode a node exception must not permanently
+  // disable the node - subsequent frames keep flowing.
+  auto failable = std::make_shared<FailableNode>("failable");
+  auto sink = std::make_shared<SinkNode>("sink");
+  m_graph->addNode(failable);
+  m_graph->addNode(sink);
+  m_graph->addEdge("failable", "output", "sink", "input");
+
+  auto engine = createStreamEngine(2, 16);
+  engine->initialize(m_graph.get());
+  EXPECT_TRUE(engine->startStreaming().isOk());
+
+  // Healthy frame
+  ASSERT_TRUE(engine->pushInput("failable", createData(1)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+
+  // Failing frame (consumed, error recorded, node returns to service)
+  failable->setShouldFail(true);
+  ASSERT_TRUE(engine->pushInput("failable", createData(2)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+  failable->setShouldFail(false);
+
+  // Node must process frames again after the failure
+  ASSERT_TRUE(engine->pushInput("failable", createData(3)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+
+  engine->stopStreaming(false);
+
+  EXPECT_EQ(failable->processCount(), 3);
+  ASSERT_EQ(sink->getReceivedData().size(), 2u); // frames 1 and 3
+  EXPECT_EQ(engine->statistics().failed_executions, 1u);
+}
+
 TEST_F(ExecutionEngineTest, FrameIdentityAssignedAndInherited) {
   // P3.4: packets entering without an id get a monotonic FrameId; fresh
   // output packets inherit the identity of the inputs that produced them.

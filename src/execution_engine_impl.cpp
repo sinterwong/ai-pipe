@@ -1357,17 +1357,27 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
                                               const Error &error) {
   auto &state = m_nodeStates[node];
 
-  state->exec_state.store(NodeExecutionState::FAILED,
-                          std::memory_order_release);
-
   m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
 
   LOG_ERROR_S << "ExecutionEngine: Node " << state->name
               << " FAILED: " << error.toString();
 
-  if (!isStreaming()) {
-    stopExecutionAsync();
+  if (isStreaming()) {
+    // Streaming semantics: a node exception is a per-frame event, not a
+    // pipeline-fatal one. The failing frame was already consumed from
+    // the queues, so return the node to service for subsequent frames -
+    // previously it stayed FAILED forever and stranded its queued data.
+    // (Error visibility is preserved: statistics, logs, and the error
+    // callback fired from processNode.)
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
+    tryScheduleNode(node);
+    return;
   }
+
+  state->exec_state.store(NodeExecutionState::FAILED,
+                          std::memory_order_release);
+  stopExecutionAsync();
 }
 
 void ExecutionEngine::Impl::checkCompletionAndNotify() {
