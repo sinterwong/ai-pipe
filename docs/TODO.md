@@ -14,7 +14,7 @@
 
 - [x] **P0.1** 修复 `pushToQueue` 静默丢数据：处理 `push()` 返回值，DropTail 拒绝时向上传播 `QueueRejected`，补计统计与回调
 - [x] **P0.2** 修复 `m_currentContext` 数据竞争（随任务值捕获传递或原子化）
-- [ ] **P0.3** 删除 `ExecutionEngine::Impl` 的移动构造/赋值（`unique_ptr<Impl>` 已提供引擎级移动），消除在途任务悬垂指针风险
+- [x] **P0.3** 删除 `ExecutionEngine::Impl` 的移动构造/赋值（`unique_ptr<Impl>` 已提供引擎级移动），消除在途任务悬垂指针风险
 - [ ] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
 - [ ] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）
 - [ ] **P0.6** 文档诚实化：删除/标注未实现的直方图、percentile、per-node stats、同步丢帧宣称；统一版本号

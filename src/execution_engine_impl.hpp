@@ -66,8 +66,14 @@ public:
   explicit Impl(const EngineConfig &config);
   ~Impl();
 
-  Impl(Impl &&other) noexcept;
-  Impl &operator=(Impl &&other) noexcept;
+  // Neither copyable nor movable: worker tasks capture `this`, so the Impl
+  // address must stay stable for the engine's lifetime. ExecutionEngine's
+  // move semantics come from moving the unique_ptr<Impl>, which never
+  // relocates the Impl object itself.
+  Impl(const Impl &) = delete;
+  Impl &operator=(const Impl &) = delete;
+  Impl(Impl &&) = delete;
+  Impl &operator=(Impl &&) = delete;
 
   Result<void>
   setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
