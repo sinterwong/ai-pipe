@@ -658,3 +658,73 @@ TEST_F(GraphTest, MultipleSourcesAndSinks) {
 }
 
 TEST_F(GraphTest, AddNullNodeFails) { EXPECT_FALSE(m_graph->addNode(nullptr)); }
+
+// =============================================================================
+// Port Payload Type Validation Tests (P3.2)
+// =============================================================================
+
+namespace {
+
+/// Node declaring concrete payload types on its ports
+template <typename OutT, typename InT> class TypedNode : public ILogicNode {
+public:
+  explicit TypedNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext>) override {}
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {"output"};
+  }
+
+  std::type_index portPayloadType(const std::string &port) const override {
+    if (port == "output") {
+      return typeid(OutT);
+    }
+    if (port == "input") {
+      return typeid(InT);
+    }
+    return typeid(void);
+  }
+};
+
+} // namespace
+
+class GraphPortTypeTest : public ::testing::Test {
+protected:
+  Graph m_graph;
+};
+
+TEST_F(GraphPortTypeTest, MatchingTypesConnect) {
+  m_graph.addNode(std::make_shared<TypedNode<int, void>>("producer"));
+  m_graph.addNode(std::make_shared<TypedNode<void, int>>("consumer"));
+
+  EXPECT_TRUE(m_graph.addEdge("producer", "output", "consumer", "input"));
+}
+
+TEST_F(GraphPortTypeTest, MismatchedTypesRejected) {
+  m_graph.addNode(std::make_shared<TypedNode<int, void>>("producer"));
+  m_graph.addNode(std::make_shared<TypedNode<void, double>>("consumer"));
+
+  EXPECT_FALSE(m_graph.addEdge("producer", "output", "consumer", "input"));
+  EXPECT_TRUE(m_graph.getEdges().empty());
+}
+
+TEST_F(GraphPortTypeTest, UntypedEndpointAlwaysConnects) {
+  // producer declares int output; consumer leaves input untyped (void)
+  m_graph.addNode(std::make_shared<TypedNode<int, void>>("producer"));
+  m_graph.addNode(std::make_shared<TypedNode<void, void>>("consumer"));
+
+  EXPECT_TRUE(m_graph.addEdge("producer", "output", "consumer", "input"));
+}
+
+TEST_F(GraphPortTypeTest, LegacyNodesUnaffected) {
+  // MockNode does not override portPayloadType -> fully untyped
+  m_graph.addNode(std::make_shared<MockNode>("a"));
+  m_graph.addNode(std::make_shared<MockNode>("b"));
+
+  EXPECT_TRUE(m_graph.addEdge("a", "out", "b", "in"));
+}
