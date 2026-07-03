@@ -729,6 +729,14 @@ TEST_F(GraphPortTypeTest, UntypedEndpointAlwaysConnects) {
   EXPECT_TRUE(m_graph.addEdge("producer", "output", "consumer", "input"));
 }
 
+TEST_F(GraphPortTypeTest, NullNodeDegreeQueriesDoNotThrow) {
+  // P6.5: Graph no longer throws; null queries degrade to 0 with a log.
+  EXPECT_NO_THROW({
+    EXPECT_EQ(m_graph.getInDegree(nullptr), 0);
+    EXPECT_EQ(m_graph.getOutDegree(nullptr), 0);
+  });
+}
+
 TEST_F(GraphPortTypeTest, LegacyNodesUnaffected) {
   // MockNode does not override portPayloadType -> fully untyped
   m_graph.addNode(std::make_shared<MockNode>("a"));

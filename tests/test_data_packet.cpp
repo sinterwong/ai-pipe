@@ -70,6 +70,34 @@ TEST(DataPacketTest, OptionalParamSemantics) {
                std::runtime_error);
 }
 
+TEST(DataPacketTest, ResultStyleParamAccess) {
+  DataPacket packet;
+  packet.setParam("count", 42);
+
+  auto ok = packet.param<int>("count");
+  ASSERT_TRUE(ok.isOk());
+  EXPECT_EQ(ok.value(), 42);
+
+  auto missing = packet.param<int>("absent");
+  ASSERT_FALSE(missing.isOk());
+  EXPECT_EQ(missing.errorCode(), ai_pipe::ErrorCode::InvalidArgument);
+
+  auto mismatch = packet.param<std::string>("count");
+  ASSERT_FALSE(mismatch.isOk());
+  EXPECT_EQ(mismatch.errorCode(), ai_pipe::ErrorCode::InvalidArgument);
+}
+
+TEST(TypedParamTest, ResultStyleRead) {
+  const TypedParam<int> k_count{"count"};
+  DataPacket packet;
+
+  EXPECT_FALSE(k_count.read(packet).isOk());
+  k_count.set(packet, 5);
+  auto result = k_count.read(packet);
+  ASSERT_TRUE(result.isOk());
+  EXPECT_EQ(result.value(), 5);
+}
+
 TEST(DataPacketTest, HasVariants) {
   DataPacket packet;
   packet.setParam("count", 42);

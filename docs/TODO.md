@@ -70,7 +70,7 @@
 - [x] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
 - [x] **P6.3** CMake 现代化：库目标 -Wall -Wextra -Wpedantic（修净全部告警）+ AI_PIPE_WERROR 选项、CMakePresets.json（debug/release/asan/tsan/static）、BUILD_SHARED_LIBS 显式化（静态构建验证通过）、CI 扩展 GCC-13+Clang-18 矩阵与 static+Werror job；sanitizer 选项已在 P0.5
 - [x] **P6.4** clang-format 入 CI 为硬门禁（pin 22.1.5，全库一次性归一化 146 处漂移）；clang-tidy 入 CI 为咨询 job（发现分诊后转门禁）；补齐全部空 Doxygen @brief。枚举/成员命名统一评估后不做：公共枚举值改名属破坏性变更，收益不抵（记录于此）
-- [ ] **P6.5** 错误处理单轨收尾：`Graph` 异常改 `Result`，`DataPacket` 提供 `Result` 风格取参
+- [x] **P6.5** 错误处理单轨收尾：`Graph` 度查询去异常（null 降级为 0+日志）；`DataPacket::param<T>()` 与 `TypedParam::read()` 提供全程无异常的 Result 取参（any_cast 指针形式）；`getParam` 抛异常版保留兼容
 - [ ] **P6.6** 文档重写：设计文档与实现对齐，新增节点开发指南与迁移指南，建立 CHANGELOG
 
 ---

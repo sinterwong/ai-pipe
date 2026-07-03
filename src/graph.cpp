@@ -148,32 +148,29 @@ const std::vector<Edge> &Graph::getEdges() const { return m_edges; }
 
 int Graph::getInDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
-    LOG_ERROR_S << "Node is null";
-    throw std::runtime_error("Node is null");
+    LOG_ERROR_S << "getInDegree called with null node";
+    return 0;
   }
   auto it = m_inDegree.find(node);
   if (it != m_inDegree.end()) {
     return it->second;
-  } else {
-    LOG_WARNING_S << "Node " << node->getName() << " not found in inDegree map";
-    return 0;
   }
+  LOG_WARNING_S << "Node " << node->getName() << " not found in inDegree map";
   return 0;
 }
 
 int Graph::getOutDegree(const std::shared_ptr<ILogicNode> &node) const {
   if (!node) {
-    LOG_ERROR_S << "Node is null";
-    throw std::runtime_error("Node is null");
+    LOG_ERROR_S << "getOutDegree called with null node";
+    return 0;
   }
   auto it = m_adjListOut.find(node);
   if (it != m_adjListOut.end()) {
-    return it->second.size();
-  } else {
-    LOG_WARNING_S << "Node " << node->getName()
-                  << " not found in m_adjListOut map";
-    return 0;
+    return static_cast<int>(it->second.size());
   }
+  LOG_WARNING_S << "Node " << node->getName()
+                << " not found in m_adjListOut map";
+  return 0;
 }
 
 const std::vector<std::shared_ptr<ILogicNode>> &
