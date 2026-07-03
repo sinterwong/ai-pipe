@@ -11,7 +11,6 @@
  *   3. Result<T> (success/error, value access, copy, move, valueOr)
  *   4. Result<void> specialization
  *   5. PushStatus (outcome, factories)
- *   6. QueuePushResult backward-compat & toResult()
  *   7. EngineConfig / PipelineOptions factory methods
  *   8. ExecutionOutput structure
  *   9. IPipelineObserver / CallbackObserver dispatch
@@ -428,41 +427,6 @@ TEST_F(PushStatusTest, InsideResultError) {
   auto r = Result<PushStatus>::err(ErrorCode::NodeNotFound, "no such node");
   EXPECT_FALSE(r);
   EXPECT_EQ(r.errorCode(), ErrorCode::NodeNotFound);
-}
-
-class QueuePushResultCompatTest : public ::testing::Test {};
-
-TEST_F(QueuePushResultCompatTest, SuccessToResult) {
-  auto legacy = QueuePushResult::success(10);
-  EXPECT_TRUE(legacy.isOk());
-  EXPECT_TRUE(static_cast<bool>(legacy));
-
-  auto result = legacy.toResult();
-  EXPECT_TRUE(result);
-  EXPECT_FALSE(result.value().isDropped());
-  EXPECT_EQ(result.value().queue_size, 10u);
-}
-
-TEST_F(QueuePushResultCompatTest, DroppedToResult) {
-  auto legacy = QueuePushResult::dropped("backpressure", 16);
-  EXPECT_TRUE(legacy.isOk());
-  EXPECT_TRUE(legacy.isDropped());
-
-  auto result = legacy.toResult();
-  EXPECT_TRUE(result);
-  EXPECT_TRUE(result.value().isDropped());
-  EXPECT_EQ(result.value().queue_size, 16u);
-}
-
-TEST_F(QueuePushResultCompatTest, RejectedToResult) {
-  auto legacy = QueuePushResult::rejected("not streaming", 0);
-  EXPECT_FALSE(legacy.isOk());
-  EXPECT_FALSE(static_cast<bool>(legacy));
-
-  auto result = legacy.toResult();
-  EXPECT_FALSE(result);
-  EXPECT_EQ(result.errorCode(), ErrorCode::QueueRejected);
-  EXPECT_NE(result.errorMessage().find("not streaming"), std::string::npos);
 }
 
 class ConfigTest : public ::testing::Test {};
@@ -882,7 +846,6 @@ TEST_F(EdgeCaseTest, AllTypesCompile) {
   [[maybe_unused]] ExecutionMode em = ExecutionMode::BATCH;
   [[maybe_unused]] QueueConfig qc;
   [[maybe_unused]] PushStatus ps;
-  [[maybe_unused]] QueuePushResult qpr;
   [[maybe_unused]] EngineConfig cfg;
   [[maybe_unused]] LatencyHistogram hist;
   [[maybe_unused]] NodeStatistics ns;

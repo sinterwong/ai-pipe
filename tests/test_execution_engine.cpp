@@ -1111,29 +1111,6 @@ TEST_F(ExecutionEngineTest, SingleNodeGraph) {
 }
 
 // =============================================================================
-// QueuePushResult Tests
-// =============================================================================
-
-TEST_F(ExecutionEngineTest, QueuePushResultStatus) {
-  auto success = QueuePushResult::success(5);
-  EXPECT_EQ(success.status, QueuePushResult::Status::Enqueued);
-  EXPECT_TRUE(success.isOk());
-  EXPECT_FALSE(success.isDropped());
-  EXPECT_TRUE(static_cast<bool>(success));
-
-  auto dropped = QueuePushResult::dropped("queue full", 10);
-  EXPECT_EQ(dropped.status, QueuePushResult::Status::Dropped);
-  EXPECT_TRUE(dropped.isOk()); // Dropped is still "ok" (not rejected)
-  EXPECT_TRUE(dropped.isDropped());
-
-  auto rejected = QueuePushResult::rejected("not streaming", 0);
-  EXPECT_EQ(rejected.status, QueuePushResult::Status::Rejected);
-  EXPECT_FALSE(rejected.isOk());
-  EXPECT_FALSE(rejected.isDropped());
-  EXPECT_FALSE(static_cast<bool>(rejected));
-}
-
-// =============================================================================
 // Engine Configuration Tests
 // =============================================================================
 
