@@ -25,7 +25,7 @@
 
 - [x] **P1.1** 引入 `CompiledGraph`：节点/端口索引化（`NodeId`/`PortId`），预计算邻接表、入度、拓扑序、sink/source 集合、边路由表
 - [x] **P1.2** 环检测改迭代实现，`ExecutionEngine::initialize` 强制校验（返回 `GraphCycleDetected`）
-- [ ] **P1.3** `propagateOutputs`/`routeToDownstream` 改用预编译路由表，消除热路径 O(E) 扫描
+- [x] **P1.3** `propagateOutputs`/`routeToDownstream` 改用预编译路由表，消除热路径 O(E) 扫描
 - [ ] **P1.4** `addEdge` 重复检查改哈希集合；`Graph` 内部映射以 `NodeId` 为 key
 - [ ] **P1.5** 新增 propagate/schedule 微基准，Phase 1 前后对比数据写入 `docs/Performance_Report.md`
 

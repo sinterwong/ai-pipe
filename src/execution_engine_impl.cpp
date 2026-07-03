@@ -813,12 +813,11 @@ void ExecutionEngine::Impl::initializeQueues() {
 
 void ExecutionEngine::Impl::identifySinkNodes() {
   m_sinkNodes.clear();
-  for (const auto &node : m_graph->getNodes()) {
-    if (m_graph->getOutDegree(node) == 0) {
-      m_sinkNodes.push_back(node);
-      LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
-                  << node->getName();
-    }
+  for (const auto index : m_compiledGraph->sinkNodes()) {
+    const auto &node = m_compiledGraph->node(index);
+    m_sinkNodes.push_back(node);
+    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
+                << node->getName();
   }
 }
 
@@ -862,11 +861,8 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
     const PortDataMap &initial_inputs) {
   bool has_scheduled = false;
 
-  for (const auto &node : m_graph->getNodes()) {
-    const bool is_source = m_graph->getInDegree(node) == 0;
-    if (!is_source) {
-      continue;
-    }
+  for (const auto source_index : m_compiledGraph->sourceNodes()) {
+    const auto &node = m_compiledGraph->node(source_index);
 
     const auto &expected_ports = node->getExpectedInputPorts();
     const bool has_input = initial_inputs.count(node->getName()) > 0;
@@ -1131,16 +1127,19 @@ void ExecutionEngine::Impl::propagateOutputs(const NodePtr &source,
     return;
   }
 
-  const auto outgoing_edges = m_graph->getOutgoingEdges(source);
+  const auto src_index = m_compiledGraph->indexOfPtr(source.get());
+  if (src_index == CompiledGraph::k_invalid_index) {
+    return;
+  }
 
-  for (const auto &edge : outgoing_edges) {
+  for (const auto &edge : m_compiledGraph->outEdges(src_index)) {
     auto output_it = outputs.find(edge.source_port);
     if (output_it == outputs.end()) {
       continue;
     }
 
     const auto &data = output_it->second;
-    const auto &dest_node = edge.dest_node;
+    const auto &dest_node = m_compiledGraph->node(edge.dest_node);
     const auto &dest_port = edge.dest_port;
 
     if (!pushToQueue(dest_node, dest_port, data)) {
@@ -1416,12 +1415,15 @@ ExecutionEngine::Impl::getQueueSize(const NodePtr &node,
 // -------------------------------------------------------------------------
 
 bool ExecutionEngine::Impl::isSourceNode(const NodePtr &node) const {
-  return m_graph->getInDegree(node) == 0;
+  const auto index = m_compiledGraph->indexOfPtr(node.get());
+  return index != CompiledGraph::k_invalid_index &&
+         m_compiledGraph->isSource(index);
 }
 
 bool ExecutionEngine::Impl::isSinkNode(const NodePtr &node) const {
-  return std::find(m_sinkNodes.begin(), m_sinkNodes.end(), node) !=
-         m_sinkNodes.end();
+  const auto index = m_compiledGraph->indexOfPtr(node.get());
+  return index != CompiledGraph::k_invalid_index &&
+         m_compiledGraph->isSink(index);
 }
 
 void ExecutionEngine::Impl::collectResults(const NodePtr &node,
@@ -1477,18 +1479,21 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
                                          const std::string &output_port,
                                          PortDataPtr data) {
 
-  const auto &outgoing_edges = m_graph->getOutgoingEdges(source_node);
+  const auto src_index = m_compiledGraph->indexOfPtr(source_node.get());
+  if (src_index == CompiledGraph::k_invalid_index) {
+    return Result<PushStatus>::err(Error::nodeNotFound(source_node->getName()));
+  }
 
   std::size_t routed_count = 0;
   std::size_t rejected_count = 0;
   std::size_t total_queue_size = 0;
 
-  for (const auto &edge : outgoing_edges) {
+  for (const auto &edge : m_compiledGraph->outEdges(src_index)) {
     if (edge.source_port != output_port) {
       continue;
     }
 
-    const auto &dest_node = edge.dest_node;
+    const auto &dest_node = m_compiledGraph->node(edge.dest_node);
     const auto &dest_port = edge.dest_port;
 
     PortDataPtr data_copy = data;
