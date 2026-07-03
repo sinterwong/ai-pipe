@@ -61,3 +61,55 @@ jobs:
     - name: Run GTests
       working-directory: ${{ steps.strings.outputs.install-dir }}
       run: ./tests/ai_pipe_tests --gtest_filter=*.*
+
+  sanitize:
+    runs-on: ubuntu-24.04
+    # TODO(P2.6): drop continue-on-error once TSan findings are fixed,
+    # making sanitizers a required gate.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread]
+
+    env:
+      CC: gcc-13
+      CXX: g++-13
+      ASAN_OPTIONS: detect_leaks=1
+      TSAN_OPTIONS: second_deadlock_stack=1
+      UBSAN_OPTIONS: print_stacktrace=1
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+          lfs: true
+
+    - name: Install GCC 13
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-13 g++-13
+
+    # gcc-13 libtsan aborts with "unexpected memory mapping" on kernels
+    # with 32-bit mmap ASLR entropy; reduce it for the TSan run.
+    - name: Reduce ASLR entropy for ThreadSanitizer
+      if: matrix.sanitizer == 'thread'
+      run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+    - name: Configure CMake
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_SANITIZER=${{ matrix.sanitizer }}
+        -S ${{ github.workspace }}
+
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build -j
+
+    - name: Run GTests (${{ matrix.sanitizer }} sanitizer)
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        export LD_LIBRARY_PATH=${{ github.workspace }}/build/x86_64/lib:$LD_LIBRARY_PATH
+        ./x86_64/bin/tests/ai_pipe_tests

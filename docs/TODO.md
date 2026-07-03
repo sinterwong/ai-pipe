@@ -16,7 +16,7 @@
 - [x] **P0.2** 修复 `m_currentContext` 数据竞争（随任务值捕获传递或原子化）
 - [x] **P0.3** 删除 `ExecutionEngine::Impl` 的移动构造/赋值（`unique_ptr<Impl>` 已提供引擎级移动），消除在途任务悬垂指针风险
 - [x] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
-- [ ] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）
+- [x] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）
 - [x] **P0.6** 文档诚实化：删除/标注未实现的直方图、percentile、per-node stats、同步丢帧宣称；统一版本号
 - [ ] **P0.7** 仓库卫生：`install/` 移出版本控制，处置未跟踪的 `3rdparty/logger`，清理 build 内无关产物
 - [ ] **P0.8** 移除已弃用的 `QueuePushResult` 与遗留 `thread_pool.hpp`（迁移其测试）
@@ -36,7 +36,10 @@
 - [ ] **P2.3** `waitForDrain`/`stopStreaming`/`stopExecutionSync` 条件变量化，删除轮询
 - [ ] **P2.4** `SchedulingContext` 瘦身：端口就绪状态用位掩码，减少热路径字符串拷贝
 - [ ] **P2.5** 每节点调度状态机审查：单原子 CAS 状态机替代 "atomic + per-node mutex" 双保险
-- [ ] **P2.6** TSan 转为 CI 门禁
+- [ ] **P2.6** TSan 转为 CI 门禁。P0.5 摸底发现的已知竞争（22 处 data race）：
+  - `WorkStealingThreadPool`：worker 线程在构造期间读 `m_workers.size()`，与 `initialize()` 继续 emplace 的写并发（17 处）
+  - `ExecutionEngine::Impl::resetInternalState` 与在途任务并发（4 处）
+  - 若干 mutex 生命周期告警（5 处）
 
 ## Phase 3 — 数据平面：类型安全与所有权
 
