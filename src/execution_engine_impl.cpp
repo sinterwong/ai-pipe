@@ -196,6 +196,9 @@ ExecutionEngine::Impl::~Impl() {
   if (m_threadPool && m_threadPool->isRunning()) {
     m_threadPool->shutdown(false);
   }
+
+  // Safe now: no worker can touch nodes anymore.
+  teardownNodes();
 }
 
 // -------------------------------------------------------------------------
@@ -262,6 +265,9 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   }
 
   std::lock_guard<std::mutex> lock(m_engineMutex);
+
+  // Re-initialization with a new graph: release the previous nodes.
+  teardownNodes();
 
   // Compile the graph up front: rejects empty graphs and cycles, and
   // precomputes the routing/topology data the execution paths rely on.
@@ -372,6 +378,13 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
 
     LOG_TRACE_S << "ExecutionEngine: Starting execution.";
 
+    auto setup_result = setupNodes(m_currentContext.load());
+    if (!setup_result) {
+      m_engineState.store(EngineState::ERROR, std::memory_order_release);
+      m_currentContext.store(nullptr);
+      return setup_result;
+    }
+
     resetInternalState();
     m_engineState.store(EngineState::RUNNING, std::memory_order_release);
   }
@@ -462,6 +475,8 @@ void ExecutionEngine::Impl::reset() {
     m_syncStrategy->reset();
   }
 
+  teardownNodes();
+
   m_accumulatedResults.clear();
   m_activeTasks.store(0, std::memory_order_relaxed);
   m_stopFlag.store(false, std::memory_order_relaxed);
@@ -529,6 +544,11 @@ Result<void> ExecutionEngine::Impl::startStreaming(
     return Result<void>::err(
         ErrorCode::StreamingNotSupported,
         "Current scheduler strategy does not support streaming mode");
+  }
+
+  auto setup_result = setupNodes(context);
+  if (!setup_result) {
+    return setup_result;
   }
 
   m_currentContext.store(std::move(context));
@@ -610,10 +630,9 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   if (isInputPort(node, actual_port)) {
     stampIncomingFrame(data);
     if (!pushToQueue(node, actual_port, std::move(data))) {
-      return Result<PushStatus>::err(ErrorCode::QueueRejected,
-                                     "Queue full (DropTail) on port: " +
-                                         actual_port,
-                                     source_node);
+      return Result<PushStatus>::err(
+          ErrorCode::QueueRejected,
+          "Queue full (DropTail) on port: " + actual_port, source_node);
     }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
@@ -744,7 +763,9 @@ bool ExecutionEngine::Impl::allQueuesDrained(std::size_t max_depth) const {
 }
 
 void ExecutionEngine::Impl::notifyCompletionWaiters() {
-  { std::lock_guard<std::mutex> lock(m_completionMutex); }
+  {
+    std::lock_guard<std::mutex> lock(m_completionMutex);
+  }
   m_completionCV.notify_all();
 }
 
@@ -796,6 +817,51 @@ std::string ExecutionEngine::Impl::strategyInfo() const {
 // -------------------------------------------------------------------------
 // Impl: Initialization Helpers
 // -------------------------------------------------------------------------
+
+Result<void> ExecutionEngine::Impl::setupNodes(
+    const std::shared_ptr<PipelineContext> &context) {
+  if (!m_setUpNodes.empty()) {
+    return Result<void>::ok(); // Already set up
+  }
+
+  for (const auto index : m_compiledGraph->topologicalOrder()) {
+    const auto &node = m_compiledGraph->node(index);
+    Result<void> result = Result<void>::ok();
+    try {
+      result = node->setup(context);
+    } catch (const std::exception &e) {
+      result = Result<void>::err(Error::nodeException(
+          std::string("setup threw: ") + e.what(), node->getName()));
+    } catch (...) {
+      result = Result<void>::err(Error(ErrorCode::NodeUnknownException,
+                                       "setup threw unknown exception",
+                                       node->getName()));
+    }
+
+    if (!result) {
+      LOG_ERROR_S << "ExecutionEngine: setup failed for " << node->getName()
+                  << ": " << result.error().toString();
+      teardownNodes();
+      return result;
+    }
+    m_setUpNodes.push_back(node);
+  }
+
+  LOG_DEBUG_S << "ExecutionEngine: " << m_setUpNodes.size() << " nodes set up.";
+  return Result<void>::ok();
+}
+
+void ExecutionEngine::Impl::teardownNodes() noexcept {
+  for (auto it = m_setUpNodes.rbegin(); it != m_setUpNodes.rend(); ++it) {
+    try {
+      (*it)->teardown();
+    } catch (...) {
+      // teardown() is contractually noexcept; guard against rogue nodes.
+      LOG_ERROR_S << "ExecutionEngine: teardown threw for " << (*it)->getName();
+    }
+  }
+  m_setUpNodes.clear();
+}
 
 void ExecutionEngine::Impl::initializeNodeStates() {
   m_nodeStates.clear();
@@ -858,8 +924,7 @@ void ExecutionEngine::Impl::identifySinkNodes() {
   for (const auto index : m_compiledGraph->sinkNodes()) {
     const auto &node = m_compiledGraph->node(index);
     m_sinkNodes.push_back(node);
-    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
-                << node->getName();
+    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: " << node->getName();
   }
 }
 
@@ -926,8 +991,7 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
                       << node->getName() << ":" << target_port;
           return false;
         }
-        m_statistics.total_input_frames.fetch_add(1,
-                                                   std::memory_order_relaxed);
+        m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -1301,8 +1365,8 @@ void ExecutionEngine::Impl::recordDequeue(const PortDataPtr &data) {
                          std::chrono::steady_clock::now() - data->timestamp)
                          .count();
     if (age > 0) {
-      m_statistics.total_wait_time_us.fetch_add(
-          static_cast<std::uint64_t>(age), std::memory_order_relaxed);
+      m_statistics.total_wait_time_us.fetch_add(static_cast<std::uint64_t>(age),
+                                                std::memory_order_relaxed);
     }
   }
 }
@@ -1406,7 +1470,6 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
     m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
-
 
   // Propagate outputs
   propagateOutputs(node, outputs);
@@ -1810,12 +1873,11 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   }
 
   if (rejected_count > 0) {
-    return PushStatus::dropped("rejected on " +
-                                   std::to_string(rejected_count) + " of " +
-                                   std::to_string(routed_count +
-                                                  rejected_count) +
-                                   " downstream branches",
-                               total_queue_size);
+    return PushStatus::dropped(
+        "rejected on " + std::to_string(rejected_count) + " of " +
+            std::to_string(routed_count + rejected_count) +
+            " downstream branches",
+        total_queue_size);
   }
 
   return PushStatus::enqueued(total_queue_size);

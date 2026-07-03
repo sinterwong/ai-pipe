@@ -28,6 +28,19 @@ add_library(ai_pipe
 
 add_library(ai_pipe::ai_pipe ALIAS ai_pipe)
 
+# Warnings: apply to our code only (never to 3rdparty)
+if(MSVC)
+    target_compile_options(ai_pipe PRIVATE /W4)
+    if(AI_PIPE_WERROR)
+        target_compile_options(ai_pipe PRIVATE /WX)
+    endif()
+else()
+    target_compile_options(ai_pipe PRIVATE -Wall -Wextra -Wpedantic)
+    if(AI_PIPE_WERROR)
+        target_compile_options(ai_pipe PRIVATE -Werror)
+    endif()
+endif()
+
 # Set target properties
 set_target_properties(ai_pipe PROPERTIES
     VERSION ${PROJECT_VERSION}

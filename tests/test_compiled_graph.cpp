@@ -24,15 +24,14 @@ protected:
     m_graph.addNode(std::make_shared<PassThroughNode>(name));
   }
 
-  void addJoin(const std::string &name,
-               const std::vector<std::string> &ports) {
+  void addJoin(const std::string &name, const std::vector<std::string> &ports) {
     m_graph.addNode(std::make_shared<JoinNode>(name, ports));
   }
 
   static std::size_t positionOf(const std::vector<NodeIndex> &order,
                                 NodeIndex idx) {
-    return static_cast<std::size_t>(
-        std::find(order.begin(), order.end(), idx) - order.begin());
+    return static_cast<std::size_t>(std::find(order.begin(), order.end(), idx) -
+                                    order.begin());
   }
 };
 
@@ -129,9 +128,9 @@ TEST_F(CompiledGraphTest, ParallelEdgesCountedButAdjacencyDeduped) {
   auto ia = cg.indexOf("a");
   auto ib = cg.indexOf("b");
 
-  EXPECT_EQ(cg.inDegree(ib), 2);            // per-edge
-  EXPECT_EQ(cg.outEdges(ia).size(), 2u);    // per-edge
-  EXPECT_EQ(cg.successors(ia).size(), 1u);  // deduplicated
+  EXPECT_EQ(cg.inDegree(ib), 2);           // per-edge
+  EXPECT_EQ(cg.outEdges(ia).size(), 2u);   // per-edge
+  EXPECT_EQ(cg.successors(ia).size(), 1u); // deduplicated
   EXPECT_EQ(cg.predecessors(ib).size(), 1u);
 }
 

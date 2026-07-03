@@ -131,7 +131,8 @@ public:
    *   - InvalidState: engine not idle
    *   - StreamingNotSupported: scheduler doesn't support streaming
    */
-  Result<void> startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
+  Result<void>
+  startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
   void stopStreaming(bool wait_for_drain = true);
   [[nodiscard]] bool isStreaming() const;
 

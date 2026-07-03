@@ -20,6 +20,7 @@
 #ifndef AI_PIPE_UTILS_DATA_PACKET_HPP
 #define AI_PIPE_UTILS_DATA_PACKET_HPP
 
+#include "ai_pipe/error.hpp"
 #include "ai_pipe/frame_metadata.hpp"
 #include <any>
 #include <cstdint>
@@ -61,6 +62,27 @@ struct DataPacket {
       throw std::runtime_error("Invalid parameter type for key '" + key +
                                "'. Expected type: " + typeid(T).name());
     }
+  }
+
+  /**
+   * @brief Exception-free typed access returning Result<T>
+   *
+   * The preferred accessor for new code: missing keys and type
+   * mismatches come back as Error values (InvalidArgument) instead of
+   * thrown exceptions, matching the framework-wide Result convention.
+   */
+  template <typename T> Result<T> param(const std::string &key) const {
+    const std::any *value = findParam(key);
+    if (!value) {
+      return Result<T>::err(ErrorCode::InvalidArgument,
+                            "Missing required parameter: " + key);
+    }
+    if (const T *typed = std::any_cast<T>(value)) {
+      return *typed;
+    }
+    return Result<T>::err(ErrorCode::InvalidArgument,
+                          "Invalid parameter type for key '" + key +
+                              "'. Expected type: " + typeid(T).name());
   }
 
   template <typename T>
@@ -166,6 +188,11 @@ public:
   /** @brief Read the param; nullopt if missing, throws on type mismatch */
   [[nodiscard]] std::optional<T> tryGet(const DataPacket &packet) const {
     return packet.getOptionalParam<T>(m_key);
+  }
+
+  /** @brief Exception-free read: Error value on missing key or mismatch */
+  [[nodiscard]] Result<T> read(const DataPacket &packet) const {
+    return packet.param<T>(m_key);
   }
 
   void set(DataPacket &packet, T value) const {

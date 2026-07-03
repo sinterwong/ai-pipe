@@ -150,6 +150,17 @@ public:
   [[nodiscard]] std::string strategyInfo() const;
 
 private:
+  /**
+   * @brief Run setup() on every node in topological order
+   *
+   * On failure, tears down the already-set-up prefix in reverse order
+   * and returns the failing node's error.
+   */
+  Result<void> setupNodes(const std::shared_ptr<PipelineContext> &context);
+
+  /** @brief Run teardown() in reverse setup order (idempotent) */
+  void teardownNodes() noexcept;
+
   void initializeNodeStates();
   void initializeQueues();
   void identifySinkNodes();
@@ -288,6 +299,9 @@ private:
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;
   std::vector<NodePtr> m_sinkNodes;
+
+  // Nodes that completed setup(), in setup order; drives teardown.
+  std::vector<NodePtr> m_setUpNodes;
 
   // Monotonic FrameId source for packets entering the pipeline without
   // an assigned id (see stampIncomingFrame).

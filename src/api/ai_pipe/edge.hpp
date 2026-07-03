@@ -1,7 +1,7 @@
 /**
  * @file edge.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Directed edge connecting a source node port to a destination node port
  * @version 0.1
  * @date 2025-04-20
  *

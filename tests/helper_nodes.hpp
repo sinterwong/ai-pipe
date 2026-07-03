@@ -1,7 +1,8 @@
 /**
  * @file helper_nodes.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Reusable test node implementations (pass-through, source, sink,
+ * failable, join, slow)
  * @version 0.1
  * @date 2026-01-21
  *

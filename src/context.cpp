@@ -134,8 +134,8 @@ void PipelineContext::attachEngineLogs(bool quiet_console) {
           adapter = self->m_loggerAdapter;
         }
         if (adapter) {
-          adapter->log(toPipeLogLevel(entry.level),
-                       std::string(entry.category), entry.message);
+          adapter->log(toPipeLogLevel(entry.level), std::string(entry.category),
+                       entry.message);
         }
       });
 

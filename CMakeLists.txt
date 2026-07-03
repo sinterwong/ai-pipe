@@ -19,7 +19,9 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 # Build options
+option(BUILD_SHARED_LIBS "Build ai_pipe as a shared library (OFF = static)" ON)
 option(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
+option(AI_PIPE_WERROR "Treat ai_pipe warnings as errors" OFF)
 option(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
 option(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
 

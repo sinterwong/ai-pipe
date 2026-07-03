@@ -594,9 +594,14 @@ TEST_F(GraphTest, NestedDiamondTopology) {
   auto g = createNode("G");
   auto h = createNode("H");
 
-  m_graph->addNode(a); m_graph->addNode(b); m_graph->addNode(c);
-  m_graph->addNode(d); m_graph->addNode(e); m_graph->addNode(f);
-  m_graph->addNode(g); m_graph->addNode(h);
+  m_graph->addNode(a);
+  m_graph->addNode(b);
+  m_graph->addNode(c);
+  m_graph->addNode(d);
+  m_graph->addNode(e);
+  m_graph->addNode(f);
+  m_graph->addNode(g);
+  m_graph->addNode(h);
 
   m_graph->addEdge("A", "out", "B", "in");
   m_graph->addEdge("A", "out", "C", "in");
@@ -625,7 +630,8 @@ TEST_F(GraphTest, LargeChain) {
   }
 
   for (int i = 0; i < chain_len - 1; ++i) {
-    m_graph->addEdge("node" + std::to_string(i), "out", "node" + std::to_string(i+1), "in");
+    m_graph->addEdge("node" + std::to_string(i), "out",
+                     "node" + std::to_string(i + 1), "in");
   }
 
   EXPECT_EQ(m_graph->getNodes().size(), chain_len);
@@ -640,9 +646,11 @@ TEST_F(GraphTest, MultipleSourcesAndSinks) {
   auto k1 = createNode("K1");
   auto k2 = createNode("K2");
 
-  m_graph->addNode(s1); m_graph->addNode(s2);
+  m_graph->addNode(s1);
+  m_graph->addNode(s2);
   m_graph->addNode(m);
-  m_graph->addNode(k1); m_graph->addNode(k2);
+  m_graph->addNode(k1);
+  m_graph->addNode(k2);
 
   m_graph->addEdge("S1", "out", "M", "in1");
   m_graph->addEdge("S2", "out", "M", "in2");
@@ -719,6 +727,14 @@ TEST_F(GraphPortTypeTest, UntypedEndpointAlwaysConnects) {
   m_graph.addNode(std::make_shared<TypedNode<void, void>>("consumer"));
 
   EXPECT_TRUE(m_graph.addEdge("producer", "output", "consumer", "input"));
+}
+
+TEST_F(GraphPortTypeTest, NullNodeDegreeQueriesDoNotThrow) {
+  // P6.5: Graph no longer throws; null queries degrade to 0 with a log.
+  EXPECT_NO_THROW({
+    EXPECT_EQ(m_graph.getInDegree(nullptr), 0);
+    EXPECT_EQ(m_graph.getOutDegree(nullptr), 0);
+  });
 }
 
 TEST_F(GraphPortTypeTest, LegacyNodesUnaffected) {

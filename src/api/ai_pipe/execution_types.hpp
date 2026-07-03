@@ -304,8 +304,7 @@ struct AtomicNodeStatistics {
         total_processing_us.load(std::memory_order_relaxed);
     stats.min_processing_us = min_processing_us.load(std::memory_order_relaxed);
     stats.max_processing_us = max_processing_us.load(std::memory_order_relaxed);
-    stats.total_input_count =
-        total_input_count.load(std::memory_order_relaxed);
+    stats.total_input_count = total_input_count.load(std::memory_order_relaxed);
     stats.total_output_count =
         total_output_count.load(std::memory_order_relaxed);
     return stats;

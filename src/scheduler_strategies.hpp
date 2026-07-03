@@ -72,16 +72,17 @@ public:
                   const std::unordered_map<std::string, std::uint64_t>
                       &sink_execution_counts) const override {
     if (active_node_count > 0) {
-      return {false, "active tasks remaining"};
+      return {false, "active tasks remaining", std::nullopt};
     }
 
     for (const auto &[sink_name, count] : sink_execution_counts) {
       if (count == 0) {
-        return {false, "sink '" + sink_name + "' has not executed"};
+        return {false, "sink '" + sink_name + "' has not executed",
+                std::nullopt};
       }
     }
 
-    return {true, "all sinks executed"};
+    return {true, "all sinks executed", std::nullopt};
   }
 
   [[nodiscard]] CompletionSemantics completionSemantics() const override {
@@ -107,10 +108,11 @@ public:
  * @brief Configuration for stream scheduling
  */
 struct StreamSchedulerConfig {
-  bool allow_partial_inputs = false;  ///< Allow scheduling with partial inputs
-  double min_input_ratio = 1.0;       ///< Minimum input readiness ratio
-  bool auto_reschedule = true;        ///< Automatically reschedule on completion
-  std::chrono::milliseconds min_interval{0}; ///< Minimum interval between executions
+  bool allow_partial_inputs = false; ///< Allow scheduling with partial inputs
+  double min_input_ratio = 1.0;      ///< Minimum input readiness ratio
+  bool auto_reschedule = true;       ///< Automatically reschedule on completion
+  std::chrono::milliseconds min_interval{
+      0}; ///< Minimum interval between executions
 };
 
 /**
@@ -171,7 +173,7 @@ public:
                   std::size_t /*pending_node_count*/,
                   const std::unordered_map<std::string, std::uint64_t>
                       & /*sink_execution_counts*/) const override {
-    return {false, "streaming mode - continuous execution"};
+    return {false, "streaming mode - continuous execution", std::nullopt};
   }
 
   [[nodiscard]] CompletionSemantics completionSemantics() const override {
@@ -232,7 +234,7 @@ public:
                   std::size_t /*pending_node_count*/,
                   const std::unordered_map<std::string, std::uint64_t>
                       & /*sink_execution_counts*/) const override {
-    return {false, "hybrid mode - continuous execution"};
+    return {false, "hybrid mode - continuous execution", std::nullopt};
   }
 
   [[nodiscard]] CompletionSemantics completionSemantics() const override {

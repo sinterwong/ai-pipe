@@ -12,9 +12,16 @@ jobs:
   build:
     runs-on: ubuntu-24.04
 
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { cc: gcc-13, cxx: g++-13, packages: "gcc-13 g++-13" }
+          - { cc: clang-18, cxx: clang++-18, packages: "clang-18" }
+
     env:
-      CC: gcc-13
-      CXX: g++-13
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
 
     steps:
     - name: Checkout repository
@@ -23,10 +30,10 @@ jobs:
           submodules: 'recursive'
           lfs: true
 
-    - name: Install GCC 13
+    - name: Install compiler
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-13 g++-13
+        sudo apt-get install -y ${{ matrix.compiler.packages }}
 
     - name: Set reusable strings
       id: strings
@@ -109,3 +116,78 @@ jobs:
       run: |
         export LD_LIBRARY_PATH=${{ github.workspace }}/build/x86_64/lib:$LD_LIBRARY_PATH
         ./x86_64/bin/tests/ai_pipe_tests
+
+  build-static:
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+          lfs: true
+    - name: Install GCC 13
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-13 g++-13
+    - name: Configure (static, warnings as errors)
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_SHARED_LIBS=OFF
+        -DAI_PIPE_WERROR=ON
+        -DBUILD_AI_PIPE_TESTS=ON
+        -S ${{ github.workspace }}
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build -j
+    - name: Run GTests
+      working-directory: ${{ github.workspace }}/build
+      run: ./x86_64/bin/tests/ai_pipe_tests
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Pin the exact formatter version used for the one-time normalization
+    # (P6.4) so gate results do not drift across toolchain releases.
+    - name: Install clang-format
+      run: pip install clang-format==22.1.5
+
+    - name: Check formatting
+      run: |
+        clang-format --dry-run --Werror \
+          src/*.cpp src/*.hpp src/api/ai_pipe/*.hpp \
+          tests/*.cpp tests/*.hpp \
+          benchmarks/*.cpp benchmarks/*.hpp \
+          examples/*.cpp
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    # Advisory for now: promote to a required gate once the existing
+    # findings are triaged (tracked under docs/TODO.md P6.4 follow-up).
+    continue-on-error: true
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+    - name: Install tooling
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-18 clang-tidy-18
+    - name: Configure (compile database)
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Debug
+        -DBUILD_AI_PIPE_TESTS=ON
+        -S ${{ github.workspace }}
+    - name: Run clang-tidy on library sources
+      run: |
+        clang-tidy-18 -p ${{ github.workspace }}/build src/*.cpp

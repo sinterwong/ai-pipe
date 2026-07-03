@@ -646,14 +646,14 @@ TEST_F(LockFreePerformanceTest, MPMCThroughput) {
 }
 
 TEST_F(LockFreeConcurrencyTest, ForcePush_ExtremeContention_SmallCapacity) {
-  // Target: Verify DropHead consistency when capacity is tiny but many threads are pushing
+  // Target: Verify DropHead consistency when capacity is tiny but many threads
+  // are pushing
   constexpr int k_threads = 8;
   constexpr int k_items_per_thread = 1000;
-  auto cfg = LockFreeNodeQueue<int>::Config{
-      .capacity = 2,
-      .drop_policy = LockFreeDropPolicy::DropHead,
-      .track_statistics = true
-  };
+  auto cfg = LockFreeNodeQueue<int>::Config{.capacity = 2,
+                                            .drop_policy =
+                                                LockFreeDropPolicy::DropHead,
+                                            .track_statistics = true};
   LockFreeNodeQueue<int> q(cfg);
 
   std::vector<std::thread> producers;
@@ -665,11 +665,13 @@ TEST_F(LockFreeConcurrencyTest, ForcePush_ExtremeContention_SmallCapacity) {
     });
   }
 
-  for (auto &t : producers) t.join();
+  for (auto &t : producers)
+    t.join();
 
-  auto& stats = q.statistics();
+  auto &stats = q.statistics();
   int drain_count = 0;
-  while (q.tryPop()) drain_count++;
+  while (q.tryPop())
+    drain_count++;
 
   EXPECT_EQ(q.size(), 0u);
   // total_pushed = total_dropped + total_popped + current_size

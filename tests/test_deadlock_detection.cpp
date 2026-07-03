@@ -1,7 +1,7 @@
 /**
  * @file test_deadlock_detection.cpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Regression tests for scheduling deadlock scenarios
  * @version 0.1
  * @date 2026-01-29
  *

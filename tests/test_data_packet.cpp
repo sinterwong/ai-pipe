@@ -56,8 +56,7 @@ TEST(DataPacketTest, MissingKeyThrows) {
 TEST(DataPacketTest, TypeMismatchThrows) {
   DataPacket packet;
   packet.setParam("count", 42);
-  EXPECT_THROW((void)packet.getParam<std::string>("count"),
-               std::runtime_error);
+  EXPECT_THROW((void)packet.getParam<std::string>("count"), std::runtime_error);
 }
 
 TEST(DataPacketTest, OptionalParamSemantics) {
@@ -69,6 +68,34 @@ TEST(DataPacketTest, OptionalParamSemantics) {
   // Present but wrong type still throws (explicit contract)
   EXPECT_THROW((void)packet.getOptionalParam<std::string>("present"),
                std::runtime_error);
+}
+
+TEST(DataPacketTest, ResultStyleParamAccess) {
+  DataPacket packet;
+  packet.setParam("count", 42);
+
+  auto ok = packet.param<int>("count");
+  ASSERT_TRUE(ok.isOk());
+  EXPECT_EQ(ok.value(), 42);
+
+  auto missing = packet.param<int>("absent");
+  ASSERT_FALSE(missing.isOk());
+  EXPECT_EQ(missing.errorCode(), ai_pipe::ErrorCode::InvalidArgument);
+
+  auto mismatch = packet.param<std::string>("count");
+  ASSERT_FALSE(mismatch.isOk());
+  EXPECT_EQ(mismatch.errorCode(), ai_pipe::ErrorCode::InvalidArgument);
+}
+
+TEST(TypedParamTest, ResultStyleRead) {
+  const TypedParam<int> k_count{"count"};
+  DataPacket packet;
+
+  EXPECT_FALSE(k_count.read(packet).isOk());
+  k_count.set(packet, 5);
+  auto result = k_count.read(packet);
+  ASSERT_TRUE(result.isOk());
+  EXPECT_EQ(result.value(), 5);
 }
 
 TEST(DataPacketTest, HasVariants) {
@@ -135,14 +162,12 @@ TEST(TypedParamTest, TryGetOnMissing) {
 // =============================================================================
 
 // Packets flowing through the graph are immutable by type
-static_assert(
-    std::is_same_v<ai_pipe::PortDataPtr,
-                   std::shared_ptr<const ai_pipe::PortData>>,
-    "PortDataPtr must be a shared_ptr to const PortData");
-static_assert(
-    std::is_same_v<ai_pipe::MutablePortDataPtr,
-                   std::shared_ptr<ai_pipe::PortData>>,
-    "MutablePortDataPtr must be the mutable creation-side handle");
+static_assert(std::is_same_v<ai_pipe::PortDataPtr,
+                             std::shared_ptr<const ai_pipe::PortData>>,
+              "PortDataPtr must be a shared_ptr to const PortData");
+static_assert(std::is_same_v<ai_pipe::MutablePortDataPtr,
+                             std::shared_ptr<ai_pipe::PortData>>,
+              "MutablePortDataPtr must be the mutable creation-side handle");
 
 TEST(OwnershipModelTest, MutableCopyIsIndependent) {
   auto original = std::make_shared<ai_pipe::PortData>();

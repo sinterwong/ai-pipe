@@ -66,20 +66,22 @@
 
 ## Phase 6 — 开发者体验与工程化收尾
 
-- [ ] **P6.1** 节点注册机制：注册宏 + `NodeRegistry::create(name, config)`，支撑配置驱动构图
-- [ ] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
-- [ ] **P6.3** CMake 现代化：警告全开、sanitizer 选项、CMakePresets、静态库选项、CI 矩阵扩展
-- [ ] **P6.4** clang-format/clang-tidy 入 CI；一次性风格统一（枚举/成员命名、Doxygen 补齐）
-- [ ] **P6.5** 错误处理单轨收尾：`Graph` 异常改 `Result`，`DataPacket` 提供 `Result` 风格取参
-- [ ] **P6.6** 文档重写：设计文档与实现对齐，新增节点开发指南与迁移指南，建立 CHANGELOG
+- [x] **P6.1** 节点注册机制：`AI_PIPE_REGISTER_NODE(_WITH_CONFIG)` 宏 + `NodeRegistry::create(type, name, config)`（PortData 作配置袋，保持零依赖）；JSON 构图加载器留作后续增强
+- [x] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
+- [x] **P6.3** CMake 现代化：库目标 -Wall -Wextra -Wpedantic（修净全部告警）+ AI_PIPE_WERROR 选项、CMakePresets.json（debug/release/asan/tsan/static）、BUILD_SHARED_LIBS 显式化（静态构建验证通过）、CI 扩展 GCC-13+Clang-18 矩阵与 static+Werror job；sanitizer 选项已在 P0.5
+- [x] **P6.4** clang-format 入 CI 为硬门禁（pin 22.1.5，全库一次性归一化 146 处漂移）；clang-tidy 入 CI 为咨询 job（发现分诊后转门禁）；补齐全部空 Doxygen @brief。枚举/成员命名统一评估后不做：公共枚举值改名属破坏性变更，收益不抵（记录于此）
+- [x] **P6.5** 错误处理单轨收尾：`Graph` 度查询去异常（null 降级为 0+日志）；`DataPacket::param<T>()` 与 `TypedParam::read()` 提供全程无异常的 Result 取参（any_cast 指针形式）；`getParam` 抛异常版保留兼容
+- [x] **P6.6** 文档重写：设计文档过时引用清理并指向新文档，新增 `docs/Node_Development_Guide.md` 与 `docs/Migration_Guide.md`，建立 `CHANGELOG.md`，版本升至 v0.4.0
 
 ---
 
 ## 里程碑
 
-| 版本 | 包含阶段 | 达成标准 |
-|------|----------|----------|
-| v0.4 | P0 + P1 | 无已知正确性 bug；热路径无 O(E) 查询；文档与实现一致 |
-| v0.5 | P2 + P3 | 空闲零 CPU；类型化端口；明确所有权模型 |
-| v0.6 | P4 + P5 | join 帧对齐生效；全部统计真实可用 |
-| v1.0 | P6 | 节点注册 + 生命周期 + 工程化门禁齐备；API 冻结 |
+| 版本 | 包含阶段 | 达成标准 | 状态 |
+|------|----------|----------|------|
+| v0.4 | P0 + P1 | 无已知正确性 bug；热路径无 O(E) 查询；文档与实现一致 | ✅ |
+| v0.5 | P2 + P3 | 空闲零 CPU；类型化端口；明确所有权模型 | ✅ |
+| v0.6 | P4 + P5 | join 帧对齐生效；全部统计真实可用 | ✅ |
+| v1.0 | P6 | 节点注册 + 生命周期 + 工程化门禁齐备；API 冻结 | ✅（工程项齐备；实际发布为 v0.4.0，API 冻结待真实业务验证后宣布） |
+
+> 全部 6 个阶段 35 项任务已完成（2026-07-04）。后续候选增强：JSON 构图加载器（P6.1 注）、clang-tidy 转门禁（P6.4 注）、KeepLatest 语义细化。

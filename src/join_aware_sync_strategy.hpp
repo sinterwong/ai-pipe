@@ -1,7 +1,7 @@
 /**
  * @file join_aware_sync_strategy.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Fork-join-aware synchronization strategy built on topological analysis
  *
  *  * This strategy solves two critical problems of the naive
  * CoordinatedSyncStrategy:

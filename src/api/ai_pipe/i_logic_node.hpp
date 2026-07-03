@@ -1,7 +1,7 @@
 /**
  * @file i_logic_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Abstract processing node interface: ports, lifecycle, and process()
  * @version 0.1
  * @date 2025-04-20
  *
@@ -16,6 +16,7 @@
 
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/data_types.hpp"
+#include "ai_pipe/error.hpp"
 
 namespace ai_pipe {
 
@@ -28,6 +29,31 @@ public:
 
   virtual void process(const PortDataMap &inputs, PortDataMap &outputs,
                        std::shared_ptr<PipelineContext> context = nullptr) = 0;
+
+  /**
+   * @brief One-time initialization before any process() call
+   *
+   * The engine invokes setup() for every node (in topological order)
+   * when execution first starts - the place for expensive work like
+   * loading models or allocating device memory, with access to the
+   * pipeline context's resources/services. A failure aborts the run
+   * and tears down already-set-up nodes in reverse order.
+   *
+   * Default: no-op success, so existing nodes are unaffected.
+   */
+  virtual Result<void> setup(std::shared_ptr<PipelineContext> context) {
+    (void)context;
+    return Result<void>::ok();
+  }
+
+  /**
+   * @brief Release resources acquired in setup()
+   *
+   * Invoked in reverse topological order on engine reset() and
+   * destruction, after all in-flight tasks have completed. Must not
+   * throw.
+   */
+  virtual void teardown() noexcept {}
 
   virtual std::vector<std::string> getExpectedInputPorts() const { return {}; }
 
@@ -47,8 +73,7 @@ public:
    *
    * @param port_name The port being queried (input or output)
    */
-  virtual std::type_index
-  portPayloadType(const std::string &port_name) const {
+  virtual std::type_index portPayloadType(const std::string &port_name) const {
     (void)port_name;
     return typeid(void);
   }

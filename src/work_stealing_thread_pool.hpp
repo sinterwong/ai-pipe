@@ -182,8 +182,8 @@ public:
                                   std::size_t max_queue_size = 256)
       : m_config{num_threads, max_queue_size, std::chrono::milliseconds{5000},
                  true, 4},
-        m_state{State::KRunning}, m_pendingTasks{0}, m_completedTasks{0},
-        m_nextWorkerIndex{0} {
+        m_state{State::KRunning}, m_nextWorkerIndex{0}, m_pendingTasks{0},
+        m_completedTasks{0} {
     initialize(num_threads);
   }
 
@@ -191,8 +191,8 @@ public:
    * @brief Construct with full configuration
    */
   explicit WorkStealingThreadPool(const WorkStealingConfig &config)
-      : m_config{config}, m_state{State::KRunning}, m_pendingTasks{0},
-        m_completedTasks{0}, m_nextWorkerIndex{0} {
+      : m_config{config}, m_state{State::KRunning}, m_nextWorkerIndex{0},
+        m_pendingTasks{0}, m_completedTasks{0} {
     initialize(config.num_threads);
   }
 
@@ -632,7 +632,9 @@ private:
    */
   void publishTask() {
     m_unclaimedTasks.fetch_add(1, std::memory_order_release);
-    { std::lock_guard<std::mutex> lock(m_globalMutex); }
+    {
+      std::lock_guard<std::mutex> lock(m_globalMutex);
+    }
     m_globalCondition.notify_one();
   }
 
