@@ -293,6 +293,16 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   initializeNodeStates();
   initializeQueues();
 
+  // Cache sync-tracking membership so hot paths skip the strategy lock
+  // for nodes outside any sync group.
+  const bool sync_active = m_syncStrategy && m_syncStrategy->isEnabled();
+  for (auto &[node_ptr, state] : m_nodeStates) {
+    if (state) {
+      state->sync_tracked =
+          sync_active && m_syncStrategy->tracksNode(state->name);
+    }
+  }
+
   // Identify sink nodes
   identifySinkNodes();
 
@@ -1086,6 +1096,18 @@ void ExecutionEngine::Impl::executeNodeTask(
                            std::memory_order_release);
   } else if (process_result) {
     inheritFrameIdentity(inputs, outputs);
+
+    // Advance the sync watermark for tracked nodes so the coordinator
+    // can prune drop records the whole group has moved past.
+    if (state.sync_tracked && m_syncStrategy) {
+      for (const auto &[port, packet] : inputs) {
+        if (packet && packet->hasFrameId()) {
+          m_syncStrategy->markProcessed(state.name, packet->frameId());
+          break;
+        }
+      }
+    }
+
     handleNodeSuccess(node, outputs);
   } else {
     handleNodeFailure(node, process_result.error());
@@ -1108,19 +1130,127 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
 
   auto &state = *state_it->second;
 
+  // Multi-input nodes get frame-aligned gathering whenever a sync
+  // strategy is active; alignment is driven purely by frame ids, so it
+  // does not require the node to be mapped into a sync group.
+  if (state.input_ports.size() > 1 && m_syncStrategy &&
+      m_syncStrategy->isEnabled()) {
+    return gatherAlignedInputs(state, inputs);
+  }
+
   for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
     auto *queue = state.input_queues[i];
-    auto data = queue ? queue->tryPop() : std::nullopt;
-    if (data.has_value()) {
+    for (;;) {
+      auto data = queue ? queue->tryPop() : std::nullopt;
+      if (!data.has_value()) {
+        LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
+                    << ":" << state.input_ports[i];
+        return false;
+      }
+      // Coordinated drop: a sibling branch already dropped this frame,
+      // so processing it here would only feed a doomed pairing.
+      if (state.sync_tracked && data.value() && data.value()->hasFrameId() &&
+          m_syncStrategy->shouldDrop(state.name, data.value()->frameId())) {
+        recordSyncDrop(state, state.input_ports[i], data.value()->frameId(),
+                       "coordinated sync drop");
+        continue;
+      }
       inputs[state.input_ports[i]] = std::move(data.value());
-    } else {
-      LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
-                  << ":" << state.input_ports[i];
-      return false;
+      break;
     }
   }
 
   return true;
+}
+
+bool ExecutionEngine::Impl::gatherAlignedInputs(NodeState &state,
+                                                PortDataMap &inputs) {
+  const std::size_t port_count = state.input_ports.size();
+  std::vector<FrameId> head_ids(port_count, 0);
+
+  for (;;) {
+    // Phase A: peek every head (discarding pending coordinated drops)
+    // and find the newest frame id among them.
+    FrameId target = 0;
+    for (std::size_t i = 0; i < port_count; ++i) {
+      auto *queue = state.input_queues[i];
+      for (;;) {
+        auto head = queue ? queue->tryPeek() : std::nullopt;
+        if (!head.has_value()) {
+          return false; // Port not ready; caller reschedules
+        }
+        const FrameId frame =
+            head.value() ? head.value()->frameId() : FrameId{0};
+        if (state.sync_tracked &&
+            frame != frame_constants::k_invalid_frame_id &&
+            m_syncStrategy->shouldDrop(state.name, frame)) {
+          (void)queue->tryPop();
+          recordSyncDrop(state, state.input_ports[i], frame,
+                         "coordinated sync drop");
+          continue;
+        }
+        head_ids[i] = frame;
+        if (frame > target) {
+          target = frame;
+        }
+        break;
+      }
+    }
+
+    // Phase B: all heads aligned (or wildcard 0)? Pop and deliver.
+    bool aligned = true;
+    for (std::size_t i = 0; i < port_count; ++i) {
+      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
+          head_ids[i] != target) {
+        aligned = false;
+        break;
+      }
+    }
+
+    if (aligned) {
+      for (std::size_t i = 0; i < port_count; ++i) {
+        auto data = state.input_queues[i]->tryPop();
+        if (!data.has_value()) {
+          return false; // Should not happen under single-consumer contract
+        }
+        inputs[state.input_ports[i]] = std::move(data.value());
+      }
+      return true;
+    }
+
+    // Phase C: discard lagging heads - their partner frames were lost
+    // on a sibling branch, so they can never be paired.
+    for (std::size_t i = 0; i < port_count; ++i) {
+      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
+          head_ids[i] < target) {
+        (void)state.input_queues[i]->tryPop();
+        recordSyncDrop(state, state.input_ports[i], head_ids[i],
+                       "frame alignment drop");
+        if (state.sync_tracked) {
+          (void)m_syncStrategy->reportDrop(state.name, head_ids[i],
+                                           "frame alignment");
+        }
+      }
+    }
+    // Loop: re-peek with fresh heads (each pass discards >= 1 frame, so
+    // this terminates once queues stabilize or a port runs dry).
+  }
+}
+
+void ExecutionEngine::Impl::recordSyncDrop(const NodeState &state,
+                                           const std::string &port_name,
+                                           FrameId frame_id,
+                                           const char *reason) {
+  m_statistics.total_dropped_frames.fetch_add(1, std::memory_order_relaxed);
+
+  if (m_config.enable_drop_logging) {
+    LOG_DEBUG_S << "ExecutionEngine: Dropped frame " << frame_id << " at "
+                << state.name << ":" << port_name << " - " << reason;
+  }
+
+  if (m_dropCallback) {
+    m_dropCallback(state.name, frame_id, reason);
+  }
 }
 
 Result<void> ExecutionEngine::Impl::processNode(

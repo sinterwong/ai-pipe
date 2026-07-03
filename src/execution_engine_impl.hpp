@@ -50,6 +50,10 @@ public:
     std::vector<std::string> input_ports;
     std::vector<LockFreeQueueType *> input_queues;
 
+    // True when the sync strategy tracks this node (computed once at
+    // initialize): gates per-frame shouldDrop/markProcessed calls.
+    bool sync_tracked{false};
+
     // Single-word scheduling state machine. The WAITING->READY CAS in
     // scheduleNodeExecution() is the only claim point; concurrent
     // schedule attempts may redundantly evaluate the (cheap) strategy
@@ -154,6 +158,20 @@ private:
   void executeNodeTask(NodePtr node, std::shared_ptr<PipelineContext> context);
 
   bool gatherNodeInputs(const NodePtr &node, PortDataMap &inputs);
+
+  /**
+   * @brief Gather inputs for a multi-input node with frame alignment
+   *
+   * Peeks every port head, discards frames that lag behind the newest
+   * head (they can never be paired - their partner was dropped on a
+   * sibling branch), and pops only when all heads carry the same frame
+   * id. Unassigned ids (0) act as wildcards. Returns false when any
+   * port has no poppable data yet (transient; caller reschedules).
+   */
+  bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  void recordSyncDrop(const NodeState &state, const std::string &port_name,
+                      FrameId frame_id, const char *reason);
 
   /**
    * @brief Process a single node, converting exceptions to Error
