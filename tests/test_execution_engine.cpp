@@ -893,8 +893,10 @@ TEST_F(ExecutionEngineTest, StatisticsAfterExecution) {
 
   auto stats = engine->statistics();
 
-  EXPECT_EQ(stats.total_executions, 1u);
-  EXPECT_GE(stats.successful_executions, 0u);
+  // Since P5.3 total_executions counts NODE execution attempts
+  // (unified across modes): one run of the 3-node linear pipeline = 3.
+  EXPECT_EQ(stats.total_executions, 3u);
+  EXPECT_EQ(stats.successful_executions, 3u);
 }
 
 TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
@@ -910,7 +912,9 @@ TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
 
   auto stats = engine->statistics();
 
-  EXPECT_EQ(stats.total_executions, 5u);
+  // 5 runs x 3 nodes: node-attempt semantics (P5.3)
+  EXPECT_EQ(stats.total_executions, 15u);
+  EXPECT_EQ(stats.successful_executions, 15u);
 }
 
 // =============================================================================

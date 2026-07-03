@@ -316,7 +316,11 @@ struct AtomicNodeStatistics {
 // ============================================================================
 
 struct EngineStatistics {
-  // Execution counts
+  // Execution counts. Unit: one NODE execution attempt (unified across
+  // batch/stream/hybrid since P5.3; previously batch counted pipeline
+  // runs while stream counted node schedules, which broke successRate).
+  // total_executions ~= successful_executions + failed_executions,
+  // modulo attempts still in flight at snapshot time.
   std::atomic<std::uint64_t> total_executions{0};
   std::atomic<std::uint64_t> successful_executions{0};
   std::atomic<std::uint64_t> failed_executions{0};

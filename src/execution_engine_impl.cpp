@@ -376,8 +376,6 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
     m_engineState.store(EngineState::RUNNING, std::memory_order_release);
   }
 
-  m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
-
   if (!distributeInitialInputs(initial_inputs)) {
     std::lock_guard<std::mutex> lock(m_engineMutex);
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
@@ -996,10 +994,6 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
 
   m_activeTasks.fetch_add(1, std::memory_order_acq_rel);
 
-  if (m_config.mode == ExecutionMode::STREAM) {
-    m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
-  }
-
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
   const bool posted = m_threadPool->post(
@@ -1095,6 +1089,7 @@ void ExecutionEngine::Impl::executeNodeTask(
   }
 
   // Process node - now returns Result<void> with rich error context
+  m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
   auto process_result = processNode(node, inputs, outputs, context);
 
   auto end_time = std::chrono::steady_clock::now();
