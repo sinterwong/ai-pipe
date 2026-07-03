@@ -391,11 +391,14 @@ void ExecutionEngine::Impl::stopExecutionAsync() {
   bool expected = false;
   if (m_stopFlag.compare_exchange_strong(expected, true,
                                          std::memory_order_acq_rel)) {
-    std::lock_guard<std::mutex> lock(m_engineMutex);
-    if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-      m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+    {
+      std::lock_guard<std::mutex> lock(m_engineMutex);
+      if (m_engineState.load(std::memory_order_acquire) ==
+          EngineState::RUNNING) {
+        m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+      }
     }
-    m_completionCV.notify_all();
+    notifyCompletionWaiters();
   }
 }
 
@@ -406,9 +409,9 @@ void ExecutionEngine::Impl::stopExecutionSync() {
 
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
-      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
-    }
+    m_completionCV.wait(lock, [this] {
+      return m_activeTasks.load(std::memory_order_acquire) == 0;
+    });
   }
 
   {
@@ -541,7 +544,7 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     m_stopFlag.store(true, std::memory_order_release);
   }
 
-  m_completionCV.notify_all();
+  notifyCompletionWaiters();
 
   if (wait_for_drain) {
     (void)waitForDrain(0, std::chrono::milliseconds{5000});
@@ -549,9 +552,9 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
 
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
-      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
-    }
+    m_completionCV.wait(lock, [this] {
+      return m_activeTasks.load(std::memory_order_acquire) == 0;
+    });
   }
 
   {
@@ -673,40 +676,50 @@ bool ExecutionEngine::Impl::hasQueueCapacity(
 Result<void>
 ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
                                     std::chrono::milliseconds timeout) {
-  auto deadline = std::chrono::steady_clock::now() + timeout;
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
 
-  while (std::chrono::steady_clock::now() < deadline) {
+  // Every task completion fires notifyCompletionWaiters(), so queue
+  // drain progress always re-triggers the predicate; no sleep polling.
+  std::unique_lock<std::mutex> lock(m_completionMutex);
+  const bool drained =
+      m_completionCV.wait_until(lock, deadline, [this, max_depth] {
+        if (m_stopFlag.load(std::memory_order_acquire)) {
+          return true;
+        }
+        return m_activeTasks.load(std::memory_order_acquire) == 0 &&
+               allQueuesDrained(max_depth);
+      });
+
+  if (drained) {
     if (m_stopFlag.load(std::memory_order_acquire)) {
       LOG_TRACE_S << "ExecutionEngine: waitForDrain interrupted by stop flag";
-      return Result<void>::ok();
     }
-
-    bool all_drained = true;
-
-    for (const auto &[node, state] : m_nodeStates) {
-      if (!state)
-        continue;
-
-      for (const auto &[port, queue] : state->lock_free_queues) {
-        if (queue && queue->size() > max_depth) {
-          all_drained = false;
-          break;
-        }
-      }
-      if (!all_drained)
-        break;
-    }
-
-    if (all_drained && m_activeTasks.load(std::memory_order_acquire) == 0) {
-      return Result<void>::ok();
-    }
-    std::this_thread::sleep_for(std::chrono::microseconds{5});
+    return Result<void>::ok();
   }
 
   LOG_WARNING_S << "ExecutionEngine: waitForDrain timed out";
   return Result<void>::err(ErrorCode::ExecutionTimeout,
                            "waitForDrain timed out after " +
                                std::to_string(timeout.count()) + "ms");
+}
+
+bool ExecutionEngine::Impl::allQueuesDrained(std::size_t max_depth) const {
+  for (const auto &[node, state] : m_nodeStates) {
+    if (!state) {
+      continue;
+    }
+    for (const auto &[port, queue] : state->lock_free_queues) {
+      if (queue && queue->size() > max_depth) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void ExecutionEngine::Impl::notifyCompletionWaiters() {
+  { std::lock_guard<std::mutex> lock(m_completionMutex); }
+  m_completionCV.notify_all();
 }
 
 // -------------------------------------------------------------------------
@@ -1224,9 +1237,10 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
 
 void ExecutionEngine::Impl::checkCompletionAndNotify() {
   if (m_streamingMode.load(std::memory_order_acquire)) {
-    if (m_activeTasks.load(std::memory_order_acquire) == 0) {
-      m_completionCV.notify_all();
-    }
+    // Notify on every completion (not only at zero active tasks):
+    // waitForDrain waiters track queue depths, which change with each
+    // task, and notifying an empty waiter list is nearly free.
+    notifyCompletionWaiters();
     return;
   }
 
@@ -1259,7 +1273,7 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
     }
   }
 
-  m_completionCV.notify_all();
+  notifyCompletionWaiters();
 }
 
 Result<void> ExecutionEngine::Impl::waitForCompletion() {

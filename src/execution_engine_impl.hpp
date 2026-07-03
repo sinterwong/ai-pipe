@@ -159,6 +159,17 @@ private:
   void resetInternalState();
 
   /**
+   * @brief Wake completion/drain waiters without losing wakeups
+   *
+   * The empty lock/unlock of m_completionMutex orders state changes
+   * (m_activeTasks, m_stopFlag, queue sizes) against a waiter's
+   * predicate check, so plain condition waits need no timeout polling.
+   */
+  void notifyCompletionWaiters();
+
+  [[nodiscard]] bool allQueuesDrained(std::size_t max_depth) const;
+
+  /**
    * @brief Push data to a node's input queue, honoring its drop policy
    * @return true if the data was accepted (possibly evicting an older frame),
    *         false if it was rejected (DropTail policy on a full queue) or the
