@@ -11,7 +11,7 @@
 
 ## 1. 概述
 
-AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理、流式处理和混合处理三种执行模式，并提供背压管理、帧同步（部分接线中，见第 4.2 节实现状态）和性能监控（部分接线中，见第 9 章）能力。
+AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理、流式处理和混合处理三种执行模式，并提供背压管理、帧同步和性能监控能力。
 
 ### 1.1 核心设计目标
 
@@ -321,9 +321,9 @@ public:
 1. **虚假耦合（False Coupling）**：仅同步确实会汇合的分支，不会让不相干的并行分支互相影响
 2. **深度盲（Depth Blindness）**：将 Fork 到 Join 之间整条路径上的所有节点映射到逻辑分支，确保深层节点的丢弃事件也能触发协调
 
-> **实现状态**：Phase 4 已完成引擎接线——DataPacket 携带 FrameId（P3.4），
-> 多输入节点按帧对齐取数（落后帧丢弃并上报），路径节点经 `shouldDrop`
-> 提前丢弃协调帧，`markProcessed` 推进水位线。端到端行为由
+> 引擎完整驱动同步策略：DataPacket 携带 FrameId，多输入节点按帧对齐
+> 取数（落后帧丢弃并上报），路径节点经 `shouldDrop` 提前丢弃协调帧，
+> `markProcessed` 推进水位线。端到端行为由
 > `tests/test_sync_integration.cpp` 验证。
 
 ## 5. 执行引擎
@@ -596,11 +596,11 @@ auto eos  = FrameMetadataFactory::createEndOfStream();       // 流结束标记
 
 **原子实时统计**（`EngineStatistics`）：
 
-- 执行计数（总/成功/失败）✅
-- 帧计数（输出/丢弃 ✅；输入计数暂未接线）
-- 队列事件（push ✅；pop/满事件暂未接线）
-- 时间统计（处理时间 ✅；等待时间/调度时间暂未接线，恒为 0）
-- 延迟直方图（暂未接线，恒为 0；见 `docs/TODO.md` P5.1）
+- 执行计数（总/成功/失败；按节点执行次数统一计数）
+- 帧计数（输入/输出/丢弃）
+- 队列事件（push/pop/满）
+- 时间统计（处理时间/出队帧龄/调度延迟）
+- 端到端延迟直方图（sink 完成时记录）
 
 **快照**（`EngineStatisticsSnapshot`）：
 
@@ -611,14 +611,14 @@ snap.successRate();         // 成功率 %
 snap.dropRate();            // 丢弃率 %
 snap.throughput();          // 吞吐量 frames/s
 snap.avgProcessingTimeUs(); // 平均处理时间 μs
-snap.latencyPercentiles();  // p50/p90/p95/p99/p99.9（暂未接线，返回 0）
-snap.histogramData();       // 直方图分布（暂未接线，返回 0）
-snap.node_stats;            // 每节点统计（暂未填充，见 P5.2）
+snap.latencyPercentiles();  // p50/p90/p95/p99/p99.9
+snap.histogramData();       // 直方图分布
+snap.node_stats;            // 每节点统计
 ```
 
-### 9.3 节点级统计 — `NodeStatistics`（规划中 — P5.2）
+### 9.3 节点级统计 — `NodeStatistics`
 
-类型已定义但引擎尚未持有/填充。每个节点独立的原子统计（`AtomicNodeStatistics`）：
+每个节点独立的原子统计（`AtomicNodeStatistics`），随快照填充：
 
 - 执行/成功/失败计数
 - 处理时间（总/最小/最大）

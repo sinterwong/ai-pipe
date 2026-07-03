@@ -31,7 +31,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 - **Unified Error Handling**: `Result<T>` monadic type replaces mixed bool/exception patterns with zero-overhead success path and rich error context (code + message + node name).
 - **Zero Third-Party Dependencies**: Built entirely on C++20 standard library (requires compiler support for `<atomic>`, `<shared_mutex>`, `<any>`, `<optional>`, etc.).
 - **PIMPL Idiom**: Clean public API with hidden implementation details, ensuring stable ABI and fast compilation.
-- **Observability**: Execution, drop, and throughput statistics with queue-level counters. Latency histograms, percentile reporting, and per-node statistics exist in the API surface but are **not yet wired into the engine** (tracked in `docs/TODO.md`, Phase 5).
+- **Observability**: Live execution/drop/throughput statistics, a 16-bucket end-to-end latency histogram with p50–p99.9 percentile reporting, queue wait/pop counters, and per-node statistics.
 
 ---
 
@@ -361,22 +361,30 @@ stats.drop_rate;              // Frame drop rate (%)
 stats.avgProcessingTimeUs();  // Average processing time (μs)
 ```
 
-> **Implementation status**: the counters above are live. The following
-> accessors exist in the API but are **not yet fed by the engine** and
-> currently return zero — see `docs/TODO.md` Phase 5 for the wiring plan:
-> `avgWaitTimeUs()`, `avgScheduleTimeUs()`, `latencyPercentiles()`,
-> `histogramData()`, and the per-node `node_stats` vector.
+```cpp
+stats.avgWaitTimeUs();        // Avg frame age at dequeue (μs)
+stats.avgScheduleTimeUs();    // Avg READY-to-execution delay (μs)
+```
 
-### Latency Histogram (planned — P5.1)
+### Latency Histogram
 
-The API defines a 16-bucket histogram from <10μs to ≥500ms with percentile
-reporting (`latencyPercentiles()`, `histogramData()`). The engine does not
-record into it yet; values are all zero until Phase 5 lands.
+16-bucket end-to-end histogram from <10μs to ≥500ms, recorded when a frame
+completes at a sink node:
 
-### Per-Node Statistics (planned — P5.2)
+```cpp
+auto percentiles = stats.latencyPercentiles();
+// {{"p50", val}, {"p90", val}, {"p95", val}, {"p99", val}, {"p99.9", val}}
 
-`NodeStatistics`/`AtomicNodeStatistics` types exist, but the engine does not
-populate `EngineStatisticsSnapshot::node_stats` yet.
+auto histogram = stats.histogramData();
+// {{"<10us", count}, {"<25us", count}, ..., {">=500ms", count}}
+```
+
+### Per-Node Statistics
+
+`EngineStatisticsSnapshot::node_stats` carries per-node execution counts,
+success rate, processing time (avg/min/max), input/output counts, and the
+current queue depth. All statistics honor `enable_statistics = false` for
+zero-overhead operation.
 
 ### Pipeline State Machine
 

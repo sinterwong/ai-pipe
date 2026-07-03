@@ -7,8 +7,10 @@ Guide).
 
 ## [0.4.0] - 2026-07-04
 
-Delivered through the architecture-audit roadmap (`docs/TODO.md`,
-Phases 0–6). Migration notes: `docs/Migration_Guide.md`.
+Delivered through the architecture-audit roadmap, Phases 0–6 (the
+roadmap document `docs/TODO.md` was removed once every item was
+completed; see it in git history at this tag). Migration notes:
+`docs/Migration_Guide.md`.
 
 ### Fixed (correctness)
 
