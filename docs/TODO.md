@@ -62,7 +62,7 @@
 - [x] **P5.2** 启用 `AtomicNodeStatistics`：每 NodeState 持有，快照填充 `node_stats`
 - [x] **P5.3** 统一 batch/stream 的 `total_executions` 语义并文档化
 - [x] **P5.4** 统计测试补齐：真实引擎跑批/流两模式断言全部接线字段非零且数值精确；`enable_statistics=false` 时门控字段保持为零
-- [ ] **P5.5** 日志统一：引擎日志经可注入 sink，`PipelineContext` adapter 可接管，废弃双轨
+- [x] **P5.5** 日志统一：引擎日志经可注入 sink，`PipelineContext` adapter 可接管，废弃双轨
 
 ## Phase 6 — 开发者体验与工程化收尾
 

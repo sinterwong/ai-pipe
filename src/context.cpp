@@ -9,6 +9,7 @@
  */
 
 #include "ai_pipe/context.hpp"
+#include "ai_pipe/logger.hpp"
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -78,6 +79,89 @@ void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
 // =============================================================================
 
 PipelineContext::PipelineContext() : m_executionId{0} {}
+
+PipelineContext::~PipelineContext() { detachEngineLogs(); }
+
+namespace {
+
+PipeLogLevel toPipeLogLevel(logging::LogLevel level) {
+  switch (level) {
+  case logging::LogLevel::Trace:
+    return PipeLogLevel::KTrace;
+  case logging::LogLevel::Debug:
+    return PipeLogLevel::KDebug;
+  case logging::LogLevel::Info:
+    return PipeLogLevel::KInfo;
+  case logging::LogLevel::Warning:
+    return PipeLogLevel::KWarning;
+  case logging::LogLevel::Error:
+  case logging::LogLevel::Fatal:
+  case logging::LogLevel::Off:
+    break;
+  }
+  return PipeLogLevel::KError;
+}
+
+} // namespace
+
+void PipelineContext::attachEngineLogs(bool quiet_console) {
+  // NOTE: Logger's callback mutex is held while callbacks run, and the
+  // bridge callback takes m_loggerMutex - so this function must never
+  // call into the Logger while holding m_loggerMutex (lock-order
+  // inversion). Registration happens outside the lock.
+  {
+    std::lock_guard<std::mutex> lock(m_loggerMutex);
+    if (m_engineLogCallbackId != 0) {
+      return; // Already attached
+    }
+    m_engineLogCallbackId = k_attach_in_progress;
+  }
+
+  // Weak capture: the async logger may still dispatch entries while the
+  // context is being torn down; expired contexts drop the message.
+  // Requires the context to be owned by a shared_ptr (the normal
+  // make_shared<PipelineContext>() usage).
+  std::weak_ptr<PipelineContext> weak_self = weak_from_this();
+  const auto id = logging::Logger::instance().addCallback(
+      [weak_self](const logging::LogEntry &entry) {
+        auto self = weak_self.lock();
+        if (!self) {
+          return;
+        }
+        std::shared_ptr<ILoggerAdapter> adapter;
+        {
+          std::lock_guard<std::mutex> adapter_lock(self->m_loggerMutex);
+          adapter = self->m_loggerAdapter;
+        }
+        if (adapter) {
+          adapter->log(toPipeLogLevel(entry.level),
+                       std::string(entry.category), entry.message);
+        }
+      });
+
+  {
+    std::lock_guard<std::mutex> lock(m_loggerMutex);
+    m_engineLogCallbackId = id;
+  }
+
+  if (quiet_console) {
+    logging::Logger::instance().enableConsole(false);
+  }
+}
+
+void PipelineContext::detachEngineLogs() {
+  std::uint64_t id = 0;
+  {
+    std::lock_guard<std::mutex> lock(m_loggerMutex);
+    id = m_engineLogCallbackId;
+    m_engineLogCallbackId = 0;
+  }
+  if (id != 0 && id != k_attach_in_progress) {
+    // Outside m_loggerMutex: removeCallback takes the Logger's callback
+    // mutex, which dispatch holds while invoking our bridge.
+    logging::Logger::instance().removeCallback(id);
+  }
+}
 
 PipelineContext::PipelineContext(PipelineContext &&other) noexcept {
   // Lock all mutexes - use unique_lock for write access

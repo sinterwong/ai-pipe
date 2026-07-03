@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -246,7 +247,7 @@ public:
 class PipelineContext : public std::enable_shared_from_this<PipelineContext> {
 public:
   PipelineContext();
-  ~PipelineContext() = default;
+  ~PipelineContext();
 
   // Non-copyable, movable
   PipelineContext(const PipelineContext &) = delete;
@@ -485,6 +486,25 @@ public:
   }
 
   /**
+   * @brief Route the framework's internal logs to this context's adapter
+   *
+   * The engine logs through the process-wide ai_pipe logger (LOG_*_S).
+   * Calling this installs a bridge so those messages are also delivered
+   * to the adapter set via setLoggerAdapter(), unifying framework and
+   * node logging behind one sink. The bridge holds a weak reference and
+   * is removed automatically when the context is destroyed (or by
+   * calling detachEngineLogs()).
+   *
+   * @param quiet_console When true, also disables the framework
+   *        logger's own console output so the adapter becomes the sole
+   *        sink.
+   */
+  void attachEngineLogs(bool quiet_console = false);
+
+  /** @brief Remove the bridge installed by attachEngineLogs() */
+  void detachEngineLogs();
+
+  /**
    * @brief Log a message through the adapter
    */
   void log(PipeLogLevel level, const std::string &node_name,
@@ -630,6 +650,11 @@ private:
   // Logger adapter
   std::mutex m_loggerMutex;
   std::shared_ptr<ILoggerAdapter> m_loggerAdapter;
+
+  // Engine-log bridge registration (0 = not attached)
+  static constexpr std::uint64_t k_attach_in_progress =
+      std::numeric_limits<std::uint64_t>::max();
+  std::uint64_t m_engineLogCallbackId{0};
 
   // Progress
   std::atomic<double> m_overallProgress{0.0};
