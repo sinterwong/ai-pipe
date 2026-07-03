@@ -732,6 +732,97 @@ TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
   EXPECT_GE(drop_count.load(), 0);
 }
 
+namespace {
+
+/// Node recording lifecycle transitions (P6.2)
+class LifecycleNode : public PassThroughNode {
+public:
+  explicit LifecycleNode(const std::string &name, bool fail_setup = false)
+      : PassThroughNode(name), m_failSetup(fail_setup) {}
+
+  Result<void> setup(std::shared_ptr<PipelineContext>) override {
+    setup_count.fetch_add(1);
+    if (m_failSetup) {
+      return Result<void>::err(ErrorCode::NodeException, "setup failed",
+                               getName());
+    }
+    return Result<void>::ok();
+  }
+
+  void teardown() noexcept override { teardown_count.fetch_add(1); }
+
+  std::atomic<int> setup_count{0};
+  std::atomic<int> teardown_count{0};
+
+private:
+  bool m_failSetup;
+};
+
+} // namespace
+
+TEST_F(ExecutionEngineTest, LifecycleSetupOnceTeardownOnReset) {
+  auto a = std::make_shared<LifecycleNode>("a");
+  auto b = std::make_shared<LifecycleNode>("b");
+  m_graph->addNode(a);
+  m_graph->addNode(b);
+  m_graph->addEdge("a", "output", "b", "input");
+
+  auto engine = createBatchEngine(2);
+  ASSERT_TRUE(engine->initialize(m_graph.get()).isOk());
+  EXPECT_EQ(a->setup_count.load(), 0) << "setup happens at first run";
+
+  PortDataMap inputs;
+  inputs["a"] = createData(1);
+  ASSERT_TRUE(engine->execute(inputs, true).isOk());
+  ASSERT_TRUE(engine->execute(inputs, true).isOk());
+
+  EXPECT_EQ(a->setup_count.load(), 1) << "setup must run exactly once";
+  EXPECT_EQ(b->setup_count.load(), 1);
+  EXPECT_EQ(a->teardown_count.load(), 0);
+
+  engine->reset();
+  EXPECT_EQ(a->teardown_count.load(), 1);
+  EXPECT_EQ(b->teardown_count.load(), 1);
+}
+
+TEST_F(ExecutionEngineTest, LifecycleSetupFailureAbortsAndUnwinds) {
+  auto ok_node = std::make_shared<LifecycleNode>("ok");
+  auto bad_node = std::make_shared<LifecycleNode>("bad", /*fail_setup=*/true);
+  m_graph->addNode(ok_node);
+  m_graph->addNode(bad_node);
+  m_graph->addEdge("ok", "output", "bad", "input");
+
+  auto engine = createBatchEngine(2);
+  ASSERT_TRUE(engine->initialize(m_graph.get()).isOk());
+
+  PortDataMap inputs;
+  inputs["ok"] = createData(1);
+  auto result = engine->execute(inputs, true);
+
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::NodeException);
+  EXPECT_EQ(result.error().nodeName(), "bad");
+  // The successfully set-up prefix ("ok" precedes "bad" topologically)
+  // must be unwound.
+  EXPECT_EQ(ok_node->setup_count.load(), 1);
+  EXPECT_EQ(ok_node->teardown_count.load(), 1);
+}
+
+TEST_F(ExecutionEngineTest, LifecycleTeardownOnDestruction) {
+  auto node = std::make_shared<LifecycleNode>("solo");
+  m_graph->addNode(node);
+
+  {
+    auto engine = createStreamEngine(2, 8);
+    ASSERT_TRUE(engine->initialize(m_graph.get()).isOk());
+    ASSERT_TRUE(engine->startStreaming().isOk());
+    EXPECT_EQ(node->setup_count.load(), 1);
+    engine->stopStreaming(false);
+  } // engine destroyed
+
+  EXPECT_EQ(node->teardown_count.load(), 1);
+}
+
 TEST_F(ExecutionEngineTest, StreamingNodeRecoversAfterFailure) {
   // P4.5: in streaming mode a node exception must not permanently
   // disable the node - subsequent frames keep flowing.

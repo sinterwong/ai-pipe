@@ -67,7 +67,7 @@
 ## Phase 6 — 开发者体验与工程化收尾
 
 - [x] **P6.1** 节点注册机制：`AI_PIPE_REGISTER_NODE(_WITH_CONFIG)` 宏 + `NodeRegistry::create(type, name, config)`（PortData 作配置袋，保持零依赖）；JSON 构图加载器留作后续增强
-- [ ] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
+- [x] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
 - [ ] **P6.3** CMake 现代化：警告全开、sanitizer 选项、CMakePresets、静态库选项、CI 矩阵扩展
 - [ ] **P6.4** clang-format/clang-tidy 入 CI；一次性风格统一（枚举/成员命名、Doxygen 补齐）
 - [ ] **P6.5** 错误处理单轨收尾：`Graph` 异常改 `Result`，`DataPacket` 提供 `Result` 风格取参
