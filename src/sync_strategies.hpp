@@ -11,7 +11,7 @@
  * Strategies provided:
  * - NoSyncStrategy: No synchronization (for batch processing)
  *
- * Note: CoordinatedSyncStrategy is an internal implementation and
+ *
  * is automatically used when sync coordination is enabled.
  *
  * @copyright Copyright (c) 2025

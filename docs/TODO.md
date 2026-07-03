@@ -53,7 +53,7 @@
 - [x] **P4.1** 引擎接线：多输入节点 FrameId 对齐（peek 对齐，落后帧判定为永失配对直接丢弃并上报；等待由既有重调度机制承担）；接通 `shouldDrop`（路径节点提前丢弃）与 `markProcessed`（水位线推进）；新增 `ISyncStrategy::tracksNode` 供引擎初始化时缓存成员关系，避免每帧策略锁
 - [x] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
 - [x] **P4.3** 端到端集成测试：fork-join 图 + 注入丢帧，断言 join 帧对齐与兄弟分支同步丢弃
-- [ ] **P4.4** 裁剪 `CoordinatedSyncStrategy`/`SyncCoordinator` 中接线后仍不可达的死代码
+- [x] **P4.4** 裁剪：删除完全无引用的 `coordinated_sync_strategy.hpp`（186 行）；`SyncCoordinator` 保留——其 API 现被 JoinAware 完整行使且有独立测试覆盖
 - [ ] **P4.5** 流模式节点失败后的恢复语义：当前节点异常后永久停留 FAILED，队列数据滞留（审计 P0.4 期间发现）
 
 ## Phase 5 — 可观测性真实化

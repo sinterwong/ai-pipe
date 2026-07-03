@@ -326,15 +326,13 @@ The `ISyncStrategy` interface handles frame alignment across parallel DAG branch
 | Strategy | Behavior |
 |----------|----------|
 | `NoSyncStrategy` | No synchronization (default for batch) |
-| `CoordinatedSyncStrategy` | Drop propagation across branches with watermark tracking |
-| `JoinAwareSyncStrategy` | Auto-detected sync groups at DAG join nodes |
+| `JoinAwareSyncStrategy` | Auto-detected sync groups at DAG join nodes with drop propagation and watermark tracking |
 
-> **Implementation status**: the engine currently only wires drop
-> *reporting* (`reportDrop`) into these strategies. Coordinated drop
-> enforcement at join nodes (`shouldDrop`/`markProcessed`/watermark
-> propagation) is not yet invoked by the execution engine, so multi-input
-> join nodes do **not** get frame-aligned inputs yet. Tracked in
-> `docs/TODO.md` Phase 4.
+> Since Phase 4, the engine fully drives these strategies: multi-input
+> nodes receive frame-aligned inputs (lagging frames whose partners were
+> dropped on sibling branches are discarded and reported), tracked path
+> nodes honor coordinated drops early via `shouldDrop`, and successful
+> executions advance the group watermark via `markProcessed`.
 
 ---
 
