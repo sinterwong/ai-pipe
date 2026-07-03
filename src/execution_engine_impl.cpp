@@ -187,8 +187,14 @@ ExecutionEngine::Impl::Impl(const EngineConfig &config) : m_config(config) {
 }
 
 ExecutionEngine::Impl::~Impl() {
-  if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-    stopExecutionSync();
+  // Always shut down the thread pool first, regardless of engine state.
+  // Worker threads may still be executing tasks that access members
+  // (m_nodeStates, m_activeTasks, m_stopFlag, callbacks, etc.) via the
+  // captured `this` pointer. C++ destroys members in reverse declaration
+  // order, so m_threadPool must be stopped and joined before any member
+  // it depends on is destroyed.
+  if (m_threadPool && m_threadPool->isRunning()) {
+    m_threadPool->shutdown(false);
   }
 }
 
