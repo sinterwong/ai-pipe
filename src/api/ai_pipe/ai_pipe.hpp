@@ -22,6 +22,7 @@
 #include "ai_pipe/edge.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
+#include "ai_pipe/node_registry.hpp"
 
 // Pipeline Context
 #include "ai_pipe/context.hpp"
