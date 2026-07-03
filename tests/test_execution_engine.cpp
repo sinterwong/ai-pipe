@@ -732,6 +732,54 @@ TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
   EXPECT_GE(drop_count.load(), 0);
 }
 
+TEST_F(ExecutionEngineTest, DropTailRejectionIsReportedNotSilent) {
+  // Regression: pushToQueue used to ignore the queue's push() result, so a
+  // DropTail rejection silently lost data while pushInput still reported
+  // PushStatus::Enqueued to the caller.
+  auto slow = std::make_shared<PassThroughNode>("slow", 200ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  m_graph->addNode(slow);
+  m_graph->addNode(sink);
+  m_graph->addEdge("slow", "output", "sink", "input");
+
+  auto engine = createStreamEngine(1, 2);
+
+  QueueConfig slow_config;
+  slow_config.capacity = 2;
+  slow_config.drop_strategy = "DropTail";
+  engine->setNodeQueueConfig("slow", slow_config);
+
+  engine->initialize(m_graph.get());
+
+  std::atomic<int> drop_count{0};
+  engine->setDropCallback(
+      [&](const std::string &, std::uint64_t, const std::string &) {
+        drop_count.fetch_add(1);
+      });
+
+  EXPECT_TRUE(engine->startStreaming().isOk());
+
+  // Capacity 2 with a 200ms consumer: rapid pushes must overflow the queue.
+  int rejected = 0;
+  for (int i = 0; i < 10; ++i) {
+    auto result = engine->pushInput("slow", createData(i));
+    if (!result) {
+      EXPECT_EQ(result.error().code(), ErrorCode::QueueRejected);
+      rejected++;
+    }
+  }
+
+  EXPECT_GT(rejected, 0) << "Full DropTail queue must reject, not fake success";
+  EXPECT_EQ(drop_count.load(), rejected);
+
+  auto stats = engine->statistics();
+  EXPECT_EQ(stats.queue_full_events, static_cast<std::uint64_t>(rejected));
+  EXPECT_EQ(stats.total_dropped_frames, static_cast<std::uint64_t>(rejected));
+
+  engine->stopStreaming(false);
+}
+
 // =============================================================================
 // Statistics Tests
 // =============================================================================

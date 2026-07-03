@@ -658,7 +658,12 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   }
 
   if (isInputPort(node, actual_port)) {
-    pushToQueue(node, actual_port, std::move(data));
+    if (!pushToQueue(node, actual_port, std::move(data))) {
+      return Result<PushStatus>::err(ErrorCode::QueueRejected,
+                                     "Queue full (DropTail) on port: " +
+                                         actual_port,
+                                     source_node);
+    }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     tryScheduleNode(node);
     auto size = getQueueSize(node, actual_port);
@@ -929,7 +934,11 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
       const auto &data_packet = initial_inputs.at(node->getName());
       if (!expected_ports.empty()) {
         const std::string &target_port = expected_ports[0];
-        pushToQueue(node, target_port, data_packet);
+        if (!pushToQueue(node, target_port, data_packet)) {
+          LOG_ERROR_S << "ExecutionEngine: Failed to distribute input to "
+                      << node->getName() << ":" << target_port;
+          return false;
+        }
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -1189,7 +1198,11 @@ void ExecutionEngine::Impl::propagateOutputs(const NodePtr &source,
     const auto &dest_node = edge.dest_node;
     const auto &dest_port = edge.dest_port;
 
-    pushToQueue(dest_node, dest_port, data);
+    if (!pushToQueue(dest_node, dest_port, data)) {
+      // Rejection is already accounted (statistics + drop callback); the
+      // downstream queue is full, so the node already has data to consume.
+      continue;
+    }
 
     LOG_TRACE_S << "ExecutionEngine: Propagated " << source->getName() << ":"
                 << edge.source_port << " -> " << dest_node->getName() << ":"
@@ -1360,24 +1373,44 @@ void ExecutionEngine::Impl::resetInternalState() {
 // Impl: Queue Operations
 // -------------------------------------------------------------------------
 
-void ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
+bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
                                         const std::string &port_name,
                                         PortDataPtr data) {
   auto state_it = m_nodeStates.find(node);
   if (state_it == m_nodeStates.end() || !state_it->second) {
-    return;
+    return false;
   }
 
   auto &state = *state_it->second;
 
   auto queue_it = state.lock_free_queues.find(port_name);
   if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    queue_it->second->push(std::move(data));
-    return;
+    if (queue_it->second->push(std::move(data))) {
+      return true;
+    }
+    recordQueueRejection(node, port_name);
+    return false;
   }
 
   LOG_WARNING_S << "ExecutionEngine: No queue found for " << state.name << ":"
                 << port_name;
+  return false;
+}
+
+void ExecutionEngine::Impl::recordQueueRejection(const NodePtr &node,
+                                                 const std::string &port_name) {
+  m_statistics.queue_full_events.fetch_add(1, std::memory_order_relaxed);
+  m_statistics.total_dropped_frames.fetch_add(1, std::memory_order_relaxed);
+
+  if (m_config.enable_drop_logging) {
+    LOG_WARNING_S << "ExecutionEngine: Frame rejected at " << node->getName()
+                  << ":" << port_name << " - DropTail queue full";
+  }
+
+  if (m_dropCallback) {
+    m_dropCallback(node->getName(), frame_constants::k_invalid_frame_id,
+                   "DropTail queue full");
+  }
 }
 
 std::optional<PortDataPtr>
@@ -1502,6 +1535,7 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   const auto &outgoing_edges = m_graph->getOutgoingEdges(source_node);
 
   std::size_t routed_count = 0;
+  std::size_t rejected_count = 0;
   std::size_t total_queue_size = 0;
 
   for (const auto &edge : outgoing_edges) {
@@ -1514,7 +1548,10 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
 
     PortDataPtr data_copy = data;
 
-    pushToQueue(dest_node, dest_port, std::move(data_copy));
+    if (!pushToQueue(dest_node, dest_port, std::move(data_copy))) {
+      rejected_count++;
+      continue;
+    }
 
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
 
@@ -1529,12 +1566,27 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   }
 
   if (routed_count == 0) {
+    if (rejected_count > 0) {
+      return Result<PushStatus>::err(
+          ErrorCode::QueueRejected,
+          "All downstream queues rejected data for port: " + output_port,
+          source_node->getName());
+    }
     LOG_WARNING_S << "ExecutionEngine: No downstream connections for "
                   << source_node->getName() << ":" << output_port;
     return Result<PushStatus>::err(ErrorCode::NoDownstreamConnection,
                                    "No downstream connections for port: " +
                                        output_port,
                                    source_node->getName());
+  }
+
+  if (rejected_count > 0) {
+    return PushStatus::dropped("rejected on " +
+                                   std::to_string(rejected_count) + " of " +
+                                   std::to_string(routed_count +
+                                                  rejected_count) +
+                                   " downstream branches",
+                               total_queue_size);
   }
 
   return PushStatus::enqueued(total_queue_size);

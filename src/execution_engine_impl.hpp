@@ -151,8 +151,17 @@ private:
   Result<void> waitForCompletion();
   void resetInternalState();
 
-  void pushToQueue(const NodePtr &node, const std::string &port_name,
-                   PortDataPtr data);
+  /**
+   * @brief Push data to a node's input queue, honoring its drop policy
+   * @return true if the data was accepted (possibly evicting an older frame),
+   *         false if it was rejected (DropTail policy on a full queue) or the
+   *         target queue does not exist
+   */
+  [[nodiscard]] bool pushToQueue(const NodePtr &node,
+                                 const std::string &port_name,
+                                 PortDataPtr data);
+
+  void recordQueueRejection(const NodePtr &node, const std::string &port_name);
   std::optional<PortDataPtr> popFromQueue(const NodePtr &node,
                                           const std::string &port_name);
   bool hasDataInQueue(const NodePtr &node, const std::string &port_name) const;
