@@ -20,6 +20,7 @@
 #ifndef AI_PIPE_UTILS_DATA_PACKET_HPP
 #define AI_PIPE_UTILS_DATA_PACKET_HPP
 
+#include "ai_pipe/frame_metadata.hpp"
 #include <any>
 #include <cstdint>
 #include <optional>
@@ -32,7 +33,22 @@ namespace ai_pipe::common_utils {
 using DataPacketId = uint64_t;
 
 struct DataPacket {
+  /**
+   * Frame identity header (P3.4). `id` doubles as the FrameId used for
+   * cross-branch synchronization: 0 means "unassigned", and the engine
+   * stamps a monotonically increasing id when an unassigned packet
+   * enters the pipeline. Mid-pipeline output packets inherit the frame
+   * identity of the inputs that produced them unless the node sets one
+   * explicitly.
+   */
   DataPacketId id{0};
+  StreamId stream_id{frame_constants::k_default_stream_id};
+  Timestamp timestamp{};
+
+  [[nodiscard]] FrameId frameId() const { return id; }
+  [[nodiscard]] bool hasFrameId() const {
+    return id != frame_constants::k_invalid_frame_id;
+  }
 
   template <typename T> T getParam(const std::string &key) const {
     const std::any *value = findParam(key);

@@ -600,6 +600,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   }
 
   if (isInputPort(node, actual_port)) {
+    stampIncomingFrame(data);
     if (!pushToQueue(node, actual_port, std::move(data))) {
       return Result<PushStatus>::err(ErrorCode::QueueRejected,
                                      "Queue full (DropTail) on port: " +
@@ -883,6 +884,7 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
 
     if (has_input) {
       const auto &data_packet = initial_inputs.at(node->getName());
+      stampIncomingFrame(data_packet);
       if (!expected_ports.empty()) {
         const std::string &target_port = expected_ports[0];
         if (!pushToQueue(node, target_port, data_packet)) {
@@ -1076,6 +1078,7 @@ void ExecutionEngine::Impl::executeNodeTask(
     state.exec_state.store(NodeExecutionState::WAITING,
                            std::memory_order_release);
   } else if (process_result) {
+    inheritFrameIdentity(inputs, outputs);
     handleNodeSuccess(node, outputs);
   } else {
     handleNodeFailure(node, process_result.error());
@@ -1316,6 +1319,7 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
 void ExecutionEngine::Impl::resetInternalState() {
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_activeTasks.store(0, std::memory_order_relaxed);
+  m_nextFrameId.store(1, std::memory_order_relaxed);
 
   {
     std::lock_guard<std::mutex> lock(m_resultsMutex);
@@ -1362,6 +1366,48 @@ bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
   LOG_WARNING_S << "ExecutionEngine: No queue found for " << state.name << ":"
                 << port_name;
   return false;
+}
+
+void ExecutionEngine::Impl::stampIncomingFrame(const PortDataPtr &data) {
+  if (!data || data->hasFrameId()) {
+    return;
+  }
+  data->id = m_nextFrameId.fetch_add(1, std::memory_order_relaxed);
+  if (data->timestamp == Timestamp{}) {
+    data->timestamp = std::chrono::steady_clock::now();
+  }
+}
+
+void ExecutionEngine::Impl::inheritFrameIdentity(const PortDataMap &inputs,
+                                                 PortDataMap &outputs) {
+  if (inputs.empty()) {
+    return;
+  }
+
+  // Use the first input's identity as the frame of record. Multi-input
+  // joins with diverging frame ids are the sync subsystem's concern
+  // (Phase 4); inheriting a deterministic representative keeps identity
+  // flowing through linear segments.
+  const PortDataPtr *primary = nullptr;
+  for (const auto &[port, packet] : inputs) {
+    if (packet && packet->hasFrameId()) {
+      primary = &packet;
+      break;
+    }
+  }
+  if (!primary) {
+    return;
+  }
+
+  for (auto &[port, packet] : outputs) {
+    if (packet && !packet->hasFrameId()) {
+      packet->id = (*primary)->id;
+      packet->stream_id = (*primary)->stream_id;
+      if (packet->timestamp == Timestamp{}) {
+        packet->timestamp = (*primary)->timestamp;
+      }
+    }
+  }
 }
 
 void ExecutionEngine::Impl::recordQueueRejection(const NodePtr &node,

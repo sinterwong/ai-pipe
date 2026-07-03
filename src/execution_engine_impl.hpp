@@ -195,6 +195,21 @@ private:
                                  PortDataPtr data);
 
   void recordQueueRejection(const NodePtr &node, const std::string &port_name);
+
+  /**
+   * @brief Assign frame identity to a packet entering the pipeline
+   *
+   * Stamps a monotonic FrameId (and a capture timestamp) onto packets
+   * injected from outside that carry no id yet. Explicit ids are
+   * preserved so callers can drive their own frame numbering.
+   */
+  void stampIncomingFrame(const PortDataPtr &data);
+
+  /**
+   * @brief Propagate frame identity from inputs to fresh output packets
+   */
+  static void inheritFrameIdentity(const PortDataMap &inputs,
+                                   PortDataMap &outputs);
   std::optional<PortDataPtr> popFromQueue(const NodePtr &node,
                                           const std::string &port_name);
   bool hasDataInQueue(const NodePtr &node, const std::string &port_name) const;
@@ -242,6 +257,10 @@ private:
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;
   std::vector<NodePtr> m_sinkNodes;
+
+  // Monotonic FrameId source for packets entering the pipeline without
+  // an assigned id (see stampIncomingFrame).
+  std::atomic<FrameId> m_nextFrameId{1};
 
   std::atomic<EngineState> m_engineState{EngineState::IDLE};
   std::atomic<int> m_activeTasks{0};

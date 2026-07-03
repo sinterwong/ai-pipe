@@ -46,7 +46,7 @@
 - [x] **P3.1** `DataPacket` v2：扁平存储替代 `std::map`（方法级 API 完全兼容，存储转私有），新增 `TypedParam<T>` 声明式 API（更名自 TypedPort——它绑定的是包内参数而非节点端口，类型化端口声明见 P3.2）
 - [x] **P3.2** 端口类型校验：`ILogicNode::portPayloadType()` 可选声明端口负载类型，`addEdge` 期即校验（早于 build），双端声明且不匹配即拒绝，未声明默认放行
 - [ ] **P3.3** 所有权模型：下游接收 `shared_ptr<const DataPacket>`，提供 COW 逃生门，文档明确约定
-- [ ] **P3.4** `FrameId/StreamId/timestamp` 内建于 `DataPacket` 头部，引擎为 source 输入自动分配单调 FrameId
+- [x] **P3.4** `FrameId/StreamId/timestamp` 内建于 `DataPacket` 头部，引擎为 source 输入自动分配单调 FrameId
 
 ## Phase 4 — 同步子系统：接线或裁剪
 
