@@ -1086,14 +1086,28 @@ TEST_F(ExecutionEngineTest, ExecuteDuringStreaming) {
   engine->stopStreaming();
 }
 
-TEST_F(ExecutionEngineTest, EmptyGraph) {
+TEST_F(ExecutionEngineTest, EmptyGraphIsRejected) {
   auto engine = createBatchEngine();
 
-  // Empty graph (no nodes)
-  EXPECT_TRUE(engine->initialize(m_graph.get()).isOk());
+  // Since P1.2 the engine validates the graph at initialize() time:
+  // an empty graph is a configuration error, not a no-op pipeline.
+  auto result = engine->initialize(m_graph.get());
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::GraphEmpty);
+}
 
-  PortDataMap inputs;
-  EXPECT_TRUE(engine->execute(inputs, true).isOk());
+TEST_F(ExecutionEngineTest, CyclicGraphIsRejected) {
+  auto a = std::make_shared<JoinNode>("a", std::vector<std::string>{"input"});
+  auto b = std::make_shared<JoinNode>("b", std::vector<std::string>{"input"});
+  m_graph->addNode(a);
+  m_graph->addNode(b);
+  ASSERT_TRUE(m_graph->addEdge("a", "output", "b", "input"));
+  ASSERT_TRUE(m_graph->addEdge("b", "output", "a", "input"));
+
+  auto engine = createBatchEngine();
+  auto result = engine->initialize(m_graph.get());
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::GraphCycleDetected);
 }
 
 TEST_F(ExecutionEngineTest, SingleNodeGraph) {

@@ -19,6 +19,7 @@
 
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
+#include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>
@@ -202,6 +203,11 @@ private:
   std::unique_ptr<ISyncStrategy> m_syncStrategy;
 
   Graph *m_graph{nullptr};
+
+  // Immutable indexed view of m_graph, rebuilt by initialize(). Holds the
+  // precomputed routing table and topology sets used on the hot path.
+  std::optional<CompiledGraph> m_compiledGraph;
+
   std::unique_ptr<WorkStealingThreadPool> m_threadPool;
 
   // Written by execute()/startStreaming() and cleared on completion while

@@ -263,7 +263,18 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   std::lock_guard<std::mutex> lock(m_engineMutex);
 
+  // Compile the graph up front: rejects empty graphs and cycles, and
+  // precomputes the routing/topology data the execution paths rely on.
+  auto compiled = CompiledGraph::compile(*graph);
+  if (!compiled) {
+    LOG_ERROR_S << "ExecutionEngine: Graph compilation failed: "
+                << compiled.error().toString();
+    return Result<void>::err(compiled.error());
+  }
+
   m_graph = graph;
+  m_compiledGraph.emplace(std::move(compiled.value()));
+
   if (num_workers > 0) {
     m_config.num_workers = num_workers;
   }

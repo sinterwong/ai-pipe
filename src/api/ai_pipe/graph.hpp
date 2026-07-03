@@ -60,11 +60,6 @@ public:
   void clear();
 
 private:
-  bool hasCycleDFS(
-      const std::shared_ptr<ILogicNode> &node,
-      std::unordered_map<std::shared_ptr<ILogicNode>, int> &visit_status) const;
-
-private:
   std::vector<std::shared_ptr<ILogicNode>> m_nodes;
   std::vector<Edge> m_edges;
 
