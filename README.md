@@ -31,7 +31,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 - **Unified Error Handling**: `Result<T>` monadic type replaces mixed bool/exception patterns with zero-overhead success path and rich error context (code + message + node name).
 - **Zero Third-Party Dependencies**: Built entirely on C++20 standard library (requires compiler support for `<atomic>`, `<shared_mutex>`, `<any>`, `<optional>`, etc.).
 - **PIMPL Idiom**: Clean public API with hidden implementation details, ensuring stable ABI and fast compilation.
-- **Comprehensive Observability**: Latency histogram (16-bucket, microsecond resolution), per-node statistics, throughput metrics, and percentile reporting (p50/p90/p95/p99).
+- **Observability**: Execution, drop, and throughput statistics with queue-level counters. Latency histograms, percentile reporting, and per-node statistics exist in the API surface but are **not yet wired into the engine** (tracked in `docs/TODO.md`, Phase 5).
 
 ---
 
@@ -318,6 +318,13 @@ The `ISyncStrategy` interface handles frame alignment across parallel DAG branch
 | `CoordinatedSyncStrategy` | Drop propagation across branches with watermark tracking |
 | `JoinAwareSyncStrategy` | Auto-detected sync groups at DAG join nodes |
 
+> **Implementation status**: the engine currently only wires drop
+> *reporting* (`reportDrop`) into these strategies. Coordinated drop
+> enforcement at join nodes (`shouldDrop`/`markProcessed`/watermark
+> propagation) is not yet invoked by the execution engine, so multi-input
+> join nodes do **not** get frame-aligned inputs yet. Tracked in
+> `docs/TODO.md` Phase 4.
+
 ---
 
 ## Frame Metadata & Synchronization
@@ -343,25 +350,24 @@ stats.success_rate;           // Execution success rate (%)
 stats.throughput;             // Frames per second
 stats.drop_rate;              // Frame drop rate (%)
 stats.avgProcessingTimeUs();  // Average processing time (μs)
-stats.avgWaitTimeUs();        // Average queue wait time (μs)
-stats.avgScheduleTimeUs();    // Average scheduling overhead (μs)
 ```
 
-### Latency Histogram
+> **Implementation status**: the counters above are live. The following
+> accessors exist in the API but are **not yet fed by the engine** and
+> currently return zero — see `docs/TODO.md` Phase 5 for the wiring plan:
+> `avgWaitTimeUs()`, `avgScheduleTimeUs()`, `latencyPercentiles()`,
+> `histogramData()`, and the per-node `node_stats` vector.
 
-16-bucket histogram from <10μs to ≥500ms with percentile reporting:
+### Latency Histogram (planned — P5.1)
 
-```cpp
-auto percentiles = stats.latencyPercentiles();
-// Returns: {{"p50", val}, {"p90", val}, {"p95", val}, {"p99", val}, {"p99.9", val}}
+The API defines a 16-bucket histogram from <10μs to ≥500ms with percentile
+reporting (`latencyPercentiles()`, `histogramData()`). The engine does not
+record into it yet; values are all zero until Phase 5 lands.
 
-auto histogram = stats.histogramData();
-// Returns: {{"<10us", count}, {"<25us", count}, ..., {">=500ms", count}}
-```
+### Per-Node Statistics (planned — P5.2)
 
-### Per-Node Statistics
-
-Track individual node performance including execution count, success rate, and processing time.
+`NodeStatistics`/`AtomicNodeStatistics` types exist, but the engine does not
+populate `EngineStatisticsSnapshot::node_stats` yet.
 
 ### Pipeline State Machine
 
