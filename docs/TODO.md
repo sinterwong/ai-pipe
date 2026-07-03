@@ -68,7 +68,7 @@
 
 - [x] **P6.1** 节点注册机制：`AI_PIPE_REGISTER_NODE(_WITH_CONFIG)` 宏 + `NodeRegistry::create(type, name, config)`（PortData 作配置袋，保持零依赖）；JSON 构图加载器留作后续增强
 - [x] **P6.2** 节点生命周期：`ILogicNode::setup(context)/teardown()`（默认空实现），引擎在 initialize/reset 调用
-- [ ] **P6.3** CMake 现代化：警告全开、sanitizer 选项、CMakePresets、静态库选项、CI 矩阵扩展
+- [x] **P6.3** CMake 现代化：库目标 -Wall -Wextra -Wpedantic（修净全部告警）+ AI_PIPE_WERROR 选项、CMakePresets.json（debug/release/asan/tsan/static）、BUILD_SHARED_LIBS 显式化（静态构建验证通过）、CI 扩展 GCC-13+Clang-18 矩阵与 static+Werror job；sanitizer 选项已在 P0.5
 - [ ] **P6.4** clang-format/clang-tidy 入 CI；一次性风格统一（枚举/成员命名、Doxygen 补齐）
 - [ ] **P6.5** 错误处理单轨收尾：`Graph` 异常改 `Result`，`DataPacket` 提供 `Result` 风格取参
 - [ ] **P6.6** 文档重写：设计文档与实现对齐，新增节点开发指南与迁移指南，建立 CHANGELOG
