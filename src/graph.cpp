@@ -98,6 +98,24 @@ bool Graph::addEdge(const std::string &source_node_name,
       return false;
     }
   }
+  // Payload type validation: reject the edge when both endpoints declare
+  // a concrete payload type and the types disagree. typeid(void) means
+  // "untyped" and always passes.
+  if (!source_port_name.empty() && !dest_port_name.empty()) {
+    const std::type_index source_type =
+        source_node->portPayloadType(source_port_name);
+    const std::type_index dest_type =
+        dest_node->portPayloadType(dest_port_name);
+    if (source_type != typeid(void) && dest_type != typeid(void) &&
+        source_type != dest_type) {
+      LOG_ERROR_S << "Payload type mismatch on edge " << source_node_name
+                  << ":" << source_port_name << " (" << source_type.name()
+                  << ") -> " << dest_node_name << ":" << dest_port_name << " ("
+                  << dest_type.name() << ")";
+      return false;
+    }
+  }
+
   // Reject an identical edge (same source node/port and dest node/port)
   // via a hash-set membership test instead of scanning every edge.
   std::string edge_key;

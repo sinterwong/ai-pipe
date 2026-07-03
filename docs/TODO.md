@@ -43,26 +43,26 @@
 
 ## Phase 3 — 数据平面：类型安全与所有权
 
-- [ ] **P3.1** `DataPacket` v2：扁平存储替代 `std::map`，保留兼容层，新增 `TypedPort<T>` 声明式 API
-- [ ] **P3.2** 端口类型校验：节点声明端口类型，`build()` 期校验边两端类型匹配
-- [ ] **P3.3** 所有权模型：下游接收 `shared_ptr<const DataPacket>`，提供 COW 逃生门，文档明确约定
-- [ ] **P3.4** `FrameId/StreamId/timestamp` 内建于 `DataPacket` 头部，引擎为 source 输入自动分配单调 FrameId
+- [x] **P3.1** `DataPacket` v2：扁平存储替代 `std::map`（方法级 API 完全兼容，存储转私有），新增 `TypedParam<T>` 声明式 API（更名自 TypedPort——它绑定的是包内参数而非节点端口，类型化端口声明见 P3.2）
+- [x] **P3.2** 端口类型校验：`ILogicNode::portPayloadType()` 可选声明端口负载类型，`addEdge` 期即校验（早于 build），双端声明且不匹配即拒绝，未声明默认放行
+- [x] **P3.3** 所有权模型：下游接收 `shared_ptr<const DataPacket>`，提供 COW 逃生门，文档明确约定
+- [x] **P3.4** `FrameId/StreamId/timestamp` 内建于 `DataPacket` 头部，引擎为 source 输入自动分配单调 FrameId
 
 ## Phase 4 — 同步子系统：接线或裁剪
 
-- [ ] **P4.1** 引擎接线：多输入节点 FrameId 对齐（peek 对齐 + 落后等待 + 超时降级）；接通 `shouldDrop`/`markProcessed`
-- [ ] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
-- [ ] **P4.3** 端到端集成测试：fork-join 图 + 注入丢帧，断言 join 帧对齐与兄弟分支同步丢弃
-- [ ] **P4.4** 裁剪 `CoordinatedSyncStrategy`/`SyncCoordinator` 中接线后仍不可达的死代码
-- [ ] **P4.5** 流模式节点失败后的恢复语义：当前节点异常后永久停留 FAILED，队列数据滞留（审计 P0.4 期间发现）
+- [x] **P4.1** 引擎接线：多输入节点 FrameId 对齐（peek 对齐，落后帧判定为永失配对直接丢弃并上报；等待由既有重调度机制承担）；接通 `shouldDrop`（路径节点提前丢弃）与 `markProcessed`（水位线推进）；新增 `ISyncStrategy::tracksNode` 供引擎初始化时缓存成员关系，避免每帧策略锁
+- [x] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
+- [x] **P4.3** 端到端集成测试：fork-join 图 + 注入丢帧，断言 join 帧对齐与兄弟分支同步丢弃
+- [x] **P4.4** 裁剪：删除完全无引用的 `coordinated_sync_strategy.hpp`（186 行）；`SyncCoordinator` 保留——其 API 现被 JoinAware 完整行使且有独立测试覆盖
+- [x] **P4.5** 流模式节点失败后的恢复语义：当前节点异常后永久停留 FAILED，队列数据滞留（审计 P0.4 期间发现）
 
 ## Phase 5 — 可观测性真实化
 
-- [ ] **P5.1** 接线 `recordLatency`、`total_queue_pops`、`total_wait_time_us`、`queue_full_events`、`total_input_frames`
-- [ ] **P5.2** 启用 `AtomicNodeStatistics`：每 NodeState 持有，快照填充 `node_stats`
-- [ ] **P5.3** 统一 batch/stream 的 `total_executions` 语义并文档化
-- [ ] **P5.4** 统计测试补齐：snapshot 字段非零/单调断言；`enable_statistics=false` 零开销验证
-- [ ] **P5.5** 日志统一：引擎日志经可注入 sink，`PipelineContext` adapter 可接管，废弃双轨
+- [x] **P5.1** 接线 `recordLatency`（sink 端到端延迟直方图）、`total_queue_pops`、`total_wait_time_us`（出队帧龄）、`total_input_frames`、`total_schedule_time_us`（READY→执行延迟）；`queue_full_events` 已在 P0.1 接线
+- [x] **P5.2** 启用 `AtomicNodeStatistics`：每 NodeState 持有，快照填充 `node_stats`
+- [x] **P5.3** 统一 batch/stream 的 `total_executions` 语义并文档化
+- [x] **P5.4** 统计测试补齐：真实引擎跑批/流两模式断言全部接线字段非零且数值精确；`enable_statistics=false` 时门控字段保持为零
+- [x] **P5.5** 日志统一：引擎日志经可注入 sink，`PipelineContext` adapter 可接管，废弃双轨
 
 ## Phase 6 — 开发者体验与工程化收尾
 

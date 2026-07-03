@@ -1,4 +1,5 @@
 #include "ai_pipe/context.hpp"
+#include "ai_pipe/logger.hpp"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>
@@ -686,4 +687,69 @@ TEST(PipelineContextMoveTest, MoveAssignment) {
   moved = std::move(*ctx);
 
   EXPECT_TRUE(moved.hasResource("res"));
+}
+
+// =============================================================================
+// Engine log bridge (P5.5)
+// =============================================================================
+
+namespace {
+
+class CapturingAdapter : public ILoggerAdapter {
+public:
+  void log(PipeLogLevel level, const std::string &,
+           const std::string &message) override {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_entries.emplace_back(level, message);
+  }
+
+  std::vector<std::pair<PipeLogLevel, std::string>> entries() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_entries;
+  }
+
+private:
+  mutable std::mutex m_mutex;
+  std::vector<std::pair<PipeLogLevel, std::string>> m_entries;
+};
+
+} // namespace
+
+TEST(EngineLogBridgeTest, FrameworkLogsReachAdapter) {
+  auto context = std::make_shared<PipelineContext>();
+  auto adapter = std::make_shared<CapturingAdapter>();
+  context->setLoggerAdapter(adapter);
+  context->attachEngineLogs();
+
+  LOG_ERROR_S << "bridge-test-message";
+
+  bool found = false;
+  for (const auto &[level, message] : adapter->entries()) {
+    if (message.find("bridge-test-message") != std::string::npos) {
+      EXPECT_EQ(level, PipeLogLevel::KError);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found) << "engine log must reach the context adapter";
+
+  context->detachEngineLogs();
+  LOG_ERROR_S << "post-detach-message";
+  for (const auto &[level, message] : adapter->entries()) {
+    EXPECT_EQ(message.find("post-detach-message"), std::string::npos)
+        << "detached bridge must not forward";
+  }
+}
+
+TEST(EngineLogBridgeTest, DestroyedContextDropsBridge) {
+  auto adapter = std::make_shared<CapturingAdapter>();
+  {
+    auto context = std::make_shared<PipelineContext>();
+    context->setLoggerAdapter(adapter);
+    context->attachEngineLogs();
+  } // context destroyed -> bridge removed in destructor
+
+  LOG_ERROR_S << "after-context-destroyed";
+  for (const auto &[level, message] : adapter->entries()) {
+    EXPECT_EQ(message.find("after-context-destroyed"), std::string::npos);
+  }
 }

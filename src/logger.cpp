@@ -188,9 +188,17 @@ void Logger::setPattern(const std::string &pattern) {
   m_config.pattern = pattern;
 }
 
-void Logger::addCallback(LogCallback callback) {
+Logger::CallbackId Logger::addCallback(LogCallback callback) {
   std::lock_guard lock(m_callbackMutex);
-  m_callbacks.push_back(std::move(callback));
+  const CallbackId id = m_nextCallbackId++;
+  m_callbacks.emplace_back(id, std::move(callback));
+  return id;
+}
+
+void Logger::removeCallback(CallbackId id) {
+  std::lock_guard lock(m_callbackMutex);
+  std::erase_if(m_callbacks,
+                [id](const auto &entry) { return entry.first == id; });
 }
 
 void Logger::clearCallbacks() noexcept {
@@ -321,7 +329,7 @@ void Logger::processEntry(const LogEntry &entry) {
   // Invoke callbacks
   {
     std::lock_guard lock(m_callbackMutex);
-    for (const auto &cb : m_callbacks) {
+    for (const auto &[id, cb] : m_callbacks) {
       try {
         cb(entry);
       } catch (...) {

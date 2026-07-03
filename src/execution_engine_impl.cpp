@@ -293,6 +293,16 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   initializeNodeStates();
   initializeQueues();
 
+  // Cache sync-tracking membership so hot paths skip the strategy lock
+  // for nodes outside any sync group.
+  const bool sync_active = m_syncStrategy && m_syncStrategy->isEnabled();
+  for (auto &[node_ptr, state] : m_nodeStates) {
+    if (state) {
+      state->sync_tracked =
+          sync_active && m_syncStrategy->tracksNode(state->name);
+    }
+  }
+
   // Identify sink nodes
   identifySinkNodes();
 
@@ -365,8 +375,6 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
     resetInternalState();
     m_engineState.store(EngineState::RUNNING, std::memory_order_release);
   }
-
-  m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
 
   if (!distributeInitialInputs(initial_inputs)) {
     std::lock_guard<std::mutex> lock(m_engineMutex);
@@ -600,6 +608,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   }
 
   if (isInputPort(node, actual_port)) {
+    stampIncomingFrame(data);
     if (!pushToQueue(node, actual_port, std::move(data))) {
       return Result<PushStatus>::err(ErrorCode::QueueRejected,
                                      "Queue full (DropTail) on port: " +
@@ -607,6 +616,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
                                      source_node);
     }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+    m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
     tryScheduleNode(node);
     auto size = getQueueSize(node, actual_port);
     return PushStatus::enqueued(size);
@@ -629,7 +639,25 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
 // -------------------------------------------------------------------------
 
 EngineStatisticsSnapshot ExecutionEngine::Impl::statistics() const {
-  return EngineStatisticsSnapshot(m_statistics);
+  EngineStatisticsSnapshot snapshot(m_statistics);
+
+  snapshot.node_stats.reserve(m_nodeStates.size());
+  for (const auto &[node_ptr, state] : m_nodeStates) {
+    if (!state) {
+      continue;
+    }
+    auto node_stats = state->stats.snapshot(state->name);
+    std::size_t queue_depth = 0;
+    for (const auto *queue : state->input_queues) {
+      if (queue) {
+        queue_depth += queue->size();
+      }
+    }
+    node_stats.current_queue_depth = queue_depth;
+    snapshot.node_stats.push_back(std::move(node_stats));
+  }
+
+  return snapshot;
 }
 
 std::size_t
@@ -842,6 +870,13 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
+        queue->setFrameIdAccessor(
+            [](const PortDataPtr &item) -> std::optional<FrameId> {
+              if (item && item->hasFrameId()) {
+                return item->frameId();
+              }
+              return std::nullopt;
+            });
         queue->setDropCallback(
             [this, name = state->name](const DropEvent &event) {
               m_statistics.total_dropped_frames.fetch_add(
@@ -883,6 +918,7 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
 
     if (has_input) {
       const auto &data_packet = initial_inputs.at(node->getName());
+      stampIncomingFrame(data_packet);
       if (!expected_ports.empty()) {
         const std::string &target_port = expected_ports[0];
         if (!pushToQueue(node, target_port, data_packet)) {
@@ -890,6 +926,8 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
                       << node->getName() << ":" << target_port;
           return false;
         }
+        m_statistics.total_input_frames.fetch_add(1,
+                                                   std::memory_order_relaxed);
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -974,14 +1012,21 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
 
   m_activeTasks.fetch_add(1, std::memory_order_acq_rel);
 
-  if (m_config.mode == ExecutionMode::STREAM) {
-    m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
-  }
-
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
   const bool posted = m_threadPool->post(
-      [this, node, context = m_currentContext.load()]() mutable {
+      [this, node, context = m_currentContext.load(),
+       scheduled_at = std::chrono::steady_clock::now()]() mutable {
+        if (m_config.enable_statistics) {
+          const auto delay =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  std::chrono::steady_clock::now() - scheduled_at)
+                  .count();
+          if (delay > 0) {
+            m_statistics.total_schedule_time_us.fetch_add(
+                static_cast<std::uint64_t>(delay), std::memory_order_relaxed);
+          }
+        }
         executeNodeTask(std::move(node), std::move(context));
       });
 
@@ -1062,6 +1107,7 @@ void ExecutionEngine::Impl::executeNodeTask(
   }
 
   // Process node - now returns Result<void> with rich error context
+  m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
   auto process_result = processNode(node, inputs, outputs, context);
 
   auto end_time = std::chrono::steady_clock::now();
@@ -1071,11 +1117,49 @@ void ExecutionEngine::Impl::executeNodeTask(
   m_statistics.total_processing_time_us.fetch_add(duration_us,
                                                   std::memory_order_relaxed);
 
+  if (m_config.enable_statistics) {
+    state.stats.recordExecution(process_result.isOk(),
+                                static_cast<std::uint64_t>(duration_us));
+    if (process_result.isOk()) {
+      state.stats.recordIo(inputs.size(), outputs.size());
+    }
+  }
+
   // Handle completion
   if (m_stopFlag.load(std::memory_order_acquire)) {
     state.exec_state.store(NodeExecutionState::WAITING,
                            std::memory_order_release);
   } else if (process_result) {
+    inheritFrameIdentity(inputs, outputs);
+
+    // End-to-end frame latency: measured when a frame reaches a sink,
+    // from its pipeline-entry timestamp to completion.
+    if (m_config.enable_statistics && isSinkNode(node)) {
+      for (const auto &[port, packet] : inputs) {
+        if (packet && packet->timestamp != Timestamp{}) {
+          const auto latency =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  end_time - packet->timestamp)
+                  .count();
+          if (latency > 0) {
+            m_statistics.recordLatency(static_cast<std::uint64_t>(latency));
+          }
+          break;
+        }
+      }
+    }
+
+    // Advance the sync watermark for tracked nodes so the coordinator
+    // can prune drop records the whole group has moved past.
+    if (state.sync_tracked && m_syncStrategy) {
+      for (const auto &[port, packet] : inputs) {
+        if (packet && packet->hasFrameId()) {
+          m_syncStrategy->markProcessed(state.name, packet->frameId());
+          break;
+        }
+      }
+    }
+
     handleNodeSuccess(node, outputs);
   } else {
     handleNodeFailure(node, process_result.error());
@@ -1098,19 +1182,145 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
 
   auto &state = *state_it->second;
 
+  // Multi-input nodes get frame-aligned gathering whenever a sync
+  // strategy is active; alignment is driven purely by frame ids, so it
+  // does not require the node to be mapped into a sync group.
+  if (state.input_ports.size() > 1 && m_syncStrategy &&
+      m_syncStrategy->isEnabled()) {
+    return gatherAlignedInputs(state, inputs);
+  }
+
   for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
     auto *queue = state.input_queues[i];
-    auto data = queue ? queue->tryPop() : std::nullopt;
-    if (data.has_value()) {
+    for (;;) {
+      auto data = queue ? queue->tryPop() : std::nullopt;
+      if (!data.has_value()) {
+        LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
+                    << ":" << state.input_ports[i];
+        return false;
+      }
+      // Coordinated drop: a sibling branch already dropped this frame,
+      // so processing it here would only feed a doomed pairing.
+      if (state.sync_tracked && data.value() && data.value()->hasFrameId() &&
+          m_syncStrategy->shouldDrop(state.name, data.value()->frameId())) {
+        recordSyncDrop(state, state.input_ports[i], data.value()->frameId(),
+                       "coordinated sync drop");
+        continue;
+      }
+      recordDequeue(data.value());
       inputs[state.input_ports[i]] = std::move(data.value());
-    } else {
-      LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
-                  << ":" << state.input_ports[i];
-      return false;
+      break;
     }
   }
 
   return true;
+}
+
+bool ExecutionEngine::Impl::gatherAlignedInputs(NodeState &state,
+                                                PortDataMap &inputs) {
+  const std::size_t port_count = state.input_ports.size();
+  std::vector<FrameId> head_ids(port_count, 0);
+
+  for (;;) {
+    // Phase A: peek every head (discarding pending coordinated drops)
+    // and find the newest frame id among them.
+    FrameId target = 0;
+    for (std::size_t i = 0; i < port_count; ++i) {
+      auto *queue = state.input_queues[i];
+      for (;;) {
+        auto head = queue ? queue->tryPeek() : std::nullopt;
+        if (!head.has_value()) {
+          return false; // Port not ready; caller reschedules
+        }
+        const FrameId frame =
+            head.value() ? head.value()->frameId() : FrameId{0};
+        if (state.sync_tracked &&
+            frame != frame_constants::k_invalid_frame_id &&
+            m_syncStrategy->shouldDrop(state.name, frame)) {
+          (void)queue->tryPop();
+          recordSyncDrop(state, state.input_ports[i], frame,
+                         "coordinated sync drop");
+          continue;
+        }
+        head_ids[i] = frame;
+        if (frame > target) {
+          target = frame;
+        }
+        break;
+      }
+    }
+
+    // Phase B: all heads aligned (or wildcard 0)? Pop and deliver.
+    bool aligned = true;
+    for (std::size_t i = 0; i < port_count; ++i) {
+      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
+          head_ids[i] != target) {
+        aligned = false;
+        break;
+      }
+    }
+
+    if (aligned) {
+      for (std::size_t i = 0; i < port_count; ++i) {
+        auto data = state.input_queues[i]->tryPop();
+        if (!data.has_value()) {
+          return false; // Should not happen under single-consumer contract
+        }
+        recordDequeue(data.value());
+        inputs[state.input_ports[i]] = std::move(data.value());
+      }
+      return true;
+    }
+
+    // Phase C: discard lagging heads - their partner frames were lost
+    // on a sibling branch, so they can never be paired.
+    for (std::size_t i = 0; i < port_count; ++i) {
+      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
+          head_ids[i] < target) {
+        (void)state.input_queues[i]->tryPop();
+        recordSyncDrop(state, state.input_ports[i], head_ids[i],
+                       "frame alignment drop");
+        if (state.sync_tracked) {
+          (void)m_syncStrategy->reportDrop(state.name, head_ids[i],
+                                           "frame alignment");
+        }
+      }
+    }
+    // Loop: re-peek with fresh heads (each pass discards >= 1 frame, so
+    // this terminates once queues stabilize or a port runs dry).
+  }
+}
+
+void ExecutionEngine::Impl::recordDequeue(const PortDataPtr &data) {
+  if (!m_config.enable_statistics) {
+    return;
+  }
+  m_statistics.total_queue_pops.fetch_add(1, std::memory_order_relaxed);
+  if (data && data->timestamp != Timestamp{}) {
+    const auto age = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now() - data->timestamp)
+                         .count();
+    if (age > 0) {
+      m_statistics.total_wait_time_us.fetch_add(
+          static_cast<std::uint64_t>(age), std::memory_order_relaxed);
+    }
+  }
+}
+
+void ExecutionEngine::Impl::recordSyncDrop(const NodeState &state,
+                                           const std::string &port_name,
+                                           FrameId frame_id,
+                                           const char *reason) {
+  m_statistics.total_dropped_frames.fetch_add(1, std::memory_order_relaxed);
+
+  if (m_config.enable_drop_logging) {
+    LOG_DEBUG_S << "ExecutionEngine: Dropped frame " << frame_id << " at "
+                << state.name << ":" << port_name << " - " << reason;
+  }
+
+  if (m_dropCallback) {
+    m_dropCallback(state.name, frame_id, reason);
+  }
 }
 
 Result<void> ExecutionEngine::Impl::processNode(
@@ -1197,6 +1407,7 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
     collectResults(node, outputs);
   }
 
+
   // Propagate outputs
   propagateOutputs(node, outputs);
 
@@ -1217,17 +1428,27 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
                                               const Error &error) {
   auto &state = m_nodeStates[node];
 
-  state->exec_state.store(NodeExecutionState::FAILED,
-                          std::memory_order_release);
-
   m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
 
   LOG_ERROR_S << "ExecutionEngine: Node " << state->name
               << " FAILED: " << error.toString();
 
-  if (!isStreaming()) {
-    stopExecutionAsync();
+  if (isStreaming()) {
+    // Streaming semantics: a node exception is a per-frame event, not a
+    // pipeline-fatal one. The failing frame was already consumed from
+    // the queues, so return the node to service for subsequent frames -
+    // previously it stayed FAILED forever and stranded its queued data.
+    // (Error visibility is preserved: statistics, logs, and the error
+    // callback fired from processNode.)
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
+    tryScheduleNode(node);
+    return;
   }
+
+  state->exec_state.store(NodeExecutionState::FAILED,
+                          std::memory_order_release);
+  stopExecutionAsync();
 }
 
 void ExecutionEngine::Impl::checkCompletionAndNotify() {
@@ -1316,6 +1537,7 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
 void ExecutionEngine::Impl::resetInternalState() {
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_activeTasks.store(0, std::memory_order_relaxed);
+  m_nextFrameId.store(1, std::memory_order_relaxed);
 
   {
     std::lock_guard<std::mutex> lock(m_resultsMutex);
@@ -1327,6 +1549,7 @@ void ExecutionEngine::Impl::resetInternalState() {
       state->exec_state.store(NodeExecutionState::WAITING,
                               std::memory_order_relaxed);
       state->execution_count.store(0, std::memory_order_relaxed);
+      state->stats.reset();
 
       for (auto &[port, queue] : state->lock_free_queues) {
         if (queue)
@@ -1362,6 +1585,56 @@ bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
   LOG_WARNING_S << "ExecutionEngine: No queue found for " << state.name << ":"
                 << port_name;
   return false;
+}
+
+void ExecutionEngine::Impl::stampIncomingFrame(const PortDataPtr &data) {
+  if (!data || data->hasFrameId()) {
+    return;
+  }
+  // Controlled mutable window: a packet at the injection boundary was
+  // just created by the producer and is not yet visible to any consumer,
+  // so stamping identity here cannot race with readers.
+  auto &packet = const_cast<PortData &>(*data);
+  packet.id = m_nextFrameId.fetch_add(1, std::memory_order_relaxed);
+  if (packet.timestamp == Timestamp{}) {
+    packet.timestamp = std::chrono::steady_clock::now();
+  }
+}
+
+void ExecutionEngine::Impl::inheritFrameIdentity(const PortDataMap &inputs,
+                                                 PortDataMap &outputs) {
+  if (inputs.empty()) {
+    return;
+  }
+
+  // Use the first input's identity as the frame of record. Multi-input
+  // joins with diverging frame ids are the sync subsystem's concern
+  // (Phase 4); inheriting a deterministic representative keeps identity
+  // flowing through linear segments.
+  const PortDataPtr *primary = nullptr;
+  for (const auto &[port, packet] : inputs) {
+    if (packet && packet->hasFrameId()) {
+      primary = &packet;
+      break;
+    }
+  }
+  if (!primary) {
+    return;
+  }
+
+  for (auto &[port, packet] : outputs) {
+    if (packet && !packet->hasFrameId()) {
+      // A packet without an id is by construction fresh from this node
+      // (forwarded packets already carry identity), so it has no other
+      // readers yet and the mutable window is safe.
+      auto &fresh = const_cast<PortData &>(*packet);
+      fresh.id = (*primary)->id;
+      fresh.stream_id = (*primary)->stream_id;
+      if (fresh.timestamp == Timestamp{}) {
+        fresh.timestamp = (*primary)->timestamp;
+      }
+    }
+  }
 }
 
 void ExecutionEngine::Impl::recordQueueRejection(const NodePtr &node,
@@ -1509,6 +1782,7 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
     }
 
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+    m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
 
     tryScheduleNode(dest_node);
 

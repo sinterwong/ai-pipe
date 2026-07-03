@@ -50,6 +50,14 @@ public:
     std::vector<std::string> input_ports;
     std::vector<LockFreeQueueType *> input_queues;
 
+    // True when the sync strategy tracks this node (computed once at
+    // initialize): gates per-frame shouldDrop/markProcessed calls.
+    bool sync_tracked{false};
+
+    // Per-node execution statistics, snapshotted into
+    // EngineStatisticsSnapshot::node_stats.
+    AtomicNodeStatistics stats;
+
     // Single-word scheduling state machine. The WAITING->READY CAS in
     // scheduleNodeExecution() is the only claim point; concurrent
     // schedule attempts may redundantly evaluate the (cheap) strategy
@@ -156,6 +164,29 @@ private:
   bool gatherNodeInputs(const NodePtr &node, PortDataMap &inputs);
 
   /**
+   * @brief Gather inputs for a multi-input node with frame alignment
+   *
+   * Peeks every port head, discards frames that lag behind the newest
+   * head (they can never be paired - their partner was dropped on a
+   * sibling branch), and pops only when all heads carry the same frame
+   * id. Unassigned ids (0) act as wildcards. Returns false when any
+   * port has no poppable data yet (transient; caller reschedules).
+   */
+  bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  void recordSyncDrop(const NodeState &state, const std::string &port_name,
+                      FrameId frame_id, const char *reason);
+
+  /**
+   * @brief Account a successful queue pop
+   *
+   * total_wait_time_us accumulates the frame's age at dequeue (time
+   * from pipeline entry to this pop), so avgWaitTimeUs() reports how
+   * long inputs sat queued before being consumed.
+   */
+  void recordDequeue(const PortDataPtr &data);
+
+  /**
    * @brief Process a single node, converting exceptions to Error
    * @return Result<void> - success, or Error with
    * NodeException/NodeUnknownException
@@ -195,6 +226,21 @@ private:
                                  PortDataPtr data);
 
   void recordQueueRejection(const NodePtr &node, const std::string &port_name);
+
+  /**
+   * @brief Assign frame identity to a packet entering the pipeline
+   *
+   * Stamps a monotonic FrameId (and a capture timestamp) onto packets
+   * injected from outside that carry no id yet. Explicit ids are
+   * preserved so callers can drive their own frame numbering.
+   */
+  void stampIncomingFrame(const PortDataPtr &data);
+
+  /**
+   * @brief Propagate frame identity from inputs to fresh output packets
+   */
+  static void inheritFrameIdentity(const PortDataMap &inputs,
+                                   PortDataMap &outputs);
   std::optional<PortDataPtr> popFromQueue(const NodePtr &node,
                                           const std::string &port_name);
   bool hasDataInQueue(const NodePtr &node, const std::string &port_name) const;
@@ -242,6 +288,10 @@ private:
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;
   std::vector<NodePtr> m_sinkNodes;
+
+  // Monotonic FrameId source for packets entering the pipeline without
+  // an assigned id (see stampIncomingFrame).
+  std::atomic<FrameId> m_nextFrameId{1};
 
   std::atomic<EngineState> m_engineState{EngineState::IDLE};
   std::atomic<int> m_activeTasks{0};

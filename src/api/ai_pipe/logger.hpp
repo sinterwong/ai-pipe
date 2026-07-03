@@ -296,6 +296,7 @@ inline FormatBuffer &getThreadLocalBuffer() {
 class Logger {
 public:
   using LogCallback = std::function<void(const LogEntry &)>;
+  using CallbackId = std::uint64_t;
 
   static Logger &instance() noexcept {
     static Logger logger;
@@ -324,8 +325,11 @@ public:
   void setFilePath(const std::string &path);
   void setPattern(const std::string &pattern);
 
-  // Register custom log handler (e.g., for remote logging)
-  void addCallback(LogCallback callback);
+  // Register custom log handler (e.g., for remote logging or bridging
+  // to an external logging system). The returned id can be passed to
+  // removeCallback for scoped registrations.
+  CallbackId addCallback(LogCallback callback);
+  void removeCallback(CallbackId id);
   void clearCallbacks() noexcept;
 
   // Core logging - use macros for source location capture
@@ -409,9 +413,10 @@ private:
   std::condition_variable m_workerCv;
   std::mutex m_workerMutex;
 
-  // Custom callbacks
-  std::vector<LogCallback> m_callbacks;
+  // Custom callbacks (id, handler)
+  std::vector<std::pair<CallbackId, LogCallback>> m_callbacks;
   std::mutex m_callbackMutex;
+  CallbackId m_nextCallbackId{1};
 };
 
 // ============================================================================

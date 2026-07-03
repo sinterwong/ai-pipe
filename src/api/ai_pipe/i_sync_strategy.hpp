@@ -121,6 +121,20 @@ public:
   [[nodiscard]] virtual bool isEnabled() const = 0;
 
   /**
+   * @brief Whether this strategy tracks the given node
+   *
+   * The engine consults this once at initialize time to decide which
+   * nodes get per-frame shouldDrop()/markProcessed() calls. Strategies
+   * with topology knowledge (e.g. JoinAwareSyncStrategy) return true
+   * only for nodes mapped into a sync group, sparing untracked nodes
+   * the per-frame strategy lock.
+   */
+  [[nodiscard]] virtual bool tracksNode(const std::string &node_name) const {
+    (void)node_name;
+    return isEnabled();
+  }
+
+  /**
    * @brief Get strategy name for logging
    */
   [[nodiscard]] virtual std::string name() const = 0;

@@ -361,6 +361,30 @@ public:
     return true;
   }
 
+  /**
+   * @brief Copy the front element without consuming it
+   *
+   * SINGLE-CONSUMER CONTRACT: safe only when no other thread pops
+   * concurrently (the execution engine guarantees one consumer per node
+   * queue via the EXECUTING state machine). Producers never touch a
+   * cell the consumer sees as ready, so the copy is stable.
+   *
+   * @param[out] item Receives a copy of the front element
+   * @return true if an element was available
+   */
+  bool tryPeek(T &item) const {
+    const size_type pos = m_dequeuePos.load(std::memory_order_relaxed);
+    const Cell &cell = m_buffer[pos & m_mask];
+    const size_type seq = cell.sequence.load(std::memory_order_acquire);
+    if (static_cast<std::intptr_t>(seq) -
+            static_cast<std::intptr_t>(pos + 1) !=
+        0) {
+      return false; // Empty (or slot not yet published)
+    }
+    item = cell.data;
+    return true;
+  }
+
   // -------------------------------------------------------------------------
   // Query Operations (approximate under concurrency)
   // -------------------------------------------------------------------------
@@ -596,6 +620,22 @@ public:
     }
 
     return pushDropHead(std::move(item)); // Default fallback
+  }
+
+  /**
+   * @brief Copy the front item without consuming it
+   *
+   * Inherits the core queue's single-consumer contract: only the
+   * thread that owns popping from this queue may peek.
+   *
+   * @return Copy of the front item, or std::nullopt if empty
+   */
+  [[nodiscard]] std::optional<T> tryPeek() const {
+    T item;
+    if (m_queue.tryPeek(item)) {
+      return item;
+    }
+    return std::nullopt;
   }
 
   /**

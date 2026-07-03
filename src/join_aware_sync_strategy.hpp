@@ -256,6 +256,11 @@ public:
 
   [[nodiscard]] bool isEnabled() const override { return true; }
 
+  [[nodiscard]] bool tracksNode(const std::string &node_name) const override {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_nodeMultiMapping.find(node_name) != m_nodeMultiMapping.end();
+  }
+
   [[nodiscard]] std::string name() const override {
     return "JoinAwareSyncStrategy";
   }

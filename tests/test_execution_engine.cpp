@@ -732,6 +732,92 @@ TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
   EXPECT_GE(drop_count.load(), 0);
 }
 
+TEST_F(ExecutionEngineTest, StreamingNodeRecoversAfterFailure) {
+  // P4.5: in streaming mode a node exception must not permanently
+  // disable the node - subsequent frames keep flowing.
+  auto failable = std::make_shared<FailableNode>("failable");
+  auto sink = std::make_shared<SinkNode>("sink");
+  m_graph->addNode(failable);
+  m_graph->addNode(sink);
+  m_graph->addEdge("failable", "output", "sink", "input");
+
+  auto engine = createStreamEngine(2, 16);
+  engine->initialize(m_graph.get());
+  EXPECT_TRUE(engine->startStreaming().isOk());
+
+  // Healthy frame
+  ASSERT_TRUE(engine->pushInput("failable", createData(1)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+
+  // Failing frame (consumed, error recorded, node returns to service)
+  failable->setShouldFail(true);
+  ASSERT_TRUE(engine->pushInput("failable", createData(2)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+  failable->setShouldFail(false);
+
+  // Node must process frames again after the failure
+  ASSERT_TRUE(engine->pushInput("failable", createData(3)).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+
+  engine->stopStreaming(false);
+
+  EXPECT_EQ(failable->processCount(), 3);
+  ASSERT_EQ(sink->getReceivedData().size(), 2u); // frames 1 and 3
+  EXPECT_EQ(engine->statistics().failed_executions, 1u);
+}
+
+TEST_F(ExecutionEngineTest, FrameIdentityAssignedAndInherited) {
+  // P3.4: packets entering without an id get a monotonic FrameId; fresh
+  // output packets inherit the identity of the inputs that produced them.
+  auto source = std::make_shared<PassThroughNode>("source");
+  auto sink = std::make_shared<SinkNode>("sink");
+  m_graph->addNode(source);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "sink", "input");
+
+  auto engine = createStreamEngine(2, 16);
+  engine->initialize(m_graph.get());
+  EXPECT_TRUE(engine->startStreaming().isOk());
+
+  std::vector<PortDataPtr> sent;
+  for (int i = 0; i < 5; ++i) {
+    auto data = std::make_shared<PortData>(); // id defaults to 0 = unassigned
+    data->setParam("seq", i);
+    sent.push_back(data);
+    ASSERT_TRUE(engine->pushInput("source", data).isOk());
+  }
+
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+  engine->stopStreaming(false);
+
+  // Monotonic assignment in push order
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    EXPECT_EQ(sent[i]->id, i + 1) << "packet " << i;
+    EXPECT_NE(sent[i]->timestamp, Timestamp{});
+  }
+
+  ASSERT_EQ(sink->getReceivedData().size(), 5u);
+}
+
+TEST_F(ExecutionEngineTest, ExplicitFrameIdIsPreserved) {
+  auto source = std::make_shared<PassThroughNode>("source");
+  auto sink = std::make_shared<SinkNode>("sink");
+  m_graph->addNode(source);
+  m_graph->addNode(sink);
+  m_graph->addEdge("source", "output", "sink", "input");
+
+  auto engine = createStreamEngine(2, 16);
+  engine->initialize(m_graph.get());
+  EXPECT_TRUE(engine->startStreaming().isOk());
+
+  auto data = createData(777); // explicit id
+  ASSERT_TRUE(engine->pushInput("source", data).isOk());
+  EXPECT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+  engine->stopStreaming(false);
+
+  EXPECT_EQ(data->id, 777u);
+}
+
 TEST_F(ExecutionEngineTest, DropTailRejectionIsReportedNotSilent) {
   // Regression: pushToQueue used to ignore the queue's push() result, so a
   // DropTail rejection silently lost data while pushInput still reported
@@ -807,8 +893,10 @@ TEST_F(ExecutionEngineTest, StatisticsAfterExecution) {
 
   auto stats = engine->statistics();
 
-  EXPECT_EQ(stats.total_executions, 1u);
-  EXPECT_GE(stats.successful_executions, 0u);
+  // Since P5.3 total_executions counts NODE execution attempts
+  // (unified across modes): one run of the 3-node linear pipeline = 3.
+  EXPECT_EQ(stats.total_executions, 3u);
+  EXPECT_EQ(stats.successful_executions, 3u);
 }
 
 TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
@@ -824,7 +912,9 @@ TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
 
   auto stats = engine->statistics();
 
-  EXPECT_EQ(stats.total_executions, 5u);
+  // 5 runs x 3 nodes: node-attempt semantics (P5.3)
+  EXPECT_EQ(stats.total_executions, 15u);
+  EXPECT_EQ(stats.successful_executions, 15u);
 }
 
 // =============================================================================

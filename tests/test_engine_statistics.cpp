@@ -9,13 +9,17 @@
  *
  */
 
+#include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/execution_types.hpp"
+#include "ai_pipe/graph.hpp"
+#include "helper_nodes.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
 using namespace ai_pipe;
+using namespace std::chrono_literals;
 
 // ============================================================================
 // LatencyHistogram Tests
@@ -1002,4 +1006,122 @@ TEST_F(EngineStatisticsIntegrationTest, ResetAndReuse) {
 
   EXPECT_EQ(m_stats.total_executions.load(), 50);
   EXPECT_DOUBLE_EQ(m_stats.successRate(), 90.0);
+}
+
+// ============================================================================
+// Live wiring integration tests (P5.4): every snapshot field must be fed
+// by a real engine run, not just exist in the API.
+// ============================================================================
+
+namespace {
+
+ai_pipe::PortDataPtr makeStatsFrame() {
+  return std::make_shared<PortData>();
+}
+
+} // namespace
+
+class StatisticsWiringTest : public ::testing::Test {
+protected:
+  void buildLinear(Graph &graph, std::chrono::milliseconds delay) {
+    graph.addNode(
+        std::make_shared<ai_pipe_unit_test::PassThroughNode>("source"));
+    graph.addNode(
+        std::make_shared<ai_pipe_unit_test::PassThroughNode>("mid", delay));
+    graph.addNode(std::make_shared<ai_pipe_unit_test::SinkNode>("sink"));
+    graph.addEdge("source", "output", "mid", "input");
+    graph.addEdge("mid", "output", "sink", "input");
+  }
+};
+
+TEST_F(StatisticsWiringTest, BatchRunFeedsAllCounters) {
+  Graph graph;
+  buildLinear(graph, 2ms); // guarantees measurable end-to-end latency
+
+  auto engine = createBatchEngine(2);
+  ASSERT_TRUE(engine->initialize(&graph).isOk());
+
+  PortDataMap inputs;
+  inputs["source"] = makeStatsFrame();
+  ASSERT_TRUE(engine->execute(inputs, true).isOk());
+
+  auto stats = engine->statistics();
+
+  EXPECT_EQ(stats.total_executions, 3u);
+  EXPECT_EQ(stats.successful_executions, 3u);
+  EXPECT_EQ(stats.failed_executions, 0u);
+  EXPECT_EQ(stats.total_input_frames, 1u);
+  EXPECT_EQ(stats.total_output_frames, 1u);
+  EXPECT_GT(stats.total_queue_pops, 0u);
+  EXPECT_GT(stats.total_processing_time_us, 0u);
+  EXPECT_GT(stats.total_wait_time_us, 0u)
+      << "dequeue frame-age accounting must be live";
+
+  // End-to-end latency histogram: the 2ms mid node forces >= 2000us
+  std::uint64_t histogram_total = 0;
+  for (auto count : stats.latency_histogram_buckets) {
+    histogram_total += count;
+  }
+  EXPECT_EQ(histogram_total, 1u) << "one frame reached the sink";
+  auto percentiles = stats.latencyPercentiles();
+  ASSERT_FALSE(percentiles.empty());
+  EXPECT_GT(percentiles[0].second, 0.0) << "p50 must be non-zero";
+
+  // Per-node statistics populated
+  ASSERT_EQ(stats.node_stats.size(), 3u);
+  for (const auto &node : stats.node_stats) {
+    EXPECT_EQ(node.execution_count, 1u) << node.node_name;
+    EXPECT_EQ(node.success_count, 1u) << node.node_name;
+    EXPECT_EQ(node.current_queue_depth, 0u) << node.node_name;
+  }
+}
+
+TEST_F(StatisticsWiringTest, DisabledStatisticsStayZero) {
+  Graph graph;
+  buildLinear(graph, 2ms);
+
+  EngineConfig config = EngineConfig::batch(2);
+  config.enable_statistics = false;
+  auto engine = ExecutionEngine::create(config);
+  ASSERT_TRUE(engine->initialize(&graph).isOk());
+
+  PortDataMap inputs;
+  inputs["source"] = makeStatsFrame();
+  ASSERT_TRUE(engine->execute(inputs, true).isOk());
+
+  auto stats = engine->statistics();
+
+  EXPECT_EQ(stats.total_queue_pops, 0u);
+  EXPECT_EQ(stats.total_wait_time_us, 0u);
+  EXPECT_EQ(stats.total_schedule_time_us, 0u);
+  std::uint64_t histogram_total = 0;
+  for (auto count : stats.latency_histogram_buckets) {
+    histogram_total += count;
+  }
+  EXPECT_EQ(histogram_total, 0u);
+  for (const auto &node : stats.node_stats) {
+    EXPECT_EQ(node.execution_count, 0u) << node.node_name;
+  }
+}
+
+TEST_F(StatisticsWiringTest, StreamingCountsInputFrames) {
+  Graph graph;
+  buildLinear(graph, 0ms);
+
+  auto engine = createStreamEngine(2, 32);
+  ASSERT_TRUE(engine->initialize(&graph).isOk());
+  ASSERT_TRUE(engine->startStreaming().isOk());
+
+  constexpr int k_frames = 10;
+  for (int i = 0; i < k_frames; ++i) {
+    ASSERT_TRUE(engine->pushInput("source", makeStatsFrame()).isOk());
+  }
+  ASSERT_TRUE(engine->waitForDrain(0, 5000ms).isOk());
+  engine->stopStreaming(false);
+
+  auto stats = engine->statistics();
+  EXPECT_EQ(stats.total_input_frames, static_cast<std::uint64_t>(k_frames));
+  EXPECT_EQ(stats.total_output_frames, static_cast<std::uint64_t>(k_frames));
+  EXPECT_GE(stats.total_queue_pops, static_cast<std::uint64_t>(k_frames));
+  EXPECT_EQ(stats.total_executions, static_cast<std::uint64_t>(k_frames * 3));
 }

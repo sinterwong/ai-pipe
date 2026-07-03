@@ -314,19 +314,17 @@ public:
 | 策略 | 特点 |
 |------|------|
 | `NoSyncStrategy` | 空操作，适用于 BATCH 模式 |
-| `CoordinatedSyncStrategy` | 基于出度检测分支点，自动建立同步组 |
-| `JoinAwareSyncStrategy` | **高级**：反向 BFS 检测 Fork-Join 对，解决虚假耦合和深度盲问题 |
+| `JoinAwareSyncStrategy` | 反向 BFS 检测 Fork-Join 对，解决虚假耦合和深度盲问题（早期的 CoordinatedSyncStrategy 已于 P4.4 移除） |
 
 `JoinAwareSyncStrategy` 解决的两个关键问题：
 
 1. **虚假耦合（False Coupling）**：仅同步确实会汇合的分支，不会让不相干的并行分支互相影响
 2. **深度盲（Depth Blindness）**：将 Fork 到 Join 之间整条路径上的所有节点映射到逻辑分支，确保深层节点的丢弃事件也能触发协调
 
-> **实现状态（重要）**：当前执行引擎仅接入了 `reportDrop`（丢弃上报）一条链路；
-> `shouldDrop` / `markProcessed` / `getWatermark` 尚未被引擎调用，且 DataPacket
-> 未携带 FrameId，因此**协调丢弃与 Join 节点的帧对齐目前不会实际生效**——
-> 多输入 Join 节点从各端口队列独立弹出队头，分支间丢帧会造成配对错位。
-> 接线计划见 `docs/TODO.md` Phase 4。
+> **实现状态**：Phase 4 已完成引擎接线——DataPacket 携带 FrameId（P3.4），
+> 多输入节点按帧对齐取数（落后帧丢弃并上报），路径节点经 `shouldDrop`
+> 提前丢弃协调帧，`markProcessed` 推进水位线。端到端行为由
+> `tests/test_sync_integration.cpp` 验证。
 
 ## 5. 执行引擎
 
