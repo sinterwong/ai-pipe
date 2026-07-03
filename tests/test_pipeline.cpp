@@ -785,3 +785,55 @@ TEST(PipelineComplexGraphTest, LinearChain) {
   EXPECT_TRUE(result.value().isReady());
   EXPECT_EQ(result.value().graph().getNodes().size(), 5);
 }
+
+TEST_F(PipelineTest, ExecutionTimeout) {
+  auto source = std::make_shared<TestNode>("slow_node", 500ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink);
+  graph.addEdge("slow_node", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+      .withGraph(std::move(graph))
+      .withTimeout(50ms) // shorter than node delay
+      .build().value();
+
+  PortDataMap inputs;
+  inputs["slow_node"] = makeDataPacket(1);
+
+  auto result = pipeline.run(inputs);
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+}
+
+TEST_F(PipelineTest, CancellationMidExecution) {
+  auto source = std::make_shared<TestNode>("slow_node", 500ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink);
+  graph.addEdge("slow_node", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+      .withGraph(std::move(graph))
+      .build().value();
+
+  PortDataMap inputs;
+  inputs["slow_node"] = makeDataPacket(1);
+
+  std::thread t([&]() {
+    std::this_thread::sleep_for(100ms);
+    pipeline.cancel();
+  });
+
+  auto result = pipeline.run(inputs);
+  t.join();
+
+  // If cancellation works, it might return ExecutionStopped or ExecutionFailed
+  EXPECT_FALSE(result.isOk());
+  EXPECT_TRUE(result.errorCode() == ErrorCode::ExecutionStopped ||
+              result.errorCode() == ErrorCode::ExecutionFailed);
+}

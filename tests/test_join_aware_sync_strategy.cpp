@@ -216,5 +216,73 @@ TEST_F(JoinAwareSyncStrategyTest, LinearChainNoSync) {
   EXPECT_TRUE(m_strategy->getNodeMappings("D").empty());
 }
 
+/**
+ * Nested Fork-Join:
+ *       A
+ *      / \
+ *     B   \
+ *    / \   \
+ *   C   D   E
+ *    \ /   /
+ *     F --/
+ *     |
+ *     G
+ */
+TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
+  addNode("A"); addNode("B"); addNode("C"); addNode("D");
+  addNode("E"); addNode("F"); addNode("G");
+
+  addEdge("A", "B"); addEdge("A", "E");
+  addEdge("B", "C"); addEdge("B", "D");
+  addEdge("C", "F"); addEdge("D", "F");
+  addEdge("E", "F");
+  addEdge("F", "G");
+
+  m_strategy->initialize(&m_graph);
+
+  // C and D should be in a sync group (inner fork-join: B -> C,D -> F)
+  // B and E should be in a sync group (outer fork-join: A -> B,E -> F)
+
+  auto c_maps = m_strategy->getNodeMappings("C");
+  auto d_maps = m_strategy->getNodeMappings("D");
+  auto e_maps = m_strategy->getNodeMappings("E");
+  auto b_maps = m_strategy->getNodeMappings("B");
+
+  ASSERT_FALSE(c_maps.empty());
+  ASSERT_FALSE(d_maps.empty());
+  ASSERT_FALSE(e_maps.empty());
+  // B is an intermediate node in the outer loop, and a fork for the inner loop.
+  // Our algorithm maps intermediate nodes of paths to branches.
+  ASSERT_FALSE(b_maps.empty());
+
+  // Check inner loop: C and D share a group
+  bool shared_inner = false;
+  for (auto& cm : c_maps) {
+    for (auto& dm : d_maps) {
+      if (cm.first == dm.first) shared_inner = true;
+    }
+  }
+  EXPECT_TRUE(shared_inner);
+
+  // Check outer loop: B and E share a group
+  bool shared_outer = false;
+  for (auto& bm : b_maps) {
+    for (auto& em : e_maps) {
+      if (bm.first == em.first) shared_outer = true;
+    }
+  }
+  EXPECT_TRUE(shared_outer);
+
+  // Test nested drop propagation
+  // If C drops, D should drop (inner)
+  (void)m_strategy->reportDrop("C", 777, "inner_drop");
+  EXPECT_TRUE(m_strategy->shouldDrop("D", 777));
+
+  // Also, if B is on a branch parallel to E, E should drop (outer)
+  // Since C is "under" B, it depends on how mapping is implemented.
+  // If C is part of the path for branch B, it should also trigger B's group drops.
+  EXPECT_TRUE(m_strategy->shouldDrop("E", 777));
+}
+
 } // namespace testing
 } // namespace ai_pipe

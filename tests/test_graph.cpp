@@ -577,4 +577,84 @@ TEST_F(GraphTest, SingleNodeGraph) {
 
 TEST_F(GraphTest, EmptyGraphHasNoCycle) { EXPECT_FALSE(m_graph->hasCycle()); }
 
+TEST_F(GraphTest, NestedDiamondTopology) {
+  // Nested Diamond:
+  //      /-- B --\
+  // A --|         |-- E --\
+  //      \-- C --/         |-- G
+  //      /-- D --\         |
+  // F --|         |-- H --/
+  //      \-------/
+  auto a = createNode("A");
+  auto b = createNode("B");
+  auto c = createNode("C");
+  auto d = createNode("D");
+  auto e = createNode("E");
+  auto f = createNode("F");
+  auto g = createNode("G");
+  auto h = createNode("H");
+
+  m_graph->addNode(a); m_graph->addNode(b); m_graph->addNode(c);
+  m_graph->addNode(d); m_graph->addNode(e); m_graph->addNode(f);
+  m_graph->addNode(g); m_graph->addNode(h);
+
+  m_graph->addEdge("A", "out", "B", "in");
+  m_graph->addEdge("A", "out", "C", "in");
+  m_graph->addEdge("B", "out", "E", "in");
+  m_graph->addEdge("C", "out", "E", "in");
+  m_graph->addEdge("F", "out", "D", "in");
+  m_graph->addEdge("F", "out", "H", "in");
+  m_graph->addEdge("D", "out", "H", "in");
+  m_graph->addEdge("E", "out", "G", "in");
+  m_graph->addEdge("H", "out", "G", "in");
+
+  EXPECT_FALSE(m_graph->hasCycle());
+  EXPECT_EQ(m_graph->getInDegree(g), 2);
+  EXPECT_EQ(m_graph->getInDegree(e), 2);
+  EXPECT_EQ(m_graph->getOutDegree(a), 2);
+  EXPECT_EQ(m_graph->getOutDegree(f), 2);
+}
+
+TEST_F(GraphTest, LargeChain) {
+  const int chain_len = 100;
+  std::vector<std::shared_ptr<MockNode>> nodes;
+  for (int i = 0; i < chain_len; ++i) {
+    auto node = createNode("node" + std::to_string(i));
+    nodes.push_back(node);
+    m_graph->addNode(node);
+  }
+
+  for (int i = 0; i < chain_len - 1; ++i) {
+    m_graph->addEdge("node" + std::to_string(i), "out", "node" + std::to_string(i+1), "in");
+  }
+
+  EXPECT_EQ(m_graph->getNodes().size(), chain_len);
+  EXPECT_EQ(m_graph->getEdges().size(), chain_len - 1);
+  EXPECT_FALSE(m_graph->hasCycle());
+}
+
+TEST_F(GraphTest, MultipleSourcesAndSinks) {
+  auto s1 = createNode("S1");
+  auto s2 = createNode("S2");
+  auto m = createNode("M");
+  auto k1 = createNode("K1");
+  auto k2 = createNode("K2");
+
+  m_graph->addNode(s1); m_graph->addNode(s2);
+  m_graph->addNode(m);
+  m_graph->addNode(k1); m_graph->addNode(k2);
+
+  m_graph->addEdge("S1", "out", "M", "in1");
+  m_graph->addEdge("S2", "out", "M", "in2");
+  m_graph->addEdge("M", "out", "K1", "in");
+  m_graph->addEdge("M", "out", "K2", "in");
+
+  EXPECT_EQ(m_graph->getInDegree(s1), 0);
+  EXPECT_EQ(m_graph->getInDegree(s2), 0);
+  EXPECT_EQ(m_graph->getOutDegree(k1), 0);
+  EXPECT_EQ(m_graph->getOutDegree(k2), 0);
+  EXPECT_EQ(m_graph->getInDegree(m), 2);
+  EXPECT_EQ(m_graph->getOutDegree(m), 2);
+}
+
 TEST_F(GraphTest, AddNullNodeFails) { EXPECT_FALSE(m_graph->addNode(nullptr)); }

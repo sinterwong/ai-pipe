@@ -229,6 +229,9 @@ Pipeline::Impl::run(const PortDataMap &inputs,
     return Result<ExecutionOutput>::err(validation.error());
   }
 
+  auto actual_timeout =
+      timeout.has_value() ? timeout.value() : m_options.execution_timeout;
+
   transitionTo(PipelineState::RUNNING);
   m_executionStart = std::chrono::steady_clock::now();
   notifyExecutionStarted();
@@ -240,7 +243,7 @@ Pipeline::Impl::run(const PortDataMap &inputs,
       std::chrono::steady_clock::now() - m_executionStart);
 
   // Handle timeout (if specified and exceeded)
-  if (timeout.has_value() && elapsed > timeout.value()) {
+  if (actual_timeout.count() > 0 && elapsed > actual_timeout) {
     cancel();
     transitionTo(PipelineState::ERROR);
     return Result<ExecutionOutput>::err(
