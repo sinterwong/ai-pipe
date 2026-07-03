@@ -435,10 +435,8 @@ void ExecutionEngine::Impl::reset() {
     if (!state)
       continue;
 
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_relaxed);
-    }
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_relaxed);
     state->execution_count = 0;
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
@@ -475,8 +473,8 @@ ExecutionEngine::Impl::getNodeStates() const {
   std::unordered_map<std::string, NodeExecutionState> result;
 
   for (const auto &[node_ptr, state] : m_nodeStates) {
-    if (state && state->exec_state) {
-      result[state->name] = state->exec_state->load(std::memory_order_acquire);
+    if (state) {
+      result[state->name] = state->exec_state.load(std::memory_order_acquire);
     }
   }
 
@@ -931,22 +929,14 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
   }
 
   auto &state = *state_it->second;
-  auto current_state = state.exec_state->load(std::memory_order_acquire);
 
-  if (current_state != NodeExecutionState::WAITING) {
+  if (state.exec_state.load(std::memory_order_acquire) !=
+      NodeExecutionState::WAITING) {
     return;
   }
 
-  std::lock_guard<std::mutex> node_lock(*state.mutex);
-
-  if (!state.exec_state) {
-    return;
-  }
-  current_state = state.exec_state->load(std::memory_order_acquire);
-  if (current_state != NodeExecutionState::WAITING) {
-    return;
-  }
-
+  // No per-node lock: concurrent attempts may both evaluate the strategy,
+  // but only one will win the WAITING->READY CAS in scheduleNodeExecution.
   SchedulingContext context;
   context.node = node;
   context.expected_input_count =
@@ -976,7 +966,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
   auto &state = m_nodeStates[node];
 
   NodeExecutionState expected = NodeExecutionState::WAITING;
-  if (!state->exec_state->compare_exchange_strong(
+  if (!state->exec_state.compare_exchange_strong(
           expected, NodeExecutionState::READY, std::memory_order_acq_rel)) {
     return;
   }
@@ -999,8 +989,8 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
     // active-task count and node state stay consistent.
     LOG_WARNING_S << "ExecutionEngine: Failed to post task for node "
                   << state->name;
-    state->exec_state->store(NodeExecutionState::WAITING,
-                             std::memory_order_release);
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
   }
@@ -1011,8 +1001,8 @@ void ExecutionEngine::Impl::executeNodeTask(
   if (m_stopFlag.load(std::memory_order_acquire)) {
     auto state_it = m_nodeStates.find(node);
     if (state_it != m_nodeStates.end() && state_it->second) {
-      state_it->second->exec_state->store(NodeExecutionState::WAITING,
-                                          std::memory_order_release);
+      state_it->second->exec_state.store(NodeExecutionState::WAITING,
+                                         std::memory_order_release);
     }
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
@@ -1030,7 +1020,7 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Transition to EXECUTING
   NodeExecutionState expected = NodeExecutionState::READY;
-  if (!state.exec_state->compare_exchange_strong(
+  if (!state.exec_state.compare_exchange_strong(
           expected, NodeExecutionState::EXECUTING, std::memory_order_acq_rel)) {
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
@@ -1052,10 +1042,8 @@ void ExecutionEngine::Impl::executeNodeTask(
         !m_stopFlag.load(std::memory_order_acquire)) {
       LOG_TRACE_S << "ExecutionEngine: Node " << state.name
                   << " inputs transiently unavailable, rescheduling.";
-      if (state.exec_state) {
-        state.exec_state->store(NodeExecutionState::WAITING,
-                                std::memory_order_release);
-      }
+      state.exec_state.store(NodeExecutionState::WAITING,
+                             std::memory_order_release);
       // Reschedule BEFORE decrementing: scheduleNodeExecution() increments
       // m_activeTasks, so this ordering prevents the counter from
       // transiently dipping to zero while data is still queued, which
@@ -1084,10 +1072,8 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Handle completion
   if (m_stopFlag.load(std::memory_order_acquire)) {
-    if (state.exec_state) {
-      state.exec_state->store(NodeExecutionState::WAITING,
-                              std::memory_order_release);
-    }
+    state.exec_state.store(NodeExecutionState::WAITING,
+                           std::memory_order_release);
   } else if (process_result) {
     handleNodeSuccess(node, outputs);
   } else {
@@ -1213,16 +1199,12 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
 
   // Check if node should be rescheduled
   if (m_schedulerStrategy->onNodeComplete(node, true, outputs)) {
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_release);
-    }
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
     tryScheduleNode(node);
   } else {
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::COMPLETED,
-                               std::memory_order_release);
-    }
+    state->exec_state.store(NodeExecutionState::COMPLETED,
+                            std::memory_order_release);
   }
 
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " COMPLETED.";
@@ -1232,10 +1214,8 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
                                               const Error &error) {
   auto &state = m_nodeStates[node];
 
-  if (state->exec_state) {
-    state->exec_state->store(NodeExecutionState::FAILED,
-                             std::memory_order_release);
-  }
+  state->exec_state.store(NodeExecutionState::FAILED,
+                          std::memory_order_release);
 
   m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
 
@@ -1340,8 +1320,8 @@ void ExecutionEngine::Impl::resetInternalState() {
 
   for (auto &[node, state] : m_nodeStates) {
     if (state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_relaxed);
+      state->exec_state.store(NodeExecutionState::WAITING,
+                              std::memory_order_relaxed);
       state->execution_count = 0;
 
       for (auto &[port, queue] : state->lock_free_queues) {

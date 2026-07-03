@@ -50,24 +50,23 @@ public:
     std::vector<std::string> input_ports;
     std::vector<LockFreeQueueType *> input_queues;
 
-    std::unique_ptr<std::atomic<NodeExecutionState>> exec_state;
+    // Single-word scheduling state machine. The WAITING->READY CAS in
+    // scheduleNodeExecution() is the only claim point; concurrent
+    // schedule attempts may redundantly evaluate the (cheap) strategy
+    // but exactly one wins the CAS. NodeState lives behind a
+    // unique_ptr and is never moved, so the atomic can be a direct
+    // member.
+    std::atomic<NodeExecutionState> exec_state{NodeExecutionState::WAITING};
+
     std::chrono::steady_clock::time_point last_execution;
     std::uint64_t execution_count{0};
 
-    std::unique_ptr<std::mutex> mutex;
-
     QueueConfig queue_config;
 
-    NodeState()
-        : exec_state(std::make_unique<std::atomic<NodeExecutionState>>(
-              NodeExecutionState::WAITING)),
-          mutex(std::make_unique<std::mutex>()) {}
+    NodeState() = default;
 
     explicit NodeState(NodePtr n, const std::string &node_name)
-        : node(std::move(n)), name(node_name),
-          exec_state(std::make_unique<std::atomic<NodeExecutionState>>(
-              NodeExecutionState::WAITING)),
-          mutex(std::make_unique<std::mutex>()) {}
+        : node(std::move(n)), name(node_name) {}
   };
 
   Impl();
