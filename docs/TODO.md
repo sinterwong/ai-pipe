@@ -51,7 +51,7 @@
 ## Phase 4 — 同步子系统：接线或裁剪
 
 - [ ] **P4.1** 引擎接线：多输入节点 FrameId 对齐（peek 对齐 + 落后等待 + 超时降级）；接通 `shouldDrop`/`markProcessed`
-- [ ] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
+- [x] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
 - [ ] **P4.3** 端到端集成测试：fork-join 图 + 注入丢帧，断言 join 帧对齐与兄弟分支同步丢弃
 - [ ] **P4.4** 裁剪 `CoordinatedSyncStrategy`/`SyncCoordinator` 中接线后仍不可达的死代码
 - [ ] **P4.5** 流模式节点失败后的恢复语义：当前节点异常后永久停留 FAILED，队列数据滞留（审计 P0.4 期间发现）

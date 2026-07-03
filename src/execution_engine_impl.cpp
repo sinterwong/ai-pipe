@@ -843,6 +843,13 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
+        queue->setFrameIdAccessor(
+            [](const PortDataPtr &item) -> std::optional<FrameId> {
+              if (item && item->hasFrameId()) {
+                return item->frameId();
+              }
+              return std::nullopt;
+            });
         queue->setDropCallback(
             [this, name = state->name](const DropEvent &event) {
               m_statistics.total_dropped_frames.fetch_add(

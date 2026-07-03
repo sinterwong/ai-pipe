@@ -685,3 +685,79 @@ TEST_F(LockFreeConcurrencyTest, ForcePush_ExtremeContention_SmallCapacity) {
 }
 
 } // namespace ai_pipe_unit_test::lock_free_queue
+
+// =============================================================================
+// tryPeek (P4.2) - single-consumer non-destructive front access
+// =============================================================================
+
+TEST(LockFreePeekTest, PeekDoesNotConsume) {
+  LockFreeMPMCQueue<int> q(8);
+  ASSERT_TRUE(q.tryPush(11));
+  ASSERT_TRUE(q.tryPush(22));
+
+  int val = 0;
+  EXPECT_TRUE(q.tryPeek(val));
+  EXPECT_EQ(val, 11);
+  EXPECT_TRUE(q.tryPeek(val));
+  EXPECT_EQ(val, 11) << "peek must not advance";
+  EXPECT_EQ(q.size(), 2u);
+
+  ASSERT_TRUE(q.tryPop(val));
+  EXPECT_EQ(val, 11);
+  EXPECT_TRUE(q.tryPeek(val));
+  EXPECT_EQ(val, 22);
+}
+
+TEST(LockFreePeekTest, PeekEmptyReturnsFalse) {
+  LockFreeMPMCQueue<int> q(4);
+  int val = 0;
+  EXPECT_FALSE(q.tryPeek(val));
+}
+
+TEST(LockFreePeekTest, NodeQueuePeekOptional) {
+  LockFreeNodeQueue<int> q(4);
+  EXPECT_FALSE(q.tryPeek().has_value());
+  ASSERT_TRUE(q.push(7));
+  EXPECT_EQ(q.tryPeek().value_or(-1), 7);
+  EXPECT_EQ(q.size(), 1u);
+}
+
+// =============================================================================
+// Drop events carry real frame ids once an accessor is set (P4.2)
+// =============================================================================
+
+TEST(LockFreeDropFrameIdTest, DropEventUsesAccessorFrameId) {
+  struct Packet {
+    FrameId frame{0};
+  };
+  using PacketPtr = std::shared_ptr<Packet>;
+
+  LockFreeNodeQueue<PacketPtr>::Config config{
+      .capacity = 2,
+      .drop_policy = LockFreeDropPolicy::DropHead,
+      .keep_latest_n = 1,
+      .track_statistics = true,
+      .node_name = "n",
+      .port_name = "p",
+  };
+  LockFreeNodeQueue<PacketPtr> q(config);
+  q.setFrameIdAccessor([](const PacketPtr &p) -> std::optional<FrameId> {
+    return p ? std::optional<FrameId>(p->frame) : std::nullopt;
+  });
+
+  std::vector<FrameId> dropped;
+  q.setDropCallback(
+      [&](const DropEvent &event) { dropped.push_back(event.frame_id); });
+
+  for (FrameId f = 1; f <= 5; ++f) {
+    auto packet = std::make_shared<Packet>();
+    packet->frame = f;
+    ASSERT_TRUE(q.push(packet));
+  }
+
+  ASSERT_FALSE(dropped.empty());
+  for (auto f : dropped) {
+    EXPECT_NE(f, frame_constants::k_invalid_frame_id);
+  }
+  EXPECT_EQ(dropped.front(), 1u) << "DropHead evicts oldest first";
+}
