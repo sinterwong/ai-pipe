@@ -1,7 +1,8 @@
 /**
  * @file graph.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Mutable DAG construction API: nodes, port-validated edges, cycle
+ * detection
  * @version 0.1
  * @date 2025-05-16
  *

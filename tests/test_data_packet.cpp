@@ -56,8 +56,7 @@ TEST(DataPacketTest, MissingKeyThrows) {
 TEST(DataPacketTest, TypeMismatchThrows) {
   DataPacket packet;
   packet.setParam("count", 42);
-  EXPECT_THROW((void)packet.getParam<std::string>("count"),
-               std::runtime_error);
+  EXPECT_THROW((void)packet.getParam<std::string>("count"), std::runtime_error);
 }
 
 TEST(DataPacketTest, OptionalParamSemantics) {
@@ -135,14 +134,12 @@ TEST(TypedParamTest, TryGetOnMissing) {
 // =============================================================================
 
 // Packets flowing through the graph are immutable by type
-static_assert(
-    std::is_same_v<ai_pipe::PortDataPtr,
-                   std::shared_ptr<const ai_pipe::PortData>>,
-    "PortDataPtr must be a shared_ptr to const PortData");
-static_assert(
-    std::is_same_v<ai_pipe::MutablePortDataPtr,
-                   std::shared_ptr<ai_pipe::PortData>>,
-    "MutablePortDataPtr must be the mutable creation-side handle");
+static_assert(std::is_same_v<ai_pipe::PortDataPtr,
+                             std::shared_ptr<const ai_pipe::PortData>>,
+              "PortDataPtr must be a shared_ptr to const PortData");
+static_assert(std::is_same_v<ai_pipe::MutablePortDataPtr,
+                             std::shared_ptr<ai_pipe::PortData>>,
+              "MutablePortDataPtr must be the mutable creation-side handle");
 
 TEST(OwnershipModelTest, MutableCopyIsIndependent) {
   auto original = std::make_shared<ai_pipe::PortData>();

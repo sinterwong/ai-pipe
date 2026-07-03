@@ -376,8 +376,7 @@ public:
     const size_type pos = m_dequeuePos.load(std::memory_order_relaxed);
     const Cell &cell = m_buffer[pos & m_mask];
     const size_type seq = cell.sequence.load(std::memory_order_acquire);
-    if (static_cast<std::intptr_t>(seq) -
-            static_cast<std::intptr_t>(pos + 1) !=
+    if (static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(pos + 1) !=
         0) {
       return false; // Empty (or slot not yet published)
     }

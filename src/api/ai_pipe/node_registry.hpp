@@ -83,8 +83,7 @@ public:
       auto it = m_factories.find(type_name);
       if (it == m_factories.end()) {
         return Result<std::shared_ptr<ILogicNode>>::err(
-            ErrorCode::InvalidArgument,
-            "Unknown node type: " + type_name);
+            ErrorCode::InvalidArgument, "Unknown node type: " + type_name);
       }
       factory = it->second;
     }
@@ -145,10 +144,10 @@ struct NodeRegistrar {
   static const ::ai_pipe::detail::NodeRegistrar                                \
       ai_pipe_node_registrar_##NodeClass(                                      \
           #NodeClass,                                                          \
-          [](const std::string &node_name, const ::ai_pipe::PortData &)       \
-              -> ::ai_pipe::Result<std::shared_ptr<::ai_pipe::ILogicNode>> {  \
-            return std::shared_ptr<::ai_pipe::ILogicNode>(                    \
-                std::make_shared<NodeClass>(node_name));                      \
+          [](const std::string &node_name, const ::ai_pipe::PortData &)        \
+              -> ::ai_pipe::Result<std::shared_ptr<::ai_pipe::ILogicNode>> {   \
+            return std::shared_ptr<::ai_pipe::ILogicNode>(                     \
+                std::make_shared<NodeClass>(node_name));                       \
           })
 
 /**
@@ -158,11 +157,10 @@ struct NodeRegistrar {
   static const ::ai_pipe::detail::NodeRegistrar                                \
       ai_pipe_node_registrar_##NodeClass(                                      \
           #NodeClass,                                                          \
-          [](const std::string &node_name,                                     \
-             const ::ai_pipe::PortData &config)                                \
-              -> ::ai_pipe::Result<std::shared_ptr<::ai_pipe::ILogicNode>> {  \
-            return std::shared_ptr<::ai_pipe::ILogicNode>(                    \
-                std::make_shared<NodeClass>(node_name, config));              \
+          [](const std::string &node_name, const ::ai_pipe::PortData &config)  \
+              -> ::ai_pipe::Result<std::shared_ptr<::ai_pipe::ILogicNode>> {   \
+            return std::shared_ptr<::ai_pipe::ILogicNode>(                     \
+                std::make_shared<NodeClass>(node_name, config));               \
           })
 
 #endif // AI_PIPE_NODE_REGISTRY_HPP

@@ -1,7 +1,7 @@
 /**
  * @file test_engine_statistics.cpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Statistics types and live-wiring tests
  * @version 0.1
  * @date 2026-02-04
  *
@@ -1015,9 +1015,7 @@ TEST_F(EngineStatisticsIntegrationTest, ResetAndReuse) {
 
 namespace {
 
-ai_pipe::PortDataPtr makeStatsFrame() {
-  return std::make_shared<PortData>();
-}
+ai_pipe::PortDataPtr makeStatsFrame() { return std::make_shared<PortData>(); }
 
 } // namespace
 

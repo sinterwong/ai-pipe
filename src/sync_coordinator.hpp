@@ -1,7 +1,8 @@
 /**
  * @file sync_coordinator.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Cross-branch frame synchronization coordinator (sync groups,
+ * watermarks, drop propagation)
  * @version 0.1
  * @date 2025-12-24
  *

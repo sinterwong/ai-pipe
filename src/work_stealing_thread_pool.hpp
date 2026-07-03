@@ -632,7 +632,9 @@ private:
    */
   void publishTask() {
     m_unclaimedTasks.fetch_add(1, std::memory_order_release);
-    { std::lock_guard<std::mutex> lock(m_globalMutex); }
+    {
+      std::lock_guard<std::mutex> lock(m_globalMutex);
+    }
     m_globalCondition.notify_one();
   }
 

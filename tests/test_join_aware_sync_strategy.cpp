@@ -1,7 +1,7 @@
 /**
  * @file test_join_aware_sync_strategy.cpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief JoinAwareSyncStrategy topology analysis tests
  * @version 0.1
  * @date 2026-01-23
  *
@@ -229,12 +229,20 @@ TEST_F(JoinAwareSyncStrategyTest, LinearChainNoSync) {
  *     G
  */
 TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
-  addNode("A"); addNode("B"); addNode("C"); addNode("D");
-  addNode("E"); addNode("F"); addNode("G");
+  addNode("A");
+  addNode("B");
+  addNode("C");
+  addNode("D");
+  addNode("E");
+  addNode("F");
+  addNode("G");
 
-  addEdge("A", "B"); addEdge("A", "E");
-  addEdge("B", "C"); addEdge("B", "D");
-  addEdge("C", "F"); addEdge("D", "F");
+  addEdge("A", "B");
+  addEdge("A", "E");
+  addEdge("B", "C");
+  addEdge("B", "D");
+  addEdge("C", "F");
+  addEdge("D", "F");
   addEdge("E", "F");
   addEdge("F", "G");
 
@@ -257,18 +265,20 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
 
   // Check inner loop: C and D share a group
   bool shared_inner = false;
-  for (auto& cm : c_maps) {
-    for (auto& dm : d_maps) {
-      if (cm.first == dm.first) shared_inner = true;
+  for (auto &cm : c_maps) {
+    for (auto &dm : d_maps) {
+      if (cm.first == dm.first)
+        shared_inner = true;
     }
   }
   EXPECT_TRUE(shared_inner);
 
   // Check outer loop: B and E share a group
   bool shared_outer = false;
-  for (auto& bm : b_maps) {
-    for (auto& em : e_maps) {
-      if (bm.first == em.first) shared_outer = true;
+  for (auto &bm : b_maps) {
+    for (auto &em : e_maps) {
+      if (bm.first == em.first)
+        shared_outer = true;
     }
   }
   EXPECT_TRUE(shared_outer);
@@ -280,7 +290,8 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
 
   // Also, if B is on a branch parallel to E, E should drop (outer)
   // Since C is "under" B, it depends on how mapping is implemented.
-  // If C is part of the path for branch B, it should also trigger B's group drops.
+  // If C is part of the path for branch B, it should also trigger B's group
+  // drops.
   EXPECT_TRUE(m_strategy->shouldDrop("E", 777));
 }
 

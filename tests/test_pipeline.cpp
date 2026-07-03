@@ -796,9 +796,10 @@ TEST_F(PipelineTest, ExecutionTimeout) {
   graph.addEdge("slow_node", "output", "sink", "input");
 
   auto pipeline = Pipeline::create()
-      .withGraph(std::move(graph))
-      .withTimeout(50ms) // shorter than node delay
-      .build().value();
+                      .withGraph(std::move(graph))
+                      .withTimeout(50ms) // shorter than node delay
+                      .build()
+                      .value();
 
   PortDataMap inputs;
   inputs["slow_node"] = makeDataPacket(1);
@@ -817,9 +818,8 @@ TEST_F(PipelineTest, CancellationMidExecution) {
   graph.addNode(sink);
   graph.addEdge("slow_node", "output", "sink", "input");
 
-  auto pipeline = Pipeline::create()
-      .withGraph(std::move(graph))
-      .build().value();
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
 
   PortDataMap inputs;
   inputs["slow_node"] = makeDataPacket(1);

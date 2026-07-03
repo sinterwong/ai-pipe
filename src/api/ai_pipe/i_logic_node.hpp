@@ -1,7 +1,7 @@
 /**
  * @file i_logic_node.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Abstract processing node interface: ports, lifecycle, and process()
  * @version 0.1
  * @date 2025-04-20
  *
@@ -73,8 +73,7 @@ public:
    *
    * @param port_name The port being queried (input or output)
    */
-  virtual std::type_index
-  portPayloadType(const std::string &port_name) const {
+  virtual std::type_index portPayloadType(const std::string &port_name) const {
     (void)port_name;
     return typeid(void);
   }

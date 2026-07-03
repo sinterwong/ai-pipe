@@ -1,7 +1,8 @@
 /**
  * @file frame_metadata.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Frame identity types and metadata abstractions for cross-branch
+ * synchronization
  * @version 0.1
  * @date 2025-12-24
  *
@@ -58,7 +59,8 @@ namespace frame_constants {
 constexpr FrameId k_invalid_frame_id = 0;
 
 /// End-of-stream frame ID marker
-constexpr FrameId k_end_of_stream_frame_id = std::numeric_limits<FrameId>::max();
+constexpr FrameId k_end_of_stream_frame_id =
+    std::numeric_limits<FrameId>::max();
 
 /// Default stream ID for single-source scenarios
 constexpr StreamId k_default_stream_id = 0;
@@ -189,7 +191,8 @@ public:
    * @brief Construct with frame ID
    */
   explicit BasicFrameMetadata(
-      FrameId frame_id, StreamId stream_id = frame_constants::k_default_stream_id)
+      FrameId frame_id,
+      StreamId stream_id = frame_constants::k_default_stream_id)
       : m_frameId(frame_id), m_streamId(stream_id),
         m_timestamp(std::chrono::steady_clock::now()) {}
 
@@ -270,7 +273,8 @@ public:
   /**
    * @brief Synchronization tolerance for timestamp matching
    */
-  static constexpr auto k_default_sync_tolerance = std::chrono::milliseconds{33};
+  static constexpr auto k_default_sync_tolerance =
+      std::chrono::milliseconds{33};
 
   TimestampFrameMetadata()
       : m_frameId(frame_constants::k_invalid_frame_id),
@@ -352,7 +356,8 @@ public:
    */
   static BasicFrameMetadata
   createEndOfStream(StreamId stream_id = frame_constants::k_default_stream_id) {
-    return BasicFrameMetadata(frame_constants::k_end_of_stream_frame_id, stream_id);
+    return BasicFrameMetadata(frame_constants::k_end_of_stream_frame_id,
+                              stream_id);
   }
 };
 

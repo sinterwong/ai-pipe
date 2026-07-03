@@ -1,7 +1,7 @@
 /**
  * @file ai_pipe_version.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Library version macros (single source of truth for CMake and code)
  * @version 0.1
  * @date 2022-04-23
  *

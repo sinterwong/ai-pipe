@@ -29,8 +29,8 @@ class ConfiguredNode : public ILogicNode {
 public:
   ConfiguredNode(const std::string &name, const PortData &config)
       : ILogicNode(name),
-        m_threshold(config.getOptionalParam<double>("threshold").value_or(0.5)) {
-  }
+        m_threshold(
+            config.getOptionalParam<double>("threshold").value_or(0.5)) {}
   void process(const PortDataMap &, PortDataMap &,
                std::shared_ptr<PipelineContext>) override {}
   [[nodiscard]] double threshold() const { return m_threshold; }
@@ -85,8 +85,8 @@ TEST(NodeRegistryTest, DuplicateRegistrationRejected) {
   const std::string type = "DupTestType";
   registry.unregisterType(type);
 
-  auto factory = [](const std::string &name, const PortData &)
-      -> Result<std::shared_ptr<ILogicNode>> {
+  auto factory = [](const std::string &name,
+                    const PortData &) -> Result<std::shared_ptr<ILogicNode>> {
     return std::shared_ptr<ILogicNode>(std::make_shared<MacroNode>(name));
   };
 
@@ -104,15 +104,15 @@ TEST(NodeRegistryTest, RegisteredNodesWorkInGraph) {
 
   // Register pipeline-capable helper nodes under custom type names
   registry.unregisterType("TestPassThrough");
-  ASSERT_TRUE(registry
-                  .registerFactory(
-                      "TestPassThrough",
-                      [](const std::string &name, const PortData &)
-                          -> Result<std::shared_ptr<ILogicNode>> {
-                        return std::shared_ptr<ILogicNode>(
-                            std::make_shared<PassThroughNode>(name));
-                      })
-                  .isOk());
+  ASSERT_TRUE(
+      registry
+          .registerFactory("TestPassThrough",
+                           [](const std::string &name, const PortData &)
+                               -> Result<std::shared_ptr<ILogicNode>> {
+                             return std::shared_ptr<ILogicNode>(
+                                 std::make_shared<PassThroughNode>(name));
+                           })
+          .isOk());
 
   Graph graph;
   auto a = registry.create("TestPassThrough", "a");

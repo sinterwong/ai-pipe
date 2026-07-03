@@ -1,7 +1,7 @@
 /**
  * @file graph.cpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Mutable DAG construction API implementation
  * @version 0.1
  * @date 2025-05-16
  *
@@ -108,9 +108,9 @@ bool Graph::addEdge(const std::string &source_node_name,
         dest_node->portPayloadType(dest_port_name);
     if (source_type != typeid(void) && dest_type != typeid(void) &&
         source_type != dest_type) {
-      LOG_ERROR_S << "Payload type mismatch on edge " << source_node_name
-                  << ":" << source_port_name << " (" << source_type.name()
-                  << ") -> " << dest_node_name << ":" << dest_port_name << " ("
+      LOG_ERROR_S << "Payload type mismatch on edge " << source_node_name << ":"
+                  << source_port_name << " (" << source_type.name() << ") -> "
+                  << dest_node_name << ":" << dest_port_name << " ("
                   << dest_type.name() << ")";
       return false;
     }
@@ -126,9 +126,9 @@ bool Graph::addEdge(const std::string &source_node_name,
   edge_key.append(dest_node_name).push_back('\0');
   edge_key.append(dest_port_name);
   if (!m_edgeKeys.insert(std::move(edge_key)).second) {
-    LOG_WARNING_S << "Edge from " << source_node_name << ":"
-                  << source_port_name << " to " << dest_node_name << ":"
-                  << dest_port_name << " already exists. Skipping.";
+    LOG_WARNING_S << "Edge from " << source_node_name << ":" << source_port_name
+                  << " to " << dest_node_name << ":" << dest_port_name
+                  << " already exists. Skipping.";
     return false;
   }
 

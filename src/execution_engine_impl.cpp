@@ -630,10 +630,9 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   if (isInputPort(node, actual_port)) {
     stampIncomingFrame(data);
     if (!pushToQueue(node, actual_port, std::move(data))) {
-      return Result<PushStatus>::err(ErrorCode::QueueRejected,
-                                     "Queue full (DropTail) on port: " +
-                                         actual_port,
-                                     source_node);
+      return Result<PushStatus>::err(
+          ErrorCode::QueueRejected,
+          "Queue full (DropTail) on port: " + actual_port, source_node);
     }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
@@ -764,7 +763,9 @@ bool ExecutionEngine::Impl::allQueuesDrained(std::size_t max_depth) const {
 }
 
 void ExecutionEngine::Impl::notifyCompletionWaiters() {
-  { std::lock_guard<std::mutex> lock(m_completionMutex); }
+  {
+    std::lock_guard<std::mutex> lock(m_completionMutex);
+  }
   m_completionCV.notify_all();
 }
 
@@ -829,9 +830,8 @@ Result<void> ExecutionEngine::Impl::setupNodes(
     try {
       result = node->setup(context);
     } catch (const std::exception &e) {
-      result = Result<void>::err(
-          Error::nodeException(std::string("setup threw: ") + e.what(),
-                               node->getName()));
+      result = Result<void>::err(Error::nodeException(
+          std::string("setup threw: ") + e.what(), node->getName()));
     } catch (...) {
       result = Result<void>::err(Error(ErrorCode::NodeUnknownException,
                                        "setup threw unknown exception",
@@ -847,8 +847,7 @@ Result<void> ExecutionEngine::Impl::setupNodes(
     m_setUpNodes.push_back(node);
   }
 
-  LOG_DEBUG_S << "ExecutionEngine: " << m_setUpNodes.size()
-              << " nodes set up.";
+  LOG_DEBUG_S << "ExecutionEngine: " << m_setUpNodes.size() << " nodes set up.";
   return Result<void>::ok();
 }
 
@@ -858,8 +857,7 @@ void ExecutionEngine::Impl::teardownNodes() noexcept {
       (*it)->teardown();
     } catch (...) {
       // teardown() is contractually noexcept; guard against rogue nodes.
-      LOG_ERROR_S << "ExecutionEngine: teardown threw for "
-                  << (*it)->getName();
+      LOG_ERROR_S << "ExecutionEngine: teardown threw for " << (*it)->getName();
     }
   }
   m_setUpNodes.clear();
@@ -926,8 +924,7 @@ void ExecutionEngine::Impl::identifySinkNodes() {
   for (const auto index : m_compiledGraph->sinkNodes()) {
     const auto &node = m_compiledGraph->node(index);
     m_sinkNodes.push_back(node);
-    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
-                << node->getName();
+    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: " << node->getName();
   }
 }
 
@@ -994,8 +991,7 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
                       << node->getName() << ":" << target_port;
           return false;
         }
-        m_statistics.total_input_frames.fetch_add(1,
-                                                   std::memory_order_relaxed);
+        m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -1369,8 +1365,8 @@ void ExecutionEngine::Impl::recordDequeue(const PortDataPtr &data) {
                          std::chrono::steady_clock::now() - data->timestamp)
                          .count();
     if (age > 0) {
-      m_statistics.total_wait_time_us.fetch_add(
-          static_cast<std::uint64_t>(age), std::memory_order_relaxed);
+      m_statistics.total_wait_time_us.fetch_add(static_cast<std::uint64_t>(age),
+                                                std::memory_order_relaxed);
     }
   }
 }
@@ -1474,7 +1470,6 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
     m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
-
 
   // Propagate outputs
   propagateOutputs(node, outputs);
@@ -1878,12 +1873,11 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   }
 
   if (rejected_count > 0) {
-    return PushStatus::dropped("rejected on " +
-                                   std::to_string(rejected_count) + " of " +
-                                   std::to_string(routed_count +
-                                                  rejected_count) +
-                                   " downstream branches",
-                               total_queue_size);
+    return PushStatus::dropped(
+        "rejected on " + std::to_string(rejected_count) + " of " +
+            std::to_string(routed_count + rejected_count) +
+            " downstream branches",
+        total_queue_size);
   }
 
   return PushStatus::enqueued(total_queue_size);

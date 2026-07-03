@@ -1,7 +1,7 @@
 /**
  * @file test_execution_engine.cpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief ExecutionEngine unit and behavior tests
  * @version 0.1
  * @date 2026-01-19
  *
@@ -166,7 +166,9 @@ TEST_F(ExecutionEngineTest, InitializeWithZeroWorkers) {
 TEST_F(ExecutionEngineTest, SetSchedulerStrategy) {
   auto engine = createBatchEngine();
 
-  EXPECT_TRUE(engine->setSchedulerStrategy(std::make_unique<StreamSchedulerStrategy>()).isOk());
+  EXPECT_TRUE(
+      engine->setSchedulerStrategy(std::make_unique<StreamSchedulerStrategy>())
+          .isOk());
   EXPECT_TRUE(engine->strategyInfo().find("StreamSchedulerStrategy") !=
               std::string::npos);
 }
@@ -174,7 +176,8 @@ TEST_F(ExecutionEngineTest, SetSchedulerStrategy) {
 TEST_F(ExecutionEngineTest, SetSyncStrategy) {
   auto engine = createBatchEngine();
 
-  EXPECT_TRUE(engine->setSyncStrategy(std::make_unique<NoSyncStrategy>()).isOk());
+  EXPECT_TRUE(
+      engine->setSyncStrategy(std::make_unique<NoSyncStrategy>()).isOk());
   EXPECT_TRUE(engine->strategyInfo().find("NoSyncStrategy") !=
               std::string::npos);
 }
@@ -204,7 +207,8 @@ TEST_F(ExecutionEngineTest, CannotChangeStrategyWhileRunning) {
 
   // Strategy change should be rejected while running
   auto original_info = engine->strategyInfo();
-  auto result = engine->setSchedulerStrategy(std::make_unique<BatchSchedulerStrategy>());
+  auto result =
+      engine->setSchedulerStrategy(std::make_unique<BatchSchedulerStrategy>());
   EXPECT_FALSE(result.isOk());
   EXPECT_EQ(engine->strategyInfo(), original_info);
 
@@ -1359,11 +1363,14 @@ TEST_F(ExecutionEngineTest, HybridModeExecution) {
 TEST_F(ExecutionEngineTest, PartialInputHandlingInStreaming) {
   auto branch1 = std::make_shared<PassThroughNode>("branch1");
   auto branch2 = std::make_shared<PassThroughNode>("branch2");
-  auto join = std::make_shared<JoinNode>("join", std::vector<std::string>{"in1", "in2"});
+  auto join = std::make_shared<JoinNode>(
+      "join", std::vector<std::string>{"in1", "in2"});
   auto sink = std::make_shared<SinkNode>("sink");
 
-  m_graph->addNode(branch1); m_graph->addNode(branch2);
-  m_graph->addNode(join); m_graph->addNode(sink);
+  m_graph->addNode(branch1);
+  m_graph->addNode(branch2);
+  m_graph->addNode(join);
+  m_graph->addNode(sink);
 
   m_graph->addEdge("branch1", "output", "join", "in1");
   m_graph->addEdge("branch2", "output", "join", "in2");
@@ -1374,7 +1381,8 @@ TEST_F(ExecutionEngineTest, PartialInputHandlingInStreaming) {
   config.min_input_ratio = 0.5;
 
   auto engine = createStreamEngine();
-  engine->setSchedulerStrategy(std::make_unique<StreamSchedulerStrategy>(config));
+  engine->setSchedulerStrategy(
+      std::make_unique<StreamSchedulerStrategy>(config));
   engine->initialize(m_graph.get());
   engine->startStreaming();
 
@@ -1382,9 +1390,9 @@ TEST_F(ExecutionEngineTest, PartialInputHandlingInStreaming) {
   (void)engine->pushInput("branch1", "output", createData(1));
   std::this_thread::sleep_for(100ms);
 
-  // If partial input allowed, join might execute (depending on JoinNode implementation)
-  // Our JoinNode in helper_nodes.hpp likely needs all inputs unless modified.
-  // This test verifies the SCHEDULER side of partial inputs.
+  // If partial input allowed, join might execute (depending on JoinNode
+  // implementation) Our JoinNode in helper_nodes.hpp likely needs all inputs
+  // unless modified. This test verifies the SCHEDULER side of partial inputs.
 
   engine->stopStreaming();
 }

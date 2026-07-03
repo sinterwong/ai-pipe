@@ -1,7 +1,7 @@
 /**
  * @file error_code.hpp
  * @author Sinter Wong (sintercver@gmail.com)
- * @brief
+ * @brief Public state enumerations for pipeline, engine, and node execution
  * @version 0.1
  * @date 2026-01-13
  *
