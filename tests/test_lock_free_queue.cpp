@@ -634,4 +634,43 @@ TEST_F(LockFreePerformanceTest, MPMCThroughput) {
   EXPECT_EQ(total_consumed.load(), static_cast<std::uint64_t>(total_items));
 }
 
+TEST_F(LockFreeConcurrencyTest, ForcePush_ExtremeContention_SmallCapacity) {
+  // Target: Verify DropHead consistency when capacity is tiny but many threads are pushing
+  constexpr int k_threads = 8;
+  constexpr int k_items_per_thread = 1000;
+  auto cfg = LockFreeNodeQueue<int>::Config{
+      .capacity = 2,
+      .drop_policy = LockFreeDropPolicy::DropHead,
+      .track_statistics = true
+  };
+  LockFreeNodeQueue<int> q(cfg);
+
+  std::vector<std::thread> producers;
+  for (int i = 0; i < k_threads; ++i) {
+    producers.emplace_back([&]() {
+      for (int j = 0; j < k_items_per_thread; ++j) {
+        q.push(j);
+      }
+    });
+  }
+
+  for (auto &t : producers) t.join();
+
+  auto& stats = q.statistics();
+  int drain_count = 0;
+  while (q.tryPop()) drain_count++;
+
+  EXPECT_EQ(q.size(), 0u);
+  // total_pushed = total_dropped + total_popped + current_size
+  // Since we just drained, popped should increase.
+  // Actually NodeQueue stats track total_popped separately.
+
+  auto pushed = stats.total_pushed.load();
+  auto dropped = stats.total_dropped.load();
+  auto popped = stats.total_popped.load();
+
+  EXPECT_EQ(pushed, dropped + popped);
+  EXPECT_LE(popped, pushed);
+}
+
 } // namespace ai_pipe_unit_test::lock_free_queue
