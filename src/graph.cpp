@@ -98,18 +98,20 @@ bool Graph::addEdge(const std::string &source_node_name,
       return false;
     }
   }
-  // Check if an identical edge already exists (same source node, source port,
-  // destination node, and destination port)
-  for (const auto &existing_edge : m_edges) {
-    if (existing_edge.source_node == source_node &&
-        existing_edge.source_port == source_port_name &&
-        existing_edge.dest_node == dest_node &&
-        existing_edge.dest_port == dest_port_name) {
-      LOG_WARNING_S << "Edge from " << source_node_name << ":"
-                    << source_port_name << " to " << dest_node_name << ":"
-                    << dest_port_name << "already exists. Skipping.";
-      return false;
-    }
+  // Reject an identical edge (same source node/port and dest node/port)
+  // via a hash-set membership test instead of scanning every edge.
+  std::string edge_key;
+  edge_key.reserve(source_node_name.size() + source_port_name.size() +
+                   dest_node_name.size() + dest_port_name.size() + 3);
+  edge_key.append(source_node_name).push_back('\0');
+  edge_key.append(source_port_name).push_back('\0');
+  edge_key.append(dest_node_name).push_back('\0');
+  edge_key.append(dest_port_name);
+  if (!m_edgeKeys.insert(std::move(edge_key)).second) {
+    LOG_WARNING_S << "Edge from " << source_node_name << ":"
+                  << source_port_name << " to " << dest_node_name << ":"
+                  << dest_port_name << " already exists. Skipping.";
+    return false;
   }
 
   m_edges.emplace_back(
@@ -239,6 +241,7 @@ bool Graph::hasCycle() const {
 }
 
 void Graph::clear() {
+  m_edgeKeys.clear();
   m_nodes.clear();
   m_edges.clear();
   m_nodeMap.clear();

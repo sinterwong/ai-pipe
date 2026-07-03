@@ -173,9 +173,7 @@ TEST_F(CompiledGraphTest, CycleIsDetected) {
 
 TEST_F(CompiledGraphTest, DeepChainDoesNotOverflow) {
   // Iterative Kahn must handle chains far deeper than any recursion limit.
-  // NOTE: kept at 5k while Graph::addEdge is still O(E); raise to 50k once
-  // P1.4 lands.
-  constexpr int k_depth = 5000;
+  constexpr int k_depth = 50000;
   for (int i = 0; i < k_depth; ++i) {
     addPassThrough("n" + std::to_string(i));
   }

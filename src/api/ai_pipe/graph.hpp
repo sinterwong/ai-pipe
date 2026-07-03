@@ -14,6 +14,7 @@
 #include "ai_pipe/edge.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include <unordered_map>
+#include <unordered_set>
 
 namespace ai_pipe {
 class Graph {
@@ -72,6 +73,10 @@ private:
                      std::vector<std::shared_ptr<ILogicNode>>>
       m_adjListIn;
   std::unordered_map<std::shared_ptr<ILogicNode>, int> m_inDegree;
+
+  // O(1) duplicate-edge detection; keys are
+  // "src\0sport\0dst\0dport" (node names + port names).
+  std::unordered_set<std::string> m_edgeKeys;
 };
 
 } // namespace ai_pipe
