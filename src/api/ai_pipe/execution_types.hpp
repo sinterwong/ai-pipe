@@ -264,6 +264,13 @@ struct AtomicNodeStatistics {
   std::atomic<std::uint64_t> min_processing_us{
       std::numeric_limits<std::uint64_t>::max()};
   std::atomic<std::uint64_t> max_processing_us{0};
+  std::atomic<std::uint64_t> total_input_count{0};
+  std::atomic<std::uint64_t> total_output_count{0};
+
+  void recordIo(std::uint64_t inputs, std::uint64_t outputs) {
+    total_input_count.fetch_add(inputs, std::memory_order_relaxed);
+    total_output_count.fetch_add(outputs, std::memory_order_relaxed);
+  }
 
   void recordExecution(bool success, std::uint64_t processing_us) {
     execution_count.fetch_add(1, std::memory_order_relaxed);
@@ -297,6 +304,10 @@ struct AtomicNodeStatistics {
         total_processing_us.load(std::memory_order_relaxed);
     stats.min_processing_us = min_processing_us.load(std::memory_order_relaxed);
     stats.max_processing_us = max_processing_us.load(std::memory_order_relaxed);
+    stats.total_input_count =
+        total_input_count.load(std::memory_order_relaxed);
+    stats.total_output_count =
+        total_output_count.load(std::memory_order_relaxed);
     return stats;
   }
 
@@ -308,6 +319,8 @@ struct AtomicNodeStatistics {
     min_processing_us.store(std::numeric_limits<std::uint64_t>::max(),
                             std::memory_order_relaxed);
     max_processing_us.store(0, std::memory_order_relaxed);
+    total_input_count.store(0, std::memory_order_relaxed);
+    total_output_count.store(0, std::memory_order_relaxed);
   }
 };
 

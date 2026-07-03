@@ -59,7 +59,7 @@
 ## Phase 5 — 可观测性真实化
 
 - [x] **P5.1** 接线 `recordLatency`（sink 端到端延迟直方图）、`total_queue_pops`、`total_wait_time_us`（出队帧龄）、`total_input_frames`、`total_schedule_time_us`（READY→执行延迟）；`queue_full_events` 已在 P0.1 接线
-- [ ] **P5.2** 启用 `AtomicNodeStatistics`：每 NodeState 持有，快照填充 `node_stats`
+- [x] **P5.2** 启用 `AtomicNodeStatistics`：每 NodeState 持有，快照填充 `node_stats`
 - [x] **P5.3** 统一 batch/stream 的 `total_executions` 语义并文档化
 - [ ] **P5.4** 统计测试补齐：snapshot 字段非零/单调断言；`enable_statistics=false` 零开销验证
 - [ ] **P5.5** 日志统一：引擎日志经可注入 sink，`PipelineContext` adapter 可接管，废弃双轨

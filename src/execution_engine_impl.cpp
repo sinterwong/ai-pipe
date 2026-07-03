@@ -639,7 +639,25 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
 // -------------------------------------------------------------------------
 
 EngineStatisticsSnapshot ExecutionEngine::Impl::statistics() const {
-  return EngineStatisticsSnapshot(m_statistics);
+  EngineStatisticsSnapshot snapshot(m_statistics);
+
+  snapshot.node_stats.reserve(m_nodeStates.size());
+  for (const auto &[node_ptr, state] : m_nodeStates) {
+    if (!state) {
+      continue;
+    }
+    auto node_stats = state->stats.snapshot(state->name);
+    std::size_t queue_depth = 0;
+    for (const auto *queue : state->input_queues) {
+      if (queue) {
+        queue_depth += queue->size();
+      }
+    }
+    node_stats.current_queue_depth = queue_depth;
+    snapshot.node_stats.push_back(std::move(node_stats));
+  }
+
+  return snapshot;
 }
 
 std::size_t
@@ -1099,6 +1117,14 @@ void ExecutionEngine::Impl::executeNodeTask(
   m_statistics.total_processing_time_us.fetch_add(duration_us,
                                                   std::memory_order_relaxed);
 
+  if (m_config.enable_statistics) {
+    state.stats.recordExecution(process_result.isOk(),
+                                static_cast<std::uint64_t>(duration_us));
+    if (process_result.isOk()) {
+      state.stats.recordIo(inputs.size(), outputs.size());
+    }
+  }
+
   // Handle completion
   if (m_stopFlag.load(std::memory_order_acquire)) {
     state.exec_state.store(NodeExecutionState::WAITING,
@@ -1523,6 +1549,7 @@ void ExecutionEngine::Impl::resetInternalState() {
       state->exec_state.store(NodeExecutionState::WAITING,
                               std::memory_order_relaxed);
       state->execution_count.store(0, std::memory_order_relaxed);
+      state->stats.reset();
 
       for (auto &[port, queue] : state->lock_free_queues) {
         if (queue)

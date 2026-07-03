@@ -54,6 +54,10 @@ public:
     // initialize): gates per-frame shouldDrop/markProcessed calls.
     bool sync_tracked{false};
 
+    // Per-node execution statistics, snapshotted into
+    // EngineStatisticsSnapshot::node_stats.
+    AtomicNodeStatistics stats;
+
     // Single-word scheduling state machine. The WAITING->READY CAS in
     // scheduleNodeExecution() is the only claim point; concurrent
     // schedule attempts may redundantly evaluate the (cheap) strategy
