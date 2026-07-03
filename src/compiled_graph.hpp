@@ -1,0 +1,234 @@
+/**
+ * @file compiled_graph.hpp
+ * @author Sinter Wong (sintercver@gmail.com)
+ * @brief Immutable, index-based compiled view of a Graph for hot-path use
+ * @version 0.1
+ * @date 2026-07-03
+ *
+ * This is an INTERNAL header file. Users should not include this directly.
+ *
+ * Graph is the mutable construction API; CompiledGraph is the execution
+ * engine's read-only view of it. Compilation happens once in
+ * ExecutionEngine::initialize() and precomputes everything the hot path
+ * previously derived by scanning the edge list per node execution:
+ *
+ *   - dense node indices (NodeIndex) with name and pointer lookup
+ *   - successor/predecessor adjacency (deduplicated)
+ *   - per-node out-edge routing table for output propagation
+ *   - topological order via iterative Kahn's algorithm (no recursion,
+ *     no stack-overflow risk on deep graphs) with built-in cycle detection
+ *   - source and sink node sets
+ *
+ * @copyright Copyright (c) 2026
+ */
+
+#ifndef AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP
+#define AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP
+
+#include "ai_pipe/error.hpp"
+#include "ai_pipe/graph.hpp"
+#include <algorithm>
+#include <cstdint>
+#include <deque>
+#include <limits>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace ai_pipe {
+
+class CompiledGraph {
+public:
+  using NodeIndex = std::uint32_t;
+  using NodePtr = std::shared_ptr<ILogicNode>;
+
+  static constexpr NodeIndex k_invalid_index =
+      std::numeric_limits<NodeIndex>::max();
+
+  /**
+   * @brief One outgoing connection of a node, precomputed for routing
+   */
+  struct OutEdge {
+    std::string source_port;
+    NodeIndex dest_node{k_invalid_index};
+    std::string dest_port;
+  };
+
+  /**
+   * @brief Compile a Graph into an immutable indexed view
+   * @return CompiledGraph on success, or Error with:
+   *   - GraphEmpty: graph has no nodes
+   *   - GraphCycleDetected: graph contains a cycle
+   */
+  static Result<CompiledGraph> compile(const Graph &graph) {
+    CompiledGraph cg;
+
+    const auto &nodes = graph.getNodes();
+    if (nodes.empty()) {
+      return Result<CompiledGraph>::err(ErrorCode::GraphEmpty,
+                                        "Graph has no nodes");
+    }
+
+    const auto node_count = static_cast<NodeIndex>(nodes.size());
+    cg.m_nodes = nodes;
+    cg.m_outEdges.resize(node_count);
+    cg.m_successors.resize(node_count);
+    cg.m_predecessors.resize(node_count);
+    cg.m_inDegree.assign(node_count, 0);
+
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      cg.m_nameToIndex[nodes[i]->getName()] = i;
+      cg.m_ptrToIndex[nodes[i].get()] = i;
+    }
+
+    // Edge-count in-degrees drive Kahn's algorithm; adjacency lists are
+    // deduplicated separately for scheduling fan-out.
+    for (const auto &edge : graph.getEdges()) {
+      const NodeIndex src = cg.indexOfPtr(edge.source_node.get());
+      const NodeIndex dst = cg.indexOfPtr(edge.dest_node.get());
+      if (src == k_invalid_index || dst == k_invalid_index) {
+        return Result<CompiledGraph>::err(
+            ErrorCode::InternalError,
+            "Edge references a node that is not in the graph");
+      }
+
+      cg.m_outEdges[src].push_back({edge.source_port, dst, edge.dest_port});
+      cg.m_inDegree[dst]++;
+
+      auto &succ = cg.m_successors[src];
+      if (std::find(succ.begin(), succ.end(), dst) == succ.end()) {
+        succ.push_back(dst);
+      }
+      auto &pred = cg.m_predecessors[dst];
+      if (std::find(pred.begin(), pred.end(), src) == pred.end()) {
+        pred.push_back(src);
+      }
+    }
+
+    // Iterative Kahn's algorithm: topological order + cycle detection
+    std::vector<int> remaining = cg.m_inDegree;
+    std::deque<NodeIndex> ready;
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      if (remaining[i] == 0) {
+        ready.push_back(i);
+      }
+    }
+
+    cg.m_topoOrder.reserve(node_count);
+    while (!ready.empty()) {
+      NodeIndex current = ready.front();
+      ready.pop_front();
+      cg.m_topoOrder.push_back(current);
+
+      for (const auto &out : cg.m_outEdges[current]) {
+        if (--remaining[out.dest_node] == 0) {
+          ready.push_back(out.dest_node);
+        }
+      }
+    }
+
+    if (cg.m_topoOrder.size() != node_count) {
+      return Result<CompiledGraph>::err(ErrorCode::GraphCycleDetected,
+                                        "Graph contains a cycle");
+    }
+
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      if (cg.m_inDegree[i] == 0) {
+        cg.m_sourceNodes.push_back(i);
+      }
+      if (cg.m_outEdges[i].empty()) {
+        cg.m_sinkNodes.push_back(i);
+      }
+    }
+
+    return cg;
+  }
+
+  // ---------------------------------------------------------------------
+  // Lookup
+  // ---------------------------------------------------------------------
+
+  [[nodiscard]] NodeIndex indexOf(const std::string &name) const {
+    auto it = m_nameToIndex.find(name);
+    return it != m_nameToIndex.end() ? it->second : k_invalid_index;
+  }
+
+  [[nodiscard]] NodeIndex indexOfPtr(const ILogicNode *node) const {
+    auto it = m_ptrToIndex.find(node);
+    return it != m_ptrToIndex.end() ? it->second : k_invalid_index;
+  }
+
+  [[nodiscard]] const NodePtr &node(NodeIndex index) const {
+    return m_nodes[index];
+  }
+
+  [[nodiscard]] std::size_t nodeCount() const { return m_nodes.size(); }
+
+  // ---------------------------------------------------------------------
+  // Topology (all O(1) per node)
+  // ---------------------------------------------------------------------
+
+  /** @brief Outgoing edges of a node, for output routing */
+  [[nodiscard]] const std::vector<OutEdge> &outEdges(NodeIndex index) const {
+    return m_outEdges[index];
+  }
+
+  /** @brief Deduplicated successor node indices */
+  [[nodiscard]] const std::vector<NodeIndex> &
+  successors(NodeIndex index) const {
+    return m_successors[index];
+  }
+
+  /** @brief Deduplicated predecessor node indices */
+  [[nodiscard]] const std::vector<NodeIndex> &
+  predecessors(NodeIndex index) const {
+    return m_predecessors[index];
+  }
+
+  /** @brief Edge-count in-degree (parallel edges counted individually) */
+  [[nodiscard]] int inDegree(NodeIndex index) const {
+    return m_inDegree[index];
+  }
+
+  [[nodiscard]] bool isSource(NodeIndex index) const {
+    return m_inDegree[index] == 0;
+  }
+
+  [[nodiscard]] bool isSink(NodeIndex index) const {
+    return m_outEdges[index].empty();
+  }
+
+  /** @brief Node indices in a valid topological order */
+  [[nodiscard]] const std::vector<NodeIndex> &topologicalOrder() const {
+    return m_topoOrder;
+  }
+
+  [[nodiscard]] const std::vector<NodeIndex> &sourceNodes() const {
+    return m_sourceNodes;
+  }
+
+  [[nodiscard]] const std::vector<NodeIndex> &sinkNodes() const {
+    return m_sinkNodes;
+  }
+
+private:
+  CompiledGraph() = default;
+
+  std::vector<NodePtr> m_nodes;
+  std::unordered_map<std::string, NodeIndex> m_nameToIndex;
+  std::unordered_map<const ILogicNode *, NodeIndex> m_ptrToIndex;
+
+  std::vector<std::vector<OutEdge>> m_outEdges;
+  std::vector<std::vector<NodeIndex>> m_successors;
+  std::vector<std::vector<NodeIndex>> m_predecessors;
+  std::vector<int> m_inDegree;
+
+  std::vector<NodeIndex> m_topoOrder;
+  std::vector<NodeIndex> m_sourceNodes;
+  std::vector<NodeIndex> m_sinkNodes;
+};
+
+} // namespace ai_pipe
+
+#endif // AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP

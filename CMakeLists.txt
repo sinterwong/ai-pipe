@@ -23,6 +23,18 @@ option(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
 option(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
 option(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
 
+# Sanitizer support (e.g. -DAI_PIPE_SANITIZER=address / thread / undefined)
+set(AI_PIPE_SANITIZER "" CACHE STRING
+    "Enable a sanitizer for all targets: address, thread, or undefined")
+if(AI_PIPE_SANITIZER)
+    if(MSVC)
+        message(FATAL_ERROR "AI_PIPE_SANITIZER is only supported with GCC/Clang")
+    endif()
+    add_compile_options(-fsanitize=${AI_PIPE_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${AI_PIPE_SANITIZER})
+    message(STATUS "Sanitizer enabled: ${AI_PIPE_SANITIZER}")
+endif()
+
 # Display build configuration
 message(STATUS "================================")
 message(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")

@@ -67,7 +67,18 @@ protected:
 
 class LockFreeConcurrencyTest : public ::testing::Test {};
 
-class LockFreePerformanceTest : public ::testing::Test {};
+class LockFreePerformanceTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+    GTEST_SKIP() << "Performance thresholds are meaningless under sanitizers";
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
+    GTEST_SKIP() << "Performance thresholds are meaningless under sanitizers";
+#endif
+#endif
+  }
+};
 
 TEST_F(LockFreeMPMCQueueTest, CapacityRoundsUpToPowerOf2) {
   LockFreeMPMCQueue<int> q3(3);

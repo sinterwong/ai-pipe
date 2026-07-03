@@ -19,6 +19,7 @@
 
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
+#include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>
@@ -42,32 +43,53 @@ public:
     std::unordered_map<std::string, std::shared_ptr<LockFreeQueueType>>
         lock_free_queues;
 
-    std::unique_ptr<std::atomic<NodeExecutionState>> exec_state;
-    std::chrono::steady_clock::time_point last_execution;
-    std::uint64_t execution_count{0};
+    // Cached once at initialize: the node's declared input ports and the
+    // matching queues in declaration order. The hot scheduling/gather
+    // paths iterate these instead of re-calling the virtual
+    // getExpectedInputPorts() and hashing port names per execution.
+    std::vector<std::string> input_ports;
+    std::vector<LockFreeQueueType *> input_queues;
 
-    std::unique_ptr<std::mutex> mutex;
+    // Single-word scheduling state machine. The WAITING->READY CAS in
+    // scheduleNodeExecution() is the only claim point; concurrent
+    // schedule attempts may redundantly evaluate the (cheap) strategy
+    // but exactly one wins the CAS. NodeState lives behind a
+    // unique_ptr and is never moved, so the atomic can be a direct
+    // member.
+    std::atomic<NodeExecutionState> exec_state{NodeExecutionState::WAITING};
+
+    // Written by the executing worker, read concurrently by scheduling
+    // attempts and by completion checks (including stragglers from a
+    // previous execution racing a resetInternalState), hence atomic.
+    std::atomic<std::chrono::steady_clock::rep> last_execution_ticks{0};
+    std::atomic<std::uint64_t> execution_count{0};
+
+    [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
+      return std::chrono::steady_clock::time_point{
+          std::chrono::steady_clock::duration{
+              last_execution_ticks.load(std::memory_order_relaxed)}};
+    }
 
     QueueConfig queue_config;
 
-    NodeState()
-        : exec_state(std::make_unique<std::atomic<NodeExecutionState>>(
-              NodeExecutionState::WAITING)),
-          mutex(std::make_unique<std::mutex>()) {}
+    NodeState() = default;
 
     explicit NodeState(NodePtr n, const std::string &node_name)
-        : node(std::move(n)), name(node_name),
-          exec_state(std::make_unique<std::atomic<NodeExecutionState>>(
-              NodeExecutionState::WAITING)),
-          mutex(std::make_unique<std::mutex>()) {}
+        : node(std::move(n)), name(node_name) {}
   };
 
   Impl();
   explicit Impl(const EngineConfig &config);
   ~Impl();
 
-  Impl(Impl &&other) noexcept;
-  Impl &operator=(Impl &&other) noexcept;
+  // Neither copyable nor movable: worker tasks capture `this`, so the Impl
+  // address must stay stable for the engine's lifetime. ExecutionEngine's
+  // move semantics come from moving the unique_ptr<Impl>, which never
+  // relocates the Impl object itself.
+  Impl(const Impl &) = delete;
+  Impl &operator=(const Impl &) = delete;
+  Impl(Impl &&) = delete;
+  Impl &operator=(Impl &&) = delete;
 
   Result<void>
   setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
@@ -151,8 +173,28 @@ private:
   Result<void> waitForCompletion();
   void resetInternalState();
 
-  void pushToQueue(const NodePtr &node, const std::string &port_name,
-                   PortDataPtr data);
+  /**
+   * @brief Wake completion/drain waiters without losing wakeups
+   *
+   * The empty lock/unlock of m_completionMutex orders state changes
+   * (m_activeTasks, m_stopFlag, queue sizes) against a waiter's
+   * predicate check, so plain condition waits need no timeout polling.
+   */
+  void notifyCompletionWaiters();
+
+  [[nodiscard]] bool allQueuesDrained(std::size_t max_depth) const;
+
+  /**
+   * @brief Push data to a node's input queue, honoring its drop policy
+   * @return true if the data was accepted (possibly evicting an older frame),
+   *         false if it was rejected (DropTail policy on a full queue) or the
+   *         target queue does not exist
+   */
+  [[nodiscard]] bool pushToQueue(const NodePtr &node,
+                                 const std::string &port_name,
+                                 PortDataPtr data);
+
+  void recordQueueRejection(const NodePtr &node, const std::string &port_name);
   std::optional<PortDataPtr> popFromQueue(const NodePtr &node,
                                           const std::string &port_name);
   bool hasDataInQueue(const NodePtr &node, const std::string &port_name) const;
@@ -162,8 +204,6 @@ private:
   [[nodiscard]] bool isSourceNode(const NodePtr &node) const;
   [[nodiscard]] bool isSinkNode(const NodePtr &node) const;
   void collectResults(const NodePtr &node, const PortDataMap &outputs);
-  [[nodiscard]] std::vector<std::string>
-  getReadyPorts(const NodePtr &node) const;
   [[nodiscard]] QueueConfig
   getNodeQueueConfig(const std::string &node_name) const;
   [[nodiscard]] std::string getFirstInputPort(const NodePtr &node) const;
@@ -187,8 +227,17 @@ private:
   std::unique_ptr<ISyncStrategy> m_syncStrategy;
 
   Graph *m_graph{nullptr};
+
+  // Immutable indexed view of m_graph, rebuilt by initialize(). Holds the
+  // precomputed routing table and topology sets used on the hot path.
+  std::optional<CompiledGraph> m_compiledGraph;
+
   std::unique_ptr<WorkStealingThreadPool> m_threadPool;
-  std::shared_ptr<PipelineContext> m_currentContext;
+
+  // Written by execute()/startStreaming() and cleared on completion while
+  // worker threads concurrently read it in scheduleNodeExecution(); atomic
+  // shared_ptr keeps those accesses race-free.
+  std::atomic<std::shared_ptr<PipelineContext>> m_currentContext;
 
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;

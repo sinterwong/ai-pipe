@@ -11,6 +11,7 @@
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/logger.hpp"
 #include <algorithm>
+#include <deque>
 
 namespace ai_pipe {
 bool Graph::addNode(const std::shared_ptr<ILogicNode> &node) {
@@ -97,18 +98,20 @@ bool Graph::addEdge(const std::string &source_node_name,
       return false;
     }
   }
-  // Check if an identical edge already exists (same source node, source port,
-  // destination node, and destination port)
-  for (const auto &existing_edge : m_edges) {
-    if (existing_edge.source_node == source_node &&
-        existing_edge.source_port == source_port_name &&
-        existing_edge.dest_node == dest_node &&
-        existing_edge.dest_port == dest_port_name) {
-      LOG_WARNING_S << "Edge from " << source_node_name << ":"
-                    << source_port_name << " to " << dest_node_name << ":"
-                    << dest_port_name << "already exists. Skipping.";
-      return false;
-    }
+  // Reject an identical edge (same source node/port and dest node/port)
+  // via a hash-set membership test instead of scanning every edge.
+  std::string edge_key;
+  edge_key.reserve(source_node_name.size() + source_port_name.size() +
+                   dest_node_name.size() + dest_port_name.size() + 3);
+  edge_key.append(source_node_name).push_back('\0');
+  edge_key.append(source_port_name).push_back('\0');
+  edge_key.append(dest_node_name).push_back('\0');
+  edge_key.append(dest_port_name);
+  if (!m_edgeKeys.insert(std::move(edge_key)).second) {
+    LOG_WARNING_S << "Edge from " << source_node_name << ":"
+                  << source_port_name << " to " << dest_node_name << ":"
+                  << dest_port_name << " already exists. Skipping.";
+    return false;
   }
 
   m_edges.emplace_back(
@@ -204,49 +207,47 @@ Graph::getOutgoingEdges(const std::shared_ptr<ILogicNode> &source_node) const {
 }
 
 bool Graph::hasCycle() const {
-  // 0: unvisited, 1: visiting (in recursion stack), 2: visited
-  std::unordered_map<std::shared_ptr<ILogicNode>, int> visit_status;
-  for (const auto &node_sp : m_nodes) {
-    if (visit_status[node_sp] == 0) {
-      if (hasCycleDFS(node_sp, visit_status)) {
-        return true;
+  // Iterative Kahn's algorithm: repeatedly peel zero-in-degree nodes.
+  // If not every node gets peeled, the remainder contains a cycle.
+  // No recursion, so arbitrarily deep graphs cannot overflow the stack.
+  std::unordered_map<std::shared_ptr<ILogicNode>, int> remaining = m_inDegree;
+
+  std::deque<std::shared_ptr<ILogicNode>> ready;
+  for (const auto &node : m_nodes) {
+    auto it = remaining.find(node);
+    if (it == remaining.end() || it->second == 0) {
+      ready.push_back(node);
+    }
+  }
+
+  std::size_t processed = 0;
+  while (!ready.empty()) {
+    auto current = ready.front();
+    ready.pop_front();
+    processed++;
+
+    auto adj_it = m_adjListOut.find(current);
+    if (adj_it == m_adjListOut.end()) {
+      continue;
+    }
+    for (const auto &neighbor : adj_it->second) {
+      if (--remaining[neighbor] == 0) {
+        ready.push_back(neighbor);
       }
     }
   }
-  return false;
+
+  return processed != m_nodes.size();
 }
 
 void Graph::clear() {
+  m_edgeKeys.clear();
   m_nodes.clear();
   m_edges.clear();
   m_nodeMap.clear();
   m_adjListOut.clear();
   m_adjListIn.clear();
   m_inDegree.clear();
-}
-
-bool Graph::hasCycleDFS(
-    const std::shared_ptr<ILogicNode> &node,
-    std::unordered_map<std::shared_ptr<ILogicNode>, int> &visit_status) const {
-  // Mark as visiting (in recursion stack)
-  visit_status[node] = 1;
-
-  auto it_adj = m_adjListOut.find(node);
-  if (it_adj != m_adjListOut.end()) {
-    for (auto v : it_adj->second) {
-      if (visit_status[v] == 1) {
-        return true;
-      }
-      if (visit_status[v] == 0) {
-        if (hasCycleDFS(v, visit_status)) {
-          return true;
-        }
-      }
-    }
-  }
-  // Mark as visited (finished processing)
-  visit_status[node] = 2;
-  return false;
 }
 
 } // namespace ai_pipe

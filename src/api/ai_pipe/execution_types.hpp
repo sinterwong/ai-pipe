@@ -6,8 +6,8 @@
  * @date 2025-12-24
  *
  * v2.0: Unified error handling - replaced QueuePushResult with PushStatus
- *       used inside Result<PushStatus>. The old QueuePushResult is retained
- *       as a deprecated alias for migration convenience.
+ *       used inside Result<PushStatus>. The deprecated QueuePushResult
+ *       wrapper was removed after the migration completed.
  *
  * @copyright Copyright (c) 2025
  */
@@ -93,56 +93,6 @@ struct PushStatus {
 
   static PushStatus dropped(const std::string &reason, std::size_t size) {
     return {Outcome::Dropped, reason, size};
-  }
-};
-
-// =============================================================================
-// Backward-compatible QueuePushResult (deprecated wrapper)
-// =============================================================================
-
-/**
- * @brief DEPRECATED: Use Result<PushStatus> instead.
- *
- * This type is retained temporarily for internal code that has not yet
- * migrated to the new Result<PushStatus> API. It will be removed in a
- * future version.
- */
-struct QueuePushResult {
-  enum class Status { Enqueued, Dropped, Rejected };
-  Status status = Status::Rejected;
-  std::string message;
-  std::size_t queue_size = 0;
-
-  bool isOk() const { return status != Status::Rejected; }
-  bool isDropped() const { return status == Status::Dropped; }
-
-  explicit operator bool() const { return isOk(); }
-
-  static QueuePushResult success(std::size_t size) {
-    return {Status::Enqueued, "success", size};
-  }
-
-  static QueuePushResult dropped(const std::string &reason, std::size_t size) {
-    return {Status::Dropped, reason, size};
-  }
-
-  static QueuePushResult rejected(const std::string &reason, std::size_t size) {
-    return {Status::Rejected, reason, size};
-  }
-
-  /**
-   * @brief Convert legacy QueuePushResult to Result<PushStatus>
-   */
-  [[nodiscard]] Result<PushStatus> toResult() const {
-    switch (status) {
-    case Status::Enqueued:
-      return PushStatus::enqueued(queue_size);
-    case Status::Dropped:
-      return PushStatus::dropped(message, queue_size);
-    case Status::Rejected:
-      return Result<PushStatus>::err(ErrorCode::QueueRejected, message);
-    }
-    return Result<PushStatus>::err(ErrorCode::InternalError, "Unknown status");
   }
 };
 

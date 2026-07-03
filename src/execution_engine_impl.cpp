@@ -198,76 +198,6 @@ ExecutionEngine::Impl::~Impl() {
   }
 }
 
-ExecutionEngine::Impl::Impl(Impl &&other) noexcept {
-  if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-    stopExecutionSync();
-  }
-
-  std::scoped_lock lock(m_engineMutex, other.m_engineMutex);
-
-  m_config = std::move(other.m_config);
-  m_nodeQueueConfigs = std::move(other.m_nodeQueueConfigs);
-  m_schedulerStrategy = std::move(other.m_schedulerStrategy);
-  m_syncStrategy = std::move(other.m_syncStrategy);
-  m_graph = std::exchange(other.m_graph, nullptr);
-  m_threadPool = std::move(other.m_threadPool);
-  m_currentContext = std::move(other.m_currentContext);
-  m_nodeStates = std::move(other.m_nodeStates);
-  m_nodeNameMap = std::move(other.m_nodeNameMap);
-  m_sinkNodes = std::move(other.m_sinkNodes);
-
-  m_engineState.store(other.m_engineState.exchange(EngineState::STOPPED),
-                      std::memory_order_relaxed);
-  m_activeTasks.store(other.m_activeTasks.exchange(0),
-                      std::memory_order_relaxed);
-  m_stopFlag.store(other.m_stopFlag.exchange(true), std::memory_order_relaxed);
-  m_streamingMode.store(other.m_streamingMode.exchange(false),
-                        std::memory_order_relaxed);
-
-  m_accumulatedResults = std::move(other.m_accumulatedResults);
-  m_resultCallback = std::move(other.m_resultCallback);
-  m_errorCallback = std::move(other.m_errorCallback);
-  m_dropCallback = std::move(other.m_dropCallback);
-}
-
-ExecutionEngine::Impl &ExecutionEngine::Impl::operator=(Impl &&other) noexcept {
-  if (this == &other) {
-    return *this;
-  }
-
-  if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-    stopExecutionSync();
-  }
-
-  std::scoped_lock lock(m_engineMutex, other.m_engineMutex);
-
-  m_config = std::move(other.m_config);
-  m_nodeQueueConfigs = std::move(other.m_nodeQueueConfigs);
-  m_schedulerStrategy = std::move(other.m_schedulerStrategy);
-  m_syncStrategy = std::move(other.m_syncStrategy);
-  m_graph = std::exchange(other.m_graph, nullptr);
-  m_threadPool = std::move(other.m_threadPool);
-  m_currentContext = std::move(other.m_currentContext);
-  m_nodeStates = std::move(other.m_nodeStates);
-  m_nodeNameMap = std::move(other.m_nodeNameMap);
-  m_sinkNodes = std::move(other.m_sinkNodes);
-
-  m_engineState.store(other.m_engineState.exchange(EngineState::STOPPED),
-                      std::memory_order_relaxed);
-  m_activeTasks.store(other.m_activeTasks.exchange(0),
-                      std::memory_order_relaxed);
-  m_stopFlag.store(other.m_stopFlag.exchange(true), std::memory_order_relaxed);
-  m_streamingMode.store(other.m_streamingMode.exchange(false),
-                        std::memory_order_relaxed);
-
-  m_accumulatedResults = std::move(other.m_accumulatedResults);
-  m_resultCallback = std::move(other.m_resultCallback);
-  m_errorCallback = std::move(other.m_errorCallback);
-  m_dropCallback = std::move(other.m_dropCallback);
-
-  return *this;
-}
-
 // -------------------------------------------------------------------------
 // Impl: Strategy Configuration
 // -------------------------------------------------------------------------
@@ -333,7 +263,18 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   std::lock_guard<std::mutex> lock(m_engineMutex);
 
+  // Compile the graph up front: rejects empty graphs and cycles, and
+  // precomputes the routing/topology data the execution paths rely on.
+  auto compiled = CompiledGraph::compile(*graph);
+  if (!compiled) {
+    LOG_ERROR_S << "ExecutionEngine: Graph compilation failed: "
+                << compiled.error().toString();
+    return Result<void>::err(compiled.error());
+  }
+
   m_graph = graph;
+  m_compiledGraph.emplace(std::move(compiled.value()));
+
   if (num_workers > 0) {
     m_config.num_workers = num_workers;
   }
@@ -377,7 +318,7 @@ Result<void>
 ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
                                bool wait_for_completion,
                                std::shared_ptr<PipelineContext> context) {
-  m_currentContext = context;
+  m_currentContext.store(std::move(context));
 
   // Handle streaming mode
   if (m_streamingMode.load(std::memory_order_acquire)) {
@@ -406,14 +347,14 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
 
     if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
       LOG_ERROR_S << "ExecutionEngine: Already running.";
-      m_currentContext = nullptr;
+      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::AlreadyRunning,
                                "Engine is already running");
     }
 
     if (!m_graph || !m_threadPool) {
       LOG_ERROR_S << "ExecutionEngine: Not initialized.";
-      m_currentContext = nullptr;
+      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::NotInitialized,
                                "Engine not initialized (missing graph or "
                                "thread pool)");
@@ -431,7 +372,7 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
     std::lock_guard<std::mutex> lock(m_engineMutex);
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Failed to distribute inputs.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionFailed,
                              "Failed to distribute initial inputs to source "
                              "nodes");
@@ -450,11 +391,14 @@ void ExecutionEngine::Impl::stopExecutionAsync() {
   bool expected = false;
   if (m_stopFlag.compare_exchange_strong(expected, true,
                                          std::memory_order_acq_rel)) {
-    std::lock_guard<std::mutex> lock(m_engineMutex);
-    if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
-      m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+    {
+      std::lock_guard<std::mutex> lock(m_engineMutex);
+      if (m_engineState.load(std::memory_order_acquire) ==
+          EngineState::RUNNING) {
+        m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+      }
     }
-    m_completionCV.notify_all();
+    notifyCompletionWaiters();
   }
 }
 
@@ -465,9 +409,9 @@ void ExecutionEngine::Impl::stopExecutionSync() {
 
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
-      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
-    }
+    m_completionCV.wait(lock, [this] {
+      return m_activeTasks.load(std::memory_order_acquire) == 0;
+    });
   }
 
   {
@@ -491,11 +435,9 @@ void ExecutionEngine::Impl::reset() {
     if (!state)
       continue;
 
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_relaxed);
-    }
-    state->execution_count = 0;
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_relaxed);
+    state->execution_count.store(0, std::memory_order_relaxed);
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
@@ -531,8 +473,8 @@ ExecutionEngine::Impl::getNodeStates() const {
   std::unordered_map<std::string, NodeExecutionState> result;
 
   for (const auto &[node_ptr, state] : m_nodeStates) {
-    if (state && state->exec_state) {
-      result[state->name] = state->exec_state->load(std::memory_order_acquire);
+    if (state) {
+      result[state->name] = state->exec_state.load(std::memory_order_acquire);
     }
   }
 
@@ -581,7 +523,7 @@ Result<void> ExecutionEngine::Impl::startStreaming(
         "Current scheduler strategy does not support streaming mode");
   }
 
-  m_currentContext = context;
+  m_currentContext.store(std::move(context));
   m_streamingMode.store(true, std::memory_order_release);
   m_stopFlag.store(false, std::memory_order_release);
   m_engineState.store(EngineState::RUNNING, std::memory_order_release);
@@ -600,7 +542,7 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     m_stopFlag.store(true, std::memory_order_release);
   }
 
-  m_completionCV.notify_all();
+  notifyCompletionWaiters();
 
   if (wait_for_drain) {
     (void)waitForDrain(0, std::chrono::milliseconds{5000});
@@ -608,9 +550,9 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
 
   {
     std::unique_lock<std::mutex> lock(m_completionMutex);
-    while (m_activeTasks.load(std::memory_order_acquire) > 0) {
-      m_completionCV.wait_for(lock, std::chrono::milliseconds{10});
-    }
+    m_completionCV.wait(lock, [this] {
+      return m_activeTasks.load(std::memory_order_acquire) == 0;
+    });
   }
 
   {
@@ -658,7 +600,12 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   }
 
   if (isInputPort(node, actual_port)) {
-    pushToQueue(node, actual_port, std::move(data));
+    if (!pushToQueue(node, actual_port, std::move(data))) {
+      return Result<PushStatus>::err(ErrorCode::QueueRejected,
+                                     "Queue full (DropTail) on port: " +
+                                         actual_port,
+                                     source_node);
+    }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     tryScheduleNode(node);
     auto size = getQueueSize(node, actual_port);
@@ -727,40 +674,50 @@ bool ExecutionEngine::Impl::hasQueueCapacity(
 Result<void>
 ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
                                     std::chrono::milliseconds timeout) {
-  auto deadline = std::chrono::steady_clock::now() + timeout;
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
 
-  while (std::chrono::steady_clock::now() < deadline) {
+  // Every task completion fires notifyCompletionWaiters(), so queue
+  // drain progress always re-triggers the predicate; no sleep polling.
+  std::unique_lock<std::mutex> lock(m_completionMutex);
+  const bool drained =
+      m_completionCV.wait_until(lock, deadline, [this, max_depth] {
+        if (m_stopFlag.load(std::memory_order_acquire)) {
+          return true;
+        }
+        return m_activeTasks.load(std::memory_order_acquire) == 0 &&
+               allQueuesDrained(max_depth);
+      });
+
+  if (drained) {
     if (m_stopFlag.load(std::memory_order_acquire)) {
       LOG_TRACE_S << "ExecutionEngine: waitForDrain interrupted by stop flag";
-      return Result<void>::ok();
     }
-
-    bool all_drained = true;
-
-    for (const auto &[node, state] : m_nodeStates) {
-      if (!state)
-        continue;
-
-      for (const auto &[port, queue] : state->lock_free_queues) {
-        if (queue && queue->size() > max_depth) {
-          all_drained = false;
-          break;
-        }
-      }
-      if (!all_drained)
-        break;
-    }
-
-    if (all_drained && m_activeTasks.load(std::memory_order_acquire) == 0) {
-      return Result<void>::ok();
-    }
-    std::this_thread::sleep_for(std::chrono::microseconds{5});
+    return Result<void>::ok();
   }
 
   LOG_WARNING_S << "ExecutionEngine: waitForDrain timed out";
   return Result<void>::err(ErrorCode::ExecutionTimeout,
                            "waitForDrain timed out after " +
                                std::to_string(timeout.count()) + "ms");
+}
+
+bool ExecutionEngine::Impl::allQueuesDrained(std::size_t max_depth) const {
+  for (const auto &[node, state] : m_nodeStates) {
+    if (!state) {
+      continue;
+    }
+    for (const auto &[port, queue] : state->lock_free_queues) {
+      if (queue && queue->size() > max_depth) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void ExecutionEngine::Impl::notifyCompletionWaiters() {
+  { std::lock_guard<std::mutex> lock(m_completionMutex); }
+  m_completionCV.notify_all();
 }
 
 // -------------------------------------------------------------------------
@@ -831,8 +788,10 @@ void ExecutionEngine::Impl::initializeQueues() {
       continue;
 
     state->lock_free_queues.clear();
+    state->input_ports = node_ptr->getExpectedInputPorts();
+    state->input_queues.clear();
 
-    for (const auto &port_name : node_ptr->getExpectedInputPorts()) {
+    for (const auto &port_name : state->input_ports) {
       auto config = state->queue_config;
 
       std::size_t cap = config.capacity > 0 ? config.capacity
@@ -859,20 +818,20 @@ void ExecutionEngine::Impl::initializeQueues() {
           .port_name = port_name,
       };
 
-      state->lock_free_queues[port_name] =
-          std::make_shared<LockFreeQueueType>(queue_config);
+      auto queue = std::make_shared<LockFreeQueueType>(queue_config);
+      state->input_queues.push_back(queue.get());
+      state->lock_free_queues[port_name] = std::move(queue);
     }
   }
 }
 
 void ExecutionEngine::Impl::identifySinkNodes() {
   m_sinkNodes.clear();
-  for (const auto &node : m_graph->getNodes()) {
-    if (m_graph->getOutDegree(node) == 0) {
-      m_sinkNodes.push_back(node);
-      LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
-                  << node->getName();
-    }
+  for (const auto index : m_compiledGraph->sinkNodes()) {
+    const auto &node = m_compiledGraph->node(index);
+    m_sinkNodes.push_back(node);
+    LOG_DEBUG_S << "ExecutionEngine: Identified sink node: "
+                << node->getName();
   }
 }
 
@@ -916,11 +875,8 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
     const PortDataMap &initial_inputs) {
   bool has_scheduled = false;
 
-  for (const auto &node : m_graph->getNodes()) {
-    const bool is_source = m_graph->getInDegree(node) == 0;
-    if (!is_source) {
-      continue;
-    }
+  for (const auto source_index : m_compiledGraph->sourceNodes()) {
+    const auto &node = m_compiledGraph->node(source_index);
 
     const auto &expected_ports = node->getExpectedInputPorts();
     const bool has_input = initial_inputs.count(node->getName()) > 0;
@@ -929,7 +885,11 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
       const auto &data_packet = initial_inputs.at(node->getName());
       if (!expected_ports.empty()) {
         const std::string &target_port = expected_ports[0];
-        pushToQueue(node, target_port, data_packet);
+        if (!pushToQueue(node, target_port, data_packet)) {
+          LOG_ERROR_S << "ExecutionEngine: Failed to distribute input to "
+                      << node->getName() << ":" << target_port;
+          return false;
+        }
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -969,31 +929,32 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
   }
 
   auto &state = *state_it->second;
-  auto current_state = state.exec_state->load(std::memory_order_acquire);
 
-  if (current_state != NodeExecutionState::WAITING) {
+  if (state.exec_state.load(std::memory_order_acquire) !=
+      NodeExecutionState::WAITING) {
     return;
   }
 
-  std::lock_guard<std::mutex> node_lock(*state.mutex);
-
-  if (!state.exec_state) {
-    return;
-  }
-  current_state = state.exec_state->load(std::memory_order_acquire);
-  if (current_state != NodeExecutionState::WAITING) {
-    return;
-  }
-
+  // No per-node lock: concurrent attempts may both evaluate the strategy,
+  // but only one will win the WAITING->READY CAS in scheduleNodeExecution.
   SchedulingContext context;
   context.node = node;
-  context.expected_input_ports = node->getExpectedInputPorts();
-  context.ready_input_ports = getReadyPorts(node);
-  context.execution_count = state.execution_count;
-  context.last_execution_time = state.last_execution;
+  context.expected_input_count =
+      static_cast<std::uint32_t>(state.input_ports.size());
+  for (std::size_t i = 0; i < state.input_queues.size(); ++i) {
+    if (state.input_queues[i] && !state.input_queues[i]->empty()) {
+      context.ready_input_count++;
+      if (i < 64) {
+        context.ready_port_mask |= (std::uint64_t{1} << i);
+      }
+    }
+  }
+  context.execution_count =
+      state.execution_count.load(std::memory_order_relaxed);
+  context.last_execution_time = state.lastExecution();
   context.is_source_node = isSourceNode(node);
   context.is_sink_node = isSinkNode(node);
-  context.has_initial_input = !context.ready_input_ports.empty();
+  context.has_initial_input = context.ready_input_count > 0;
 
   auto result = m_schedulerStrategy->shouldSchedule(context);
 
@@ -1006,7 +967,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
   auto &state = m_nodeStates[node];
 
   NodeExecutionState expected = NodeExecutionState::WAITING;
-  if (!state->exec_state->compare_exchange_strong(
+  if (!state->exec_state.compare_exchange_strong(
           expected, NodeExecutionState::READY, std::memory_order_acq_rel)) {
     return;
   }
@@ -1019,8 +980,21 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
 
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
-  auto future = m_threadPool->submit(&ExecutionEngine::Impl::executeNodeTask,
-                                     this, node, m_currentContext);
+  const bool posted = m_threadPool->post(
+      [this, node, context = m_currentContext.load()]() mutable {
+        executeNodeTask(std::move(node), std::move(context));
+      });
+
+  if (!posted) {
+    // Pool is shutting down (or submission timed out): roll back so the
+    // active-task count and node state stay consistent.
+    LOG_WARNING_S << "ExecutionEngine: Failed to post task for node "
+                  << state->name;
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
+    m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+    checkCompletionAndNotify();
+  }
 }
 
 void ExecutionEngine::Impl::executeNodeTask(
@@ -1028,8 +1002,8 @@ void ExecutionEngine::Impl::executeNodeTask(
   if (m_stopFlag.load(std::memory_order_acquire)) {
     auto state_it = m_nodeStates.find(node);
     if (state_it != m_nodeStates.end() && state_it->second) {
-      state_it->second->exec_state->store(NodeExecutionState::WAITING,
-                                          std::memory_order_release);
+      state_it->second->exec_state.store(NodeExecutionState::WAITING,
+                                         std::memory_order_release);
     }
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
@@ -1047,7 +1021,7 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Transition to EXECUTING
   NodeExecutionState expected = NodeExecutionState::READY;
-  if (!state.exec_state->compare_exchange_strong(
+  if (!state.exec_state.compare_exchange_strong(
           expected, NodeExecutionState::EXECUTING, std::memory_order_acq_rel)) {
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
@@ -1069,12 +1043,14 @@ void ExecutionEngine::Impl::executeNodeTask(
         !m_stopFlag.load(std::memory_order_acquire)) {
       LOG_TRACE_S << "ExecutionEngine: Node " << state.name
                   << " inputs transiently unavailable, rescheduling.";
-      if (state.exec_state) {
-        state.exec_state->store(NodeExecutionState::WAITING,
-                                std::memory_order_release);
-      }
-      m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+      state.exec_state.store(NodeExecutionState::WAITING,
+                             std::memory_order_release);
+      // Reschedule BEFORE decrementing: scheduleNodeExecution() increments
+      // m_activeTasks, so this ordering prevents the counter from
+      // transiently dipping to zero while data is still queued, which
+      // would wake execute(wait_for_completion=true) waiters too early.
       tryScheduleNode(node);
+      m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
       checkCompletionAndNotify();
       return;
     }
@@ -1097,10 +1073,8 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Handle completion
   if (m_stopFlag.load(std::memory_order_acquire)) {
-    if (state.exec_state) {
-      state.exec_state->store(NodeExecutionState::WAITING,
-                              std::memory_order_release);
-    }
+    state.exec_state.store(NodeExecutionState::WAITING,
+                           std::memory_order_release);
   } else if (process_result) {
     handleNodeSuccess(node, outputs);
   } else {
@@ -1124,13 +1098,14 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  for (const auto &port_name : node->getExpectedInputPorts()) {
-    auto data = popFromQueue(node, port_name);
+  for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
+    auto *queue = state.input_queues[i];
+    auto data = queue ? queue->tryPop() : std::nullopt;
     if (data.has_value()) {
-      inputs[port_name] = data.value();
+      inputs[state.input_ports[i]] = std::move(data.value());
     } else {
       LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
-                  << ":" << port_name;
+                  << ":" << state.input_ports[i];
       return false;
     }
   }
@@ -1177,19 +1152,26 @@ void ExecutionEngine::Impl::propagateOutputs(const NodePtr &source,
     return;
   }
 
-  const auto outgoing_edges = m_graph->getOutgoingEdges(source);
+  const auto src_index = m_compiledGraph->indexOfPtr(source.get());
+  if (src_index == CompiledGraph::k_invalid_index) {
+    return;
+  }
 
-  for (const auto &edge : outgoing_edges) {
+  for (const auto &edge : m_compiledGraph->outEdges(src_index)) {
     auto output_it = outputs.find(edge.source_port);
     if (output_it == outputs.end()) {
       continue;
     }
 
     const auto &data = output_it->second;
-    const auto &dest_node = edge.dest_node;
+    const auto &dest_node = m_compiledGraph->node(edge.dest_node);
     const auto &dest_port = edge.dest_port;
 
-    pushToQueue(dest_node, dest_port, data);
+    if (!pushToQueue(dest_node, dest_port, data)) {
+      // Rejection is already accounted (statistics + drop callback); the
+      // downstream queue is full, so the node already has data to consume.
+      continue;
+    }
 
     LOG_TRACE_S << "ExecutionEngine: Propagated " << source->getName() << ":"
                 << edge.source_port << " -> " << dest_node->getName() << ":"
@@ -1203,8 +1185,10 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
                                               const PortDataMap &outputs) {
   auto &state = m_nodeStates[node];
 
-  state->execution_count++;
-  state->last_execution = std::chrono::steady_clock::now();
+  state->execution_count.fetch_add(1, std::memory_order_relaxed);
+  state->last_execution_ticks.store(
+      std::chrono::steady_clock::now().time_since_epoch().count(),
+      std::memory_order_relaxed);
 
   m_statistics.successful_executions.fetch_add(1, std::memory_order_relaxed);
 
@@ -1218,16 +1202,12 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
 
   // Check if node should be rescheduled
   if (m_schedulerStrategy->onNodeComplete(node, true, outputs)) {
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_release);
-    }
+    state->exec_state.store(NodeExecutionState::WAITING,
+                            std::memory_order_release);
     tryScheduleNode(node);
   } else {
-    if (state->exec_state) {
-      state->exec_state->store(NodeExecutionState::COMPLETED,
-                               std::memory_order_release);
-    }
+    state->exec_state.store(NodeExecutionState::COMPLETED,
+                            std::memory_order_release);
   }
 
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " COMPLETED.";
@@ -1237,10 +1217,8 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
                                               const Error &error) {
   auto &state = m_nodeStates[node];
 
-  if (state->exec_state) {
-    state->exec_state->store(NodeExecutionState::FAILED,
-                             std::memory_order_release);
-  }
+  state->exec_state.store(NodeExecutionState::FAILED,
+                          std::memory_order_release);
 
   m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
 
@@ -1254,9 +1232,10 @@ void ExecutionEngine::Impl::handleNodeFailure(const NodePtr &node,
 
 void ExecutionEngine::Impl::checkCompletionAndNotify() {
   if (m_streamingMode.load(std::memory_order_acquire)) {
-    if (m_activeTasks.load(std::memory_order_acquire) == 0) {
-      m_completionCV.notify_all();
-    }
+    // Notify on every completion (not only at zero active tasks):
+    // waitForDrain waiters track queue depths, which change with each
+    // task, and notifying an empty waiter list is nearly free.
+    notifyCompletionWaiters();
     return;
   }
 
@@ -1269,7 +1248,8 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   for (const auto &sink : m_sinkNodes) {
     auto state_it = m_nodeStates.find(sink);
     if (state_it != m_nodeStates.end() && state_it->second) {
-      sink_counts[sink->getName()] = state_it->second->execution_count;
+      sink_counts[sink->getName()] =
+          state_it->second->execution_count.load(std::memory_order_relaxed);
     }
   }
 
@@ -1289,7 +1269,7 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
     }
   }
 
-  m_completionCV.notify_all();
+  notifyCompletionWaiters();
 }
 
 Result<void> ExecutionEngine::Impl::waitForCompletion() {
@@ -1309,24 +1289,24 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
   if (was_stopped && current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::STOPPED, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Execution was stopped.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionStopped,
                              "Execution was stopped externally");
   } else if (active_tasks == 0 && current_state == EngineState::RUNNING) {
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
     LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::ok();
   } else if (current_state != EngineState::ERROR &&
              current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Execution finished abnormally.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionFailed,
                              "Execution finished abnormally");
   }
 
-  m_currentContext = nullptr;
+  m_currentContext.store(nullptr);
   // Already in ERROR or STOPPED state
   return Result<void>::err(ErrorCode::ExecutionFailed,
                            "Execution ended in " +
@@ -1344,9 +1324,9 @@ void ExecutionEngine::Impl::resetInternalState() {
 
   for (auto &[node, state] : m_nodeStates) {
     if (state) {
-      state->exec_state->store(NodeExecutionState::WAITING,
-                               std::memory_order_relaxed);
-      state->execution_count = 0;
+      state->exec_state.store(NodeExecutionState::WAITING,
+                              std::memory_order_relaxed);
+      state->execution_count.store(0, std::memory_order_relaxed);
 
       for (auto &[port, queue] : state->lock_free_queues) {
         if (queue)
@@ -1360,24 +1340,44 @@ void ExecutionEngine::Impl::resetInternalState() {
 // Impl: Queue Operations
 // -------------------------------------------------------------------------
 
-void ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
+bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
                                         const std::string &port_name,
                                         PortDataPtr data) {
   auto state_it = m_nodeStates.find(node);
   if (state_it == m_nodeStates.end() || !state_it->second) {
-    return;
+    return false;
   }
 
   auto &state = *state_it->second;
 
   auto queue_it = state.lock_free_queues.find(port_name);
   if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    queue_it->second->push(std::move(data));
-    return;
+    if (queue_it->second->push(std::move(data))) {
+      return true;
+    }
+    recordQueueRejection(node, port_name);
+    return false;
   }
 
   LOG_WARNING_S << "ExecutionEngine: No queue found for " << state.name << ":"
                 << port_name;
+  return false;
+}
+
+void ExecutionEngine::Impl::recordQueueRejection(const NodePtr &node,
+                                                 const std::string &port_name) {
+  m_statistics.queue_full_events.fetch_add(1, std::memory_order_relaxed);
+  m_statistics.total_dropped_frames.fetch_add(1, std::memory_order_relaxed);
+
+  if (m_config.enable_drop_logging) {
+    LOG_WARNING_S << "ExecutionEngine: Frame rejected at " << node->getName()
+                  << ":" << port_name << " - DropTail queue full";
+  }
+
+  if (m_dropCallback) {
+    m_dropCallback(node->getName(), frame_constants::k_invalid_frame_id,
+                   "DropTail queue full");
+  }
 }
 
 std::optional<PortDataPtr>
@@ -1438,12 +1438,15 @@ ExecutionEngine::Impl::getQueueSize(const NodePtr &node,
 // -------------------------------------------------------------------------
 
 bool ExecutionEngine::Impl::isSourceNode(const NodePtr &node) const {
-  return m_graph->getInDegree(node) == 0;
+  const auto index = m_compiledGraph->indexOfPtr(node.get());
+  return index != CompiledGraph::k_invalid_index &&
+         m_compiledGraph->isSource(index);
 }
 
 bool ExecutionEngine::Impl::isSinkNode(const NodePtr &node) const {
-  return std::find(m_sinkNodes.begin(), m_sinkNodes.end(), node) !=
-         m_sinkNodes.end();
+  const auto index = m_compiledGraph->indexOfPtr(node.get());
+  return index != CompiledGraph::k_invalid_index &&
+         m_compiledGraph->isSink(index);
 }
 
 void ExecutionEngine::Impl::collectResults(const NodePtr &node,
@@ -1454,24 +1457,6 @@ void ExecutionEngine::Impl::collectResults(const NodePtr &node,
     m_accumulatedResults[result_key] = data;
     LOG_TRACE_S << "ExecutionEngine: Collected result: " << result_key;
   }
-}
-
-std::vector<std::string>
-ExecutionEngine::Impl::getReadyPorts(const NodePtr &node) const {
-  std::vector<std::string> ready_ports;
-
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return ready_ports;
-  }
-
-  for (const auto &port_name : node->getExpectedInputPorts()) {
-    if (hasDataInQueue(node, port_name)) {
-      ready_ports.push_back(port_name);
-    }
-  }
-
-  return ready_ports;
 }
 
 QueueConfig
@@ -1499,22 +1484,29 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
                                          const std::string &output_port,
                                          PortDataPtr data) {
 
-  const auto &outgoing_edges = m_graph->getOutgoingEdges(source_node);
+  const auto src_index = m_compiledGraph->indexOfPtr(source_node.get());
+  if (src_index == CompiledGraph::k_invalid_index) {
+    return Result<PushStatus>::err(Error::nodeNotFound(source_node->getName()));
+  }
 
   std::size_t routed_count = 0;
+  std::size_t rejected_count = 0;
   std::size_t total_queue_size = 0;
 
-  for (const auto &edge : outgoing_edges) {
+  for (const auto &edge : m_compiledGraph->outEdges(src_index)) {
     if (edge.source_port != output_port) {
       continue;
     }
 
-    const auto &dest_node = edge.dest_node;
+    const auto &dest_node = m_compiledGraph->node(edge.dest_node);
     const auto &dest_port = edge.dest_port;
 
     PortDataPtr data_copy = data;
 
-    pushToQueue(dest_node, dest_port, std::move(data_copy));
+    if (!pushToQueue(dest_node, dest_port, std::move(data_copy))) {
+      rejected_count++;
+      continue;
+    }
 
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
 
@@ -1529,12 +1521,27 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
   }
 
   if (routed_count == 0) {
+    if (rejected_count > 0) {
+      return Result<PushStatus>::err(
+          ErrorCode::QueueRejected,
+          "All downstream queues rejected data for port: " + output_port,
+          source_node->getName());
+    }
     LOG_WARNING_S << "ExecutionEngine: No downstream connections for "
                   << source_node->getName() << ":" << output_port;
     return Result<PushStatus>::err(ErrorCode::NoDownstreamConnection,
                                    "No downstream connections for port: " +
                                        output_port,
                                    source_node->getName());
+  }
+
+  if (rejected_count > 0) {
+    return PushStatus::dropped("rejected on " +
+                                   std::to_string(rejected_count) + " of " +
+                                   std::to_string(routed_count +
+                                                  rejected_count) +
+                                   " downstream branches",
+                               total_queue_size);
   }
 
   return PushStatus::enqueued(total_queue_size);

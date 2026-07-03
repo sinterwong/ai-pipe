@@ -240,6 +240,28 @@ public:
   }
 
   /**
+   * @brief Fire-and-forget submission for void tasks
+   *
+   * Skips the packaged_task/shared_ptr/future machinery of submit() -
+   * the right choice when the caller never consumes a result (the
+   * execution engine's per-node tasks). Never throws.
+   *
+   * @return true if the task was enqueued, false if the pool is not
+   *         running or enqueueing failed (e.g. submission timeout)
+   */
+  bool post(std::function<void()> task) noexcept {
+    if (!task || !isRunning()) {
+      return false;
+    }
+    try {
+      enqueueTask(std::move(task));
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  /**
    * @brief Try to submit a task without blocking
    */
   template <typename F, typename... Args>
@@ -292,9 +314,13 @@ public:
         queue->clear();
       }
       m_pendingTasks.store(0, std::memory_order_relaxed);
+      m_unclaimedTasks.store(0, std::memory_order_relaxed);
     }
 
     // Wake all workers
+    {
+      std::lock_guard<std::mutex> lock(m_globalMutex);
+    }
     m_globalCondition.notify_all();
 
     waitForWorkers();
@@ -401,7 +427,17 @@ private:
   }
 
   /**
-   * @brief Main worker loop
+   * @brief Main worker loop (event-driven)
+   *
+   * Fast path never touches the global mutex: pop locally (LIFO), then
+   * steal. Only a worker that found nothing blocks on the condition
+   * variable, keyed off m_unclaimedTasks, so an idle pool consumes zero
+   * CPU (previously each worker woke every 1ms and scanned all queues).
+   *
+   * NOTE: sizing uses m_queues.size(), which is fully populated before
+   * any worker starts. m_workers must not be read here - it is still
+   * being appended by the constructor while early workers run.
+   *
    * @param worker_index Index of this worker
    */
   void workerLoop(std::size_t worker_index) {
@@ -411,50 +447,40 @@ private:
     // Create random number generator for victim selection
     std::mt19937 rng(std::random_device{}() +
                      static_cast<unsigned>(worker_index));
-    std::uniform_int_distribution<std::size_t> dist(0, m_workers.size() - 1);
+    std::uniform_int_distribution<std::size_t> dist(0, m_queues.size() - 1);
 
     while (true) {
       Task task;
 
-      // Try to get a task from local queue first (LIFO)
+      // Fast path: local queue first (LIFO), then steal
       if (auto local_task = m_queues[worker_index]->popFront()) {
         task = std::move(*local_task);
       } else {
-        // Try to steal from other workers
         task = trySteal(worker_index, rng, dist);
-
-        if (!task) {
-          // No tasks available, wait for notification
-          std::unique_lock<std::mutex> lock(m_globalMutex);
-
-          // Double-check after acquiring lock
-          if (auto local_task = m_queues[worker_index]->popFront()) {
-            task = std::move(*local_task);
-          } else {
-            // Check exit condition
-            if (m_state.load(std::memory_order_acquire) != State::KRunning) {
-              // Try one more steal before exiting
-              task = trySteal(worker_index, rng, dist);
-              if (!task) {
-                return;
-              }
-            } else {
-              // Wait with timeout to periodically check for steal opportunities
-              m_globalCondition.wait_for(
-                  lock, std::chrono::milliseconds(1), [this, worker_index] {
-                    return m_state.load(std::memory_order_acquire) !=
-                               State::KRunning ||
-                           !m_queues[worker_index]->empty() || hasStealTarget();
-                  });
-              continue;
-            }
-          }
-        }
       }
 
       if (task) {
+        m_unclaimedTasks.fetch_sub(1, std::memory_order_acq_rel);
         executeTask(std::move(task));
+        continue;
       }
+
+      // Slow path: nothing found anywhere
+      if (m_state.load(std::memory_order_acquire) != State::KRunning) {
+        // Draining shutdown: exit once no work remains to claim
+        if (m_unclaimedTasks.load(std::memory_order_acquire) == 0) {
+          return;
+        }
+        // Another worker may still publish; retry the fast path
+        std::this_thread::yield();
+        continue;
+      }
+
+      std::unique_lock<std::mutex> lock(m_globalMutex);
+      m_globalCondition.wait(lock, [this] {
+        return m_unclaimedTasks.load(std::memory_order_acquire) > 0 ||
+               m_state.load(std::memory_order_acquire) != State::KRunning;
+      });
     }
   }
 
@@ -463,7 +489,7 @@ private:
    */
   Task trySteal(std::size_t worker_index, std::mt19937 &rng,
                 std::uniform_int_distribution<std::size_t> &dist) {
-    const std::size_t num_workers = m_workers.size();
+    const std::size_t num_workers = m_queues.size();
     if (num_workers <= 1) {
       return nullptr;
     }
@@ -484,18 +510,6 @@ private:
     }
 
     return nullptr;
-  }
-
-  /**
-   * @brief Check if any queue has tasks to steal
-   */
-  [[nodiscard]] bool hasStealTarget() const {
-    for (const auto &queue : m_queues) {
-      if (!queue->empty()) {
-        return true;
-      }
-    }
-    return false;
   }
 
   void executeTask(Task task) {
@@ -574,9 +588,7 @@ private:
 
     m_queues[target_queue]->pushFront(std::move(task));
     m_pendingTasks.fetch_add(1, std::memory_order_relaxed);
-
-    // Notify one waiting worker
-    m_globalCondition.notify_one();
+    publishTask();
   }
 
   /**
@@ -606,9 +618,22 @@ private:
 
     m_queues[target_queue]->pushFront(std::move(task));
     m_pendingTasks.fetch_add(1, std::memory_order_relaxed);
-    m_globalCondition.notify_one();
+    publishTask();
 
     return true;
+  }
+
+  /**
+   * @brief Publish a newly enqueued task to sleeping workers
+   *
+   * The empty lock/unlock of m_globalMutex orders the m_unclaimedTasks
+   * increment against a worker's predicate check, closing the classic
+   * check-then-sleep lost-wakeup window.
+   */
+  void publishTask() {
+    m_unclaimedTasks.fetch_add(1, std::memory_order_release);
+    { std::lock_guard<std::mutex> lock(m_globalMutex); }
+    m_globalCondition.notify_one();
   }
 
   /**
@@ -650,6 +675,10 @@ private:
   // Statistics
   std::atomic<std::size_t> m_pendingTasks;
   std::atomic<std::size_t> m_completedTasks;
+
+  // Tasks pushed but not yet claimed by any worker; drives the sleep/wake
+  // protocol (workers block until this is nonzero or the pool stops).
+  std::atomic<std::size_t> m_unclaimedTasks{0};
   std::atomic<std::size_t> m_stealCount{0};
 
   // Exception handling
