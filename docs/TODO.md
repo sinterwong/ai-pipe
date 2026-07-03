@@ -32,7 +32,7 @@
 ## Phase 2 — 并发与调度效率
 
 - [x] **P2.1** 线程池空闲挂起：去掉 1ms 轮询，改为纯条件变量唤醒 + 提交侧精确 notify
-- [ ] **P2.2** 引擎任务提交走轻量路径（`void()` 任务直投，不构造 packaged_task/future）
+- [x] **P2.2** 引擎任务提交走轻量路径（`void()` 任务直投，不构造 packaged_task/future）
 - [ ] **P2.3** `waitForDrain`/`stopStreaming`/`stopExecutionSync` 条件变量化，删除轮询
 - [ ] **P2.4** `SchedulingContext` 瘦身：端口就绪状态用位掩码，减少热路径字符串拷贝
 - [ ] **P2.5** 每节点调度状态机审查：单原子 CAS 状态机替代 "atomic + per-node mutex" 双保险

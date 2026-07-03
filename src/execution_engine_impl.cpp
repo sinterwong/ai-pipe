@@ -965,8 +965,21 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
 
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
-  auto future = m_threadPool->submit(&ExecutionEngine::Impl::executeNodeTask,
-                                     this, node, m_currentContext.load());
+  const bool posted = m_threadPool->post(
+      [this, node, context = m_currentContext.load()]() mutable {
+        executeNodeTask(std::move(node), std::move(context));
+      });
+
+  if (!posted) {
+    // Pool is shutting down (or submission timed out): roll back so the
+    // active-task count and node state stay consistent.
+    LOG_WARNING_S << "ExecutionEngine: Failed to post task for node "
+                  << state->name;
+    state->exec_state->store(NodeExecutionState::WAITING,
+                             std::memory_order_release);
+    m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+    checkCompletionAndNotify();
+  }
 }
 
 void ExecutionEngine::Impl::executeNodeTask(

@@ -240,6 +240,28 @@ public:
   }
 
   /**
+   * @brief Fire-and-forget submission for void tasks
+   *
+   * Skips the packaged_task/shared_ptr/future machinery of submit() -
+   * the right choice when the caller never consumes a result (the
+   * execution engine's per-node tasks). Never throws.
+   *
+   * @return true if the task was enqueued, false if the pool is not
+   *         running or enqueueing failed (e.g. submission timeout)
+   */
+  bool post(std::function<void()> task) noexcept {
+    if (!task || !isRunning()) {
+      return false;
+    }
+    try {
+      enqueueTask(std::move(task));
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  /**
    * @brief Try to submit a task without blocking
    */
   template <typename F, typename... Args>
