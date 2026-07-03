@@ -1012,8 +1012,12 @@ void ExecutionEngine::Impl::executeNodeTask(
         state.exec_state->store(NodeExecutionState::WAITING,
                                 std::memory_order_release);
       }
-      m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
+      // Reschedule BEFORE decrementing: scheduleNodeExecution() increments
+      // m_activeTasks, so this ordering prevents the counter from
+      // transiently dipping to zero while data is still queued, which
+      // would wake execute(wait_for_completion=true) waiters too early.
       tryScheduleNode(node);
+      m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
       checkCompletionAndNotify();
       return;
     }

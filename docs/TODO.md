@@ -15,7 +15,7 @@
 - [x] **P0.1** 修复 `pushToQueue` 静默丢数据：处理 `push()` 返回值，DropTail 拒绝时向上传播 `QueueRejected`，补计统计与回调
 - [x] **P0.2** 修复 `m_currentContext` 数据竞争（随任务值捕获传递或原子化）
 - [x] **P0.3** 删除 `ExecutionEngine::Impl` 的移动构造/赋值（`unique_ptr<Impl>` 已提供引擎级移动），消除在途任务悬垂指针风险
-- [ ] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
+- [x] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
 - [ ] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）
 - [ ] **P0.6** 文档诚实化：删除/标注未实现的直方图、percentile、per-node stats、同步丢帧宣称；统一版本号
 - [ ] **P0.7** 仓库卫生：`install/` 移出版本控制，处置未跟踪的 `3rdparty/logger`，清理 build 内无关产物
@@ -51,6 +51,7 @@
 - [ ] **P4.2** 队列增加 `tryPeek`，设置 `frameIdAccessor`，drop 事件携带真实 frame_id
 - [ ] **P4.3** 端到端集成测试：fork-join 图 + 注入丢帧，断言 join 帧对齐与兄弟分支同步丢弃
 - [ ] **P4.4** 裁剪 `CoordinatedSyncStrategy`/`SyncCoordinator` 中接线后仍不可达的死代码
+- [ ] **P4.5** 流模式节点失败后的恢复语义：当前节点异常后永久停留 FAILED，队列数据滞留（审计 P0.4 期间发现）
 
 ## Phase 5 — 可观测性真实化
 
