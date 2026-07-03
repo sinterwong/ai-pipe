@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <b>Version 0.3.1</b> · Author: <a href="mailto:sintercver@gmail.com">Sinter Wong</a>
+  <b>Version 0.4.0</b> · Author: <a href="mailto:sintercver@gmail.com">Sinter Wong</a>
 </p>
 
 ---

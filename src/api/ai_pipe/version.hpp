@@ -13,8 +13,8 @@
 
 // for cmake
 #define AI_PIPE_VER_MAJOR 0
-#define AI_PIPE_VER_MINOR 3
-#define AI_PIPE_VER_PATCH 1
+#define AI_PIPE_VER_MINOR 4
+#define AI_PIPE_VER_PATCH 0
 
 #define AI_PIPE_VERSION                                                        \
   (AI_PIPE_VER_MAJOR * 10000 + AI_PIPE_VER_MINOR * 100 + AI_PIPE_VER_PATCH)

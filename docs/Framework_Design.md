@@ -1,6 +1,7 @@
 # AI Pipe 框架设计说明文档
 
-> **版本**: v0.3.1（与 `ai_pipe_version.hpp` 保持一致）
+> **版本**: v0.4.0（与 `ai_pipe_version.hpp` 保持一致）
+> **变更概览**: 见 `CHANGELOG.md` 与 `docs/Migration_Guide.md`；节点编写规范见 `docs/Node_Development_Guide.md`
 > **作者**: Sinter Wong (sintercver@gmail.com)  
 > **日期**: 2026-02  
 > **标准**: C++20  
@@ -77,7 +78,6 @@ execution_engine_impl.hpp / .cpp
 ├── lock_free_queue.hpp (Lock-Free MPMC)
 ├── work_stealing_thread_pool.hpp
 ├── scheduler_strategies.hpp (Batch/Stream/Hybrid)
-├── coordinated_sync_strategy.hpp
 ├── join_aware_sync_strategy.hpp
 ├── sync_coordinator.hpp
 ```
@@ -354,7 +354,7 @@ public:
   // 流式接口
   bool startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
   void stopStreaming(bool wait_for_drain = true);
-  QueuePushResult pushInput(const std::string &source_node,
+  Result<PushStatus> pushInput(const std::string &source_node,
                             const std::string &port_name,
                             PortDataPtr data);
 
@@ -480,7 +480,7 @@ while (capturing) {
     auto data = std::make_shared<PortData>();
     data->setParam("frame", frame);
 
-    QueuePushResult r = pipeline.pushInput("source_node", data);
+    auto r = pipeline.pushInput("source_node", data);
     if (r.isDropped()) {
         // 背压丢弃
     }
