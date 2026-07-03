@@ -437,7 +437,7 @@ void ExecutionEngine::Impl::reset() {
 
     state->exec_state.store(NodeExecutionState::WAITING,
                             std::memory_order_relaxed);
-    state->execution_count = 0;
+    state->execution_count.store(0, std::memory_order_relaxed);
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
@@ -949,8 +949,9 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
       }
     }
   }
-  context.execution_count = state.execution_count;
-  context.last_execution_time = state.last_execution;
+  context.execution_count =
+      state.execution_count.load(std::memory_order_relaxed);
+  context.last_execution_time = state.lastExecution();
   context.is_source_node = isSourceNode(node);
   context.is_sink_node = isSinkNode(node);
   context.has_initial_input = context.ready_input_count > 0;
@@ -1184,8 +1185,10 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
                                               const PortDataMap &outputs) {
   auto &state = m_nodeStates[node];
 
-  state->execution_count++;
-  state->last_execution = std::chrono::steady_clock::now();
+  state->execution_count.fetch_add(1, std::memory_order_relaxed);
+  state->last_execution_ticks.store(
+      std::chrono::steady_clock::now().time_since_epoch().count(),
+      std::memory_order_relaxed);
 
   m_statistics.successful_executions.fetch_add(1, std::memory_order_relaxed);
 
@@ -1245,7 +1248,8 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   for (const auto &sink : m_sinkNodes) {
     auto state_it = m_nodeStates.find(sink);
     if (state_it != m_nodeStates.end() && state_it->second) {
-      sink_counts[sink->getName()] = state_it->second->execution_count;
+      sink_counts[sink->getName()] =
+          state_it->second->execution_count.load(std::memory_order_relaxed);
     }
   }
 
@@ -1322,7 +1326,7 @@ void ExecutionEngine::Impl::resetInternalState() {
     if (state) {
       state->exec_state.store(NodeExecutionState::WAITING,
                               std::memory_order_relaxed);
-      state->execution_count = 0;
+      state->execution_count.store(0, std::memory_order_relaxed);
 
       for (auto &[port, queue] : state->lock_free_queues) {
         if (queue)

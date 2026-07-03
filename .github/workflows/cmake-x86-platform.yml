@@ -62,9 +62,7 @@ jobs:
 
   sanitize:
     runs-on: ubuntu-24.04
-    # TODO(P2.6): drop continue-on-error once TSan findings are fixed,
-    # making sanitizers a required gate.
-    continue-on-error: true
+    # Required gate since P2.6: ASan and TSan both run clean.
     strategy:
       fail-fast: false
       matrix:

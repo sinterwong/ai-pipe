@@ -58,8 +58,17 @@ public:
     // member.
     std::atomic<NodeExecutionState> exec_state{NodeExecutionState::WAITING};
 
-    std::chrono::steady_clock::time_point last_execution;
-    std::uint64_t execution_count{0};
+    // Written by the executing worker, read concurrently by scheduling
+    // attempts and by completion checks (including stragglers from a
+    // previous execution racing a resetInternalState), hence atomic.
+    std::atomic<std::chrono::steady_clock::rep> last_execution_ticks{0};
+    std::atomic<std::uint64_t> execution_count{0};
+
+    [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
+      return std::chrono::steady_clock::time_point{
+          std::chrono::steady_clock::duration{
+              last_execution_ticks.load(std::memory_order_relaxed)}};
+    }
 
     QueueConfig queue_config;
 
