@@ -13,7 +13,7 @@
 ## Phase 0 — 正确性修复与信誉对齐
 
 - [x] **P0.1** 修复 `pushToQueue` 静默丢数据：处理 `push()` 返回值，DropTail 拒绝时向上传播 `QueueRejected`，补计统计与回调
-- [ ] **P0.2** 修复 `m_currentContext` 数据竞争（随任务值捕获传递或原子化）
+- [x] **P0.2** 修复 `m_currentContext` 数据竞争（随任务值捕获传递或原子化）
 - [ ] **P0.3** 删除 `ExecutionEngine::Impl` 的移动构造/赋值（`unique_ptr<Impl>` 已提供引擎级移动），消除在途任务悬垂指针风险
 - [ ] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
 - [ ] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）

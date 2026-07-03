@@ -197,7 +197,11 @@ private:
 
   Graph *m_graph{nullptr};
   std::unique_ptr<WorkStealingThreadPool> m_threadPool;
-  std::shared_ptr<PipelineContext> m_currentContext;
+
+  // Written by execute()/startStreaming() and cleared on completion while
+  // worker threads concurrently read it in scheduleNodeExecution(); atomic
+  // shared_ptr keeps those accesses race-free.
+  std::atomic<std::shared_ptr<PipelineContext>> m_currentContext;
 
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;

@@ -211,7 +211,7 @@ ExecutionEngine::Impl::Impl(Impl &&other) noexcept {
   m_syncStrategy = std::move(other.m_syncStrategy);
   m_graph = std::exchange(other.m_graph, nullptr);
   m_threadPool = std::move(other.m_threadPool);
-  m_currentContext = std::move(other.m_currentContext);
+  m_currentContext.store(other.m_currentContext.exchange(nullptr));
   m_nodeStates = std::move(other.m_nodeStates);
   m_nodeNameMap = std::move(other.m_nodeNameMap);
   m_sinkNodes = std::move(other.m_sinkNodes);
@@ -247,7 +247,7 @@ ExecutionEngine::Impl &ExecutionEngine::Impl::operator=(Impl &&other) noexcept {
   m_syncStrategy = std::move(other.m_syncStrategy);
   m_graph = std::exchange(other.m_graph, nullptr);
   m_threadPool = std::move(other.m_threadPool);
-  m_currentContext = std::move(other.m_currentContext);
+  m_currentContext.store(other.m_currentContext.exchange(nullptr));
   m_nodeStates = std::move(other.m_nodeStates);
   m_nodeNameMap = std::move(other.m_nodeNameMap);
   m_sinkNodes = std::move(other.m_sinkNodes);
@@ -377,7 +377,7 @@ Result<void>
 ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
                                bool wait_for_completion,
                                std::shared_ptr<PipelineContext> context) {
-  m_currentContext = context;
+  m_currentContext.store(std::move(context));
 
   // Handle streaming mode
   if (m_streamingMode.load(std::memory_order_acquire)) {
@@ -406,14 +406,14 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
 
     if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
       LOG_ERROR_S << "ExecutionEngine: Already running.";
-      m_currentContext = nullptr;
+      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::AlreadyRunning,
                                "Engine is already running");
     }
 
     if (!m_graph || !m_threadPool) {
       LOG_ERROR_S << "ExecutionEngine: Not initialized.";
-      m_currentContext = nullptr;
+      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::NotInitialized,
                                "Engine not initialized (missing graph or "
                                "thread pool)");
@@ -431,7 +431,7 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
     std::lock_guard<std::mutex> lock(m_engineMutex);
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Failed to distribute inputs.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionFailed,
                              "Failed to distribute initial inputs to source "
                              "nodes");
@@ -581,7 +581,7 @@ Result<void> ExecutionEngine::Impl::startStreaming(
         "Current scheduler strategy does not support streaming mode");
   }
 
-  m_currentContext = context;
+  m_currentContext.store(std::move(context));
   m_streamingMode.store(true, std::memory_order_release);
   m_stopFlag.store(false, std::memory_order_release);
   m_engineState.store(EngineState::RUNNING, std::memory_order_release);
@@ -1029,7 +1029,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
   auto future = m_threadPool->submit(&ExecutionEngine::Impl::executeNodeTask,
-                                     this, node, m_currentContext);
+                                     this, node, m_currentContext.load());
 }
 
 void ExecutionEngine::Impl::executeNodeTask(
@@ -1322,24 +1322,24 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
   if (was_stopped && current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::STOPPED, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Execution was stopped.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionStopped,
                              "Execution was stopped externally");
   } else if (active_tasks == 0 && current_state == EngineState::RUNNING) {
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
     LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::ok();
   } else if (current_state != EngineState::ERROR &&
              current_state != EngineState::STOPPED) {
     m_engineState.store(EngineState::ERROR, std::memory_order_release);
     LOG_ERROR_S << "ExecutionEngine: Execution finished abnormally.";
-    m_currentContext = nullptr;
+    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionFailed,
                              "Execution finished abnormally");
   }
 
-  m_currentContext = nullptr;
+  m_currentContext.store(nullptr);
   // Already in ERROR or STOPPED state
   return Result<void>::err(ErrorCode::ExecutionFailed,
                            "Execution ended in " +
