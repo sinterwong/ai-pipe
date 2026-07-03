@@ -174,6 +174,15 @@ private:
                       FrameId frame_id, const char *reason);
 
   /**
+   * @brief Account a successful queue pop
+   *
+   * total_wait_time_us accumulates the frame's age at dequeue (time
+   * from pipeline entry to this pop), so avgWaitTimeUs() reports how
+   * long inputs sat queued before being consumed.
+   */
+  void recordDequeue(const PortDataPtr &data);
+
+  /**
    * @brief Process a single node, converting exceptions to Error
    * @return Result<void> - success, or Error with
    * NodeException/NodeUnknownException

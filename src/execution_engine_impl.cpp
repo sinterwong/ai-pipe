@@ -618,6 +618,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
                                      source_node);
     }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+    m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
     tryScheduleNode(node);
     auto size = getQueueSize(node, actual_port);
     return PushStatus::enqueued(size);
@@ -909,6 +910,8 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
                       << node->getName() << ":" << target_port;
           return false;
         }
+        m_statistics.total_input_frames.fetch_add(1,
+                                                   std::memory_order_relaxed);
         LOG_TRACE_S << "ExecutionEngine: Distributed input to "
                     << node->getName() << ":" << target_port;
       }
@@ -1000,7 +1003,18 @@ void ExecutionEngine::Impl::scheduleNodeExecution(const NodePtr &node) {
   LOG_TRACE_S << "ExecutionEngine: Node " << state->name << " is READY.";
 
   const bool posted = m_threadPool->post(
-      [this, node, context = m_currentContext.load()]() mutable {
+      [this, node, context = m_currentContext.load(),
+       scheduled_at = std::chrono::steady_clock::now()]() mutable {
+        if (m_config.enable_statistics) {
+          const auto delay =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  std::chrono::steady_clock::now() - scheduled_at)
+                  .count();
+          if (delay > 0) {
+            m_statistics.total_schedule_time_us.fetch_add(
+                static_cast<std::uint64_t>(delay), std::memory_order_relaxed);
+          }
+        }
         executeNodeTask(std::move(node), std::move(context));
       });
 
@@ -1097,6 +1111,23 @@ void ExecutionEngine::Impl::executeNodeTask(
   } else if (process_result) {
     inheritFrameIdentity(inputs, outputs);
 
+    // End-to-end frame latency: measured when a frame reaches a sink,
+    // from its pipeline-entry timestamp to completion.
+    if (m_config.enable_statistics && isSinkNode(node)) {
+      for (const auto &[port, packet] : inputs) {
+        if (packet && packet->timestamp != Timestamp{}) {
+          const auto latency =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  end_time - packet->timestamp)
+                  .count();
+          if (latency > 0) {
+            m_statistics.recordLatency(static_cast<std::uint64_t>(latency));
+          }
+          break;
+        }
+      }
+    }
+
     // Advance the sync watermark for tracked nodes so the coordinator
     // can prune drop records the whole group has moved past.
     if (state.sync_tracked && m_syncStrategy) {
@@ -1155,6 +1186,7 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
                        "coordinated sync drop");
         continue;
       }
+      recordDequeue(data.value());
       inputs[state.input_ports[i]] = std::move(data.value());
       break;
     }
@@ -1213,6 +1245,7 @@ bool ExecutionEngine::Impl::gatherAlignedInputs(NodeState &state,
         if (!data.has_value()) {
           return false; // Should not happen under single-consumer contract
         }
+        recordDequeue(data.value());
         inputs[state.input_ports[i]] = std::move(data.value());
       }
       return true;
@@ -1234,6 +1267,22 @@ bool ExecutionEngine::Impl::gatherAlignedInputs(NodeState &state,
     }
     // Loop: re-peek with fresh heads (each pass discards >= 1 frame, so
     // this terminates once queues stabilize or a port runs dry).
+  }
+}
+
+void ExecutionEngine::Impl::recordDequeue(const PortDataPtr &data) {
+  if (!m_config.enable_statistics) {
+    return;
+  }
+  m_statistics.total_queue_pops.fetch_add(1, std::memory_order_relaxed);
+  if (data && data->timestamp != Timestamp{}) {
+    const auto age = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now() - data->timestamp)
+                         .count();
+    if (age > 0) {
+      m_statistics.total_wait_time_us.fetch_add(
+          static_cast<std::uint64_t>(age), std::memory_order_relaxed);
+    }
   }
 }
 
@@ -1336,6 +1385,7 @@ void ExecutionEngine::Impl::handleNodeSuccess(const NodePtr &node,
     m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
     collectResults(node, outputs);
   }
+
 
   // Propagate outputs
   propagateOutputs(node, outputs);
@@ -1710,6 +1760,7 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
     }
 
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
+    m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
 
     tryScheduleNode(dest_node);
 
