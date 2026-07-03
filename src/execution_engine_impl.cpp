@@ -790,8 +790,10 @@ void ExecutionEngine::Impl::initializeQueues() {
       continue;
 
     state->lock_free_queues.clear();
+    state->input_ports = node_ptr->getExpectedInputPorts();
+    state->input_queues.clear();
 
-    for (const auto &port_name : node_ptr->getExpectedInputPorts()) {
+    for (const auto &port_name : state->input_ports) {
       auto config = state->queue_config;
 
       std::size_t cap = config.capacity > 0 ? config.capacity
@@ -818,8 +820,9 @@ void ExecutionEngine::Impl::initializeQueues() {
           .port_name = port_name,
       };
 
-      state->lock_free_queues[port_name] =
-          std::make_shared<LockFreeQueueType>(queue_config);
+      auto queue = std::make_shared<LockFreeQueueType>(queue_config);
+      state->input_queues.push_back(queue.get());
+      state->lock_free_queues[port_name] = std::move(queue);
     }
   }
 }
@@ -946,13 +949,21 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
 
   SchedulingContext context;
   context.node = node;
-  context.expected_input_ports = node->getExpectedInputPorts();
-  context.ready_input_ports = getReadyPorts(node);
+  context.expected_input_count =
+      static_cast<std::uint32_t>(state.input_ports.size());
+  for (std::size_t i = 0; i < state.input_queues.size(); ++i) {
+    if (state.input_queues[i] && !state.input_queues[i]->empty()) {
+      context.ready_input_count++;
+      if (i < 64) {
+        context.ready_port_mask |= (std::uint64_t{1} << i);
+      }
+    }
+  }
   context.execution_count = state.execution_count;
   context.last_execution_time = state.last_execution;
   context.is_source_node = isSourceNode(node);
   context.is_sink_node = isSinkNode(node);
-  context.has_initial_input = !context.ready_input_ports.empty();
+  context.has_initial_input = context.ready_input_count > 0;
 
   auto result = m_schedulerStrategy->shouldSchedule(context);
 
@@ -1100,13 +1111,14 @@ bool ExecutionEngine::Impl::gatherNodeInputs(const NodePtr &node,
 
   auto &state = *state_it->second;
 
-  for (const auto &port_name : node->getExpectedInputPorts()) {
-    auto data = popFromQueue(node, port_name);
+  for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
+    auto *queue = state.input_queues[i];
+    auto data = queue ? queue->tryPop() : std::nullopt;
     if (data.has_value()) {
-      inputs[port_name] = data.value();
+      inputs[state.input_ports[i]] = std::move(data.value());
     } else {
       LOG_TRACE_S << "ExecutionEngine: Input queue empty for " << state.name
-                  << ":" << port_name;
+                  << ":" << state.input_ports[i];
       return false;
     }
   }
@@ -1461,24 +1473,6 @@ void ExecutionEngine::Impl::collectResults(const NodePtr &node,
     m_accumulatedResults[result_key] = data;
     LOG_TRACE_S << "ExecutionEngine: Collected result: " << result_key;
   }
-}
-
-std::vector<std::string>
-ExecutionEngine::Impl::getReadyPorts(const NodePtr &node) const {
-  std::vector<std::string> ready_ports;
-
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return ready_ports;
-  }
-
-  for (const auto &port_name : node->getExpectedInputPorts()) {
-    if (hasDataInQueue(node, port_name)) {
-      ready_ports.push_back(port_name);
-    }
-  }
-
-  return ready_ports;
 }
 
 QueueConfig

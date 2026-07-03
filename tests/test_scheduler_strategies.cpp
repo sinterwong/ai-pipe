@@ -49,56 +49,56 @@ private:
 
 TEST(SchedulingContextTest, AllInputsReadyWhenEmpty) {
   SchedulingContext context;
-  context.expected_input_ports = {};
-  context.ready_input_ports = {};
+  context.expected_input_count = 0;
+  context.ready_input_count = 0;
 
   EXPECT_TRUE(context.allInputsReady());
 }
 
 TEST(SchedulingContextTest, AllInputsReadyWhenAllReady) {
   SchedulingContext context;
-  context.expected_input_ports = {"input1", "input2", "input3"};
-  context.ready_input_ports = {"input1", "input2", "input3"};
+  context.expected_input_count = 3;
+  context.ready_input_count = 3;
 
   EXPECT_TRUE(context.allInputsReady());
 }
 
 TEST(SchedulingContextTest, AllInputsReadyWhenMoreReady) {
   SchedulingContext context;
-  context.expected_input_ports = {"input1", "input2"};
-  context.ready_input_ports = {"input1", "input2", "input3"};
+  context.expected_input_count = 2;
+  context.ready_input_count = 3;
 
   EXPECT_TRUE(context.allInputsReady());
 }
 
 TEST(SchedulingContextTest, NotAllInputsReadyWhenSomeMissing) {
   SchedulingContext context;
-  context.expected_input_ports = {"input1", "input2", "input3"};
-  context.ready_input_ports = {"input1", "input2"};
+  context.expected_input_count = 3;
+  context.ready_input_count = 2;
 
   EXPECT_FALSE(context.allInputsReady());
 }
 
 TEST(SchedulingContextTest, InputReadinessRatioEmpty) {
   SchedulingContext context;
-  context.expected_input_ports = {};
-  context.ready_input_ports = {};
+  context.expected_input_count = 0;
+  context.ready_input_count = 0;
 
   EXPECT_DOUBLE_EQ(context.inputReadinessRatio(), 1.0);
 }
 
 TEST(SchedulingContextTest, InputReadinessRatioFull) {
   SchedulingContext context;
-  context.expected_input_ports = {"input1", "input2"};
-  context.ready_input_ports = {"input1", "input2"};
+  context.expected_input_count = 2;
+  context.ready_input_count = 2;
 
   EXPECT_DOUBLE_EQ(context.inputReadinessRatio(), 1.0);
 }
 
 TEST(SchedulingContextTest, InputReadinessRatioPartial) {
   SchedulingContext context;
-  context.expected_input_ports = {"input1", "input2", "input3", "input4"};
-  context.ready_input_ports = {"input1", "input2"};
+  context.expected_input_count = 4;
+  context.ready_input_count = 2;
 
   EXPECT_DOUBLE_EQ(context.inputReadinessRatio(), 0.5);
 }
@@ -183,7 +183,7 @@ TEST_F(BatchSchedulerStrategyTest, SourceNodeWithInitialInput) {
 TEST_F(BatchSchedulerStrategyTest, SourceNodeWithNoExpectedInputs) {
   m_context.is_source_node = true;
   m_context.has_initial_input = false;
-  m_context.expected_input_ports = {};
+  m_context.expected_input_count = 0;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -192,8 +192,8 @@ TEST_F(BatchSchedulerStrategyTest, SourceNodeWithNoExpectedInputs) {
 
 TEST_F(BatchSchedulerStrategyTest, AllInputsReady) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1", "input2"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 2;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -202,8 +202,8 @@ TEST_F(BatchSchedulerStrategyTest, AllInputsReady) {
 
 TEST_F(BatchSchedulerStrategyTest, WaitingForInputs) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2", "input3"};
-  m_context.ready_input_ports = {"input1"};
+  m_context.expected_input_count = 3;
+  m_context.ready_input_count = 1;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -290,8 +290,8 @@ TEST_F(StreamSchedulerStrategyTest, SourceNodeWithInitialInput) {
 
 TEST_F(StreamSchedulerStrategyTest, AllInputsReady) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1", "input2"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 2;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -300,8 +300,8 @@ TEST_F(StreamSchedulerStrategyTest, AllInputsReady) {
 
 TEST_F(StreamSchedulerStrategyTest, WaitingForInputsWithoutPartial) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 1;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -316,8 +316,8 @@ TEST_F(StreamSchedulerStrategyTest, PartialInputsAllowed) {
   StreamSchedulerStrategy partial_strategy(config);
 
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 1;
 
   auto result = partial_strategy.shouldSchedule(m_context);
 
@@ -332,8 +332,8 @@ TEST_F(StreamSchedulerStrategyTest, PartialInputsBelowRatio) {
   StreamSchedulerStrategy partial_strategy(config);
 
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2", "input3", "input4"};
-  m_context.ready_input_ports = {"input1"}; // 25% < 80%
+  m_context.expected_input_count = 4;
+  m_context.ready_input_count = 1; // 25% < 80%
 
   auto result = partial_strategy.shouldSchedule(m_context);
 
@@ -347,8 +347,8 @@ TEST_F(StreamSchedulerStrategyTest, RateLimiting) {
   StreamSchedulerStrategy rate_limited(config);
 
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input"};
-  m_context.ready_input_ports = {"input"};
+  m_context.expected_input_count = 1;
+  m_context.ready_input_count = 1;
   m_context.execution_count = 1;
   m_context.last_execution_time = std::chrono::steady_clock::now();
 
@@ -369,8 +369,8 @@ TEST_F(StreamSchedulerStrategyTest, RateLimitingExpired) {
   StreamSchedulerStrategy rate_limited(config);
 
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input"};
-  m_context.ready_input_ports = {"input"};
+  m_context.expected_input_count = 1;
+  m_context.ready_input_count = 1;
   m_context.execution_count = 1;
   m_context.last_execution_time =
       std::chrono::steady_clock::now() - 50ms; // Well past min_interval
@@ -476,8 +476,8 @@ TEST_F(HybridSchedulerStrategyTest, SourceNodeWithInitialInput) {
 
 TEST_F(HybridSchedulerStrategyTest, AllInputsReady) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1", "input2"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 2;
 
   auto result = m_strategy.shouldSchedule(m_context);
 
@@ -486,8 +486,8 @@ TEST_F(HybridSchedulerStrategyTest, AllInputsReady) {
 
 TEST_F(HybridSchedulerStrategyTest, WaitingForInputs) {
   m_context.is_source_node = false;
-  m_context.expected_input_ports = {"input1", "input2"};
-  m_context.ready_input_ports = {"input1"};
+  m_context.expected_input_count = 2;
+  m_context.ready_input_count = 1;
 
   auto result = m_strategy.shouldSchedule(m_context);
 

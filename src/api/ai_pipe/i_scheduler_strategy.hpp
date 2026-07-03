@@ -47,8 +47,18 @@ enum class ScheduleDecision {
  */
 struct SchedulingContext {
   std::shared_ptr<ILogicNode> node;
-  std::vector<std::string> expected_input_ports;
-  std::vector<std::string> ready_input_ports;
+
+  /// Number of input ports the node declares
+  std::uint32_t expected_input_count{0};
+
+  /// Number of input ports that currently have data queued
+  std::uint32_t ready_input_count{0};
+
+  /// Bit i set = the i-th declared input port (in
+  /// getExpectedInputPorts() order) has data. Only the first 64 ports
+  /// are represented; the counts above are always exact.
+  std::uint64_t ready_port_mask{0};
+
   std::size_t pending_predecessor_count{0};
   bool is_source_node{false};
   bool is_sink_node{false};
@@ -57,14 +67,16 @@ struct SchedulingContext {
   std::uint64_t execution_count{0};
 
   [[nodiscard]] bool allInputsReady() const {
-    return ready_input_ports.size() >= expected_input_ports.size();
+    return ready_input_count >= expected_input_count;
   }
 
+  [[nodiscard]] bool hasReadyInput() const { return ready_input_count > 0; }
+
   [[nodiscard]] double inputReadinessRatio() const {
-    if (expected_input_ports.empty())
+    if (expected_input_count == 0)
       return 1.0;
-    return static_cast<double>(ready_input_ports.size()) /
-           static_cast<double>(expected_input_ports.size());
+    return static_cast<double>(ready_input_count) /
+           static_cast<double>(expected_input_count);
   }
 };
 

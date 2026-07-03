@@ -45,7 +45,7 @@ public:
       return ScheduleResult::scheduleNow("source node with initial input");
     }
 
-    if (context.is_source_node && context.expected_input_ports.empty()) {
+    if (context.is_source_node && context.expected_input_count == 0) {
       return ScheduleResult::scheduleNow("source node with no expected inputs");
     }
 
@@ -55,8 +55,8 @@ public:
 
     return ScheduleResult::waitForInputs(
         "waiting for " +
-        std::to_string(context.expected_input_ports.size() -
-                       context.ready_input_ports.size()) +
+        std::to_string(context.expected_input_count -
+                       context.ready_input_count) +
         " more inputs");
   }
 
@@ -136,7 +136,7 @@ public:
 
     if (m_config.allow_partial_inputs) {
       if (context.inputReadinessRatio() >= m_config.min_input_ratio &&
-          !context.ready_input_ports.empty()) {
+          context.hasReadyInput()) {
         return ScheduleResult::scheduleNow("partial inputs ready");
       }
     } else {

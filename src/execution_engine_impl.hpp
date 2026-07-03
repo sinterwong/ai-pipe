@@ -43,6 +43,13 @@ public:
     std::unordered_map<std::string, std::shared_ptr<LockFreeQueueType>>
         lock_free_queues;
 
+    // Cached once at initialize: the node's declared input ports and the
+    // matching queues in declaration order. The hot scheduling/gather
+    // paths iterate these instead of re-calling the virtual
+    // getExpectedInputPorts() and hashing port names per execution.
+    std::vector<std::string> input_ports;
+    std::vector<LockFreeQueueType *> input_queues;
+
     std::unique_ptr<std::atomic<NodeExecutionState>> exec_state;
     std::chrono::steady_clock::time_point last_execution;
     std::uint64_t execution_count{0};
@@ -189,8 +196,6 @@ private:
   [[nodiscard]] bool isSourceNode(const NodePtr &node) const;
   [[nodiscard]] bool isSinkNode(const NodePtr &node) const;
   void collectResults(const NodePtr &node, const PortDataMap &outputs);
-  [[nodiscard]] std::vector<std::string>
-  getReadyPorts(const NodePtr &node) const;
   [[nodiscard]] QueueConfig
   getNodeQueueConfig(const std::string &node_name) const;
   [[nodiscard]] std::string getFirstInputPort(const NodePtr &node) const;
