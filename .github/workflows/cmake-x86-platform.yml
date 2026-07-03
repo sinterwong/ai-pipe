@@ -38,8 +38,6 @@ jobs:
     - name: Set up test env
       run: |
         echo "LD_LIBRARY_PATH=${{ github.workspace }}/install/lib:\
-        ${{ github.workspace }}/build/3rdparty/logger/x86_64/lib:\
-        ${{ github.workspace }}/install/lib:\
         $LD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Configure CMake

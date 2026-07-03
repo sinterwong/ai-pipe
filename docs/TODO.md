@@ -18,7 +18,7 @@
 - [x] **P0.4** 修复流模式 `execute(wait=true)` 的 push-后即返回竞态
 - [x] **P0.5** CI 增加 ASan + TSan 测试 job（先允许失败，修完转门禁）
 - [x] **P0.6** 文档诚实化：删除/标注未实现的直方图、percentile、per-node stats、同步丢帧宣称；统一版本号
-- [ ] **P0.7** 仓库卫生：`install/` 移出版本控制，处置未跟踪的 `3rdparty/logger`，清理 build 内无关产物
+- [x] **P0.7** 仓库卫生：`3rdparty/logger/` 加入 .gitignore（本地遗留目录未删除，确认无用后可手动删除），清理 CI 中对它的过期 LD_LIBRARY_PATH 引用。（勘误：`install/` 本已在 .gitignore 中且未被跟踪，审计时误判）
 - [ ] **P0.8** 移除已弃用的 `QueuePushResult` 与遗留 `thread_pool.hpp`（迁移其测试）
 
 ## Phase 1 — 图核心重构：CompiledGraph

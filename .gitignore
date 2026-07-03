@@ -12,6 +12,9 @@
 build/
 build*/
 3rdparty/target/*
+# Leftover local clone of the external glog-wrapper "logger" project; the
+# framework ships its own logger (src/logger.cpp) and never builds this.
+3rdparty/logger/
 install/
 conf/nginx
 scripts/log*
