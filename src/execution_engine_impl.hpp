@@ -39,6 +39,10 @@ public:
     NodePtr node;
     std::string name;
 
+    // This node's index in the CompiledGraph; hot paths address states
+    // through m_statesByIndex[index] with zero hashing.
+    CompiledGraph::NodeIndex index{CompiledGraph::k_invalid_index};
+
     // Lock-free queues per input port
     std::unordered_map<std::string, std::shared_ptr<LockFreeQueueType>>
         lock_free_queues;
@@ -163,16 +167,21 @@ private:
 
   void initializeNodeStates();
   void initializeQueues();
-  void identifySinkNodes();
   void setupDropCallbacks();
 
   bool distributeInitialInputs(const PortDataMap &initial_inputs);
-  void scheduleReadyNodes();
-  void tryScheduleNode(const NodePtr &node);
-  void scheduleNodeExecution(const NodePtr &node);
-  void executeNodeTask(NodePtr node, std::shared_ptr<PipelineContext> context);
 
-  bool gatherNodeInputs(const NodePtr &node, PortDataMap &inputs);
+  /** @brief Boundary wrapper: resolves the index once, then dispatches */
+  void tryScheduleNode(const NodePtr &node);
+
+  /** @brief Hot-path scheduling entry: no hashing, no string compares */
+  void tryScheduleNode(CompiledGraph::NodeIndex index);
+
+  void scheduleNodeExecution(NodeState &state);
+  void executeNodeTask(CompiledGraph::NodeIndex index,
+                       std::shared_ptr<PipelineContext> context);
+
+  bool gatherNodeInputs(NodeState &state, PortDataMap &inputs);
 
   /**
    * @brief Gather inputs for a multi-input node with frame alignment
@@ -206,10 +215,10 @@ private:
                            PortDataMap &outputs,
                            const std::shared_ptr<PipelineContext> &context);
 
-  void propagateOutputs(const NodePtr &source, const PortDataMap &outputs);
+  void propagateOutputs(NodeState &source_state, const PortDataMap &outputs);
 
-  void handleNodeSuccess(const NodePtr &node, const PortDataMap &outputs);
-  void handleNodeFailure(const NodePtr &node, const Error &error);
+  void handleNodeSuccess(NodeState &state, const PortDataMap &outputs);
+  void handleNodeFailure(NodeState &state, const Error &error);
 
   void checkCompletionAndNotify();
   Result<void> waitForCompletion();
@@ -236,7 +245,8 @@ private:
                                  const std::string &port_name,
                                  PortDataPtr data);
 
-  void recordQueueRejection(const NodePtr &node, const std::string &port_name);
+  void recordQueueRejection(const std::string &node_name,
+                            const std::string &port_name);
 
   /**
    * @brief Assign frame identity to a packet entering the pipeline
@@ -258,8 +268,6 @@ private:
   std::size_t getQueueSize(const NodePtr &node,
                            const std::string &port_name) const;
 
-  [[nodiscard]] bool isSourceNode(const NodePtr &node) const;
-  [[nodiscard]] bool isSinkNode(const NodePtr &node) const;
   void collectResults(const NodePtr &node, const PortDataMap &outputs);
   [[nodiscard]] QueueConfig
   getNodeQueueConfig(const std::string &node_name) const;
@@ -298,7 +306,10 @@ private:
 
   std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
   std::unordered_map<std::string, NodePtr> m_nodeNameMap;
-  std::vector<NodePtr> m_sinkNodes;
+
+  // Dense index -> state lookup aligned with CompiledGraph::NodeIndex;
+  // the raw pointers are owned by m_nodeStates.
+  std::vector<NodeState *> m_statesByIndex;
 
   // Nodes that completed setup(), in setup order; drives teardown.
   std::vector<NodePtr> m_setUpNodes;
