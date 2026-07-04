@@ -191,3 +191,36 @@ jobs:
     - name: Run clang-tidy on library sources
       run: |
         clang-tidy-18 -p ${{ github.workspace }}/build src/*.cpp
+
+  benchmark-gate:
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+          lfs: true
+    - name: Install GCC 13
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-13 g++-13
+    - name: Configure (Release + benchmarks)
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_AI_PIPE_BENCHMARKS=ON
+        -S ${{ github.workspace }}
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build -j
+    # Structural regression assertions only (relative, same-run, same
+    # machine): catches O(1) paths degrading to O(N) and construction
+    # going quadratic without flaking on shared-runner noise.
+    - name: Run benchmark regression gate
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        export LD_LIBRARY_PATH=$PWD/x86_64/lib:$LD_LIBRARY_PATH
+        python3 ${{ github.workspace }}/scripts/check_benchmarks.py \
+          ./x86_64/bin/benchmarks/ai_pipe_benchmarks
