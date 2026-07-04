@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <b>Version 0.4.0</b> · Author: <a href="mailto:sintercver@gmail.com">Sinter Wong</a>
+  <b>Version 0.5.0</b> · Author: <a href="mailto:sintercver@gmail.com">Sinter Wong</a>
 </p>
 
 ---
@@ -78,6 +78,9 @@ The framework provides two primary execution modes — **Batch** for single-pass
 | `ISyncStrategy` | `i_sync_strategy.hpp` | Pluggable frame synchronization interface |
 | `Result<T>` / `Error` | `error.hpp` | Monadic error handling with categorized error codes |
 | `DataPacket` | `data_packet.hpp` | Type-erased key-value data container for inter-node communication |
+| `IFrameMetadata` | `frame_metadata.hpp` | Frame identification and multi-stream synchronization |
+| `LockFreeQueue` | `lock_free_queue.hpp` | Bounded MPMC queue with drop policy support |
+| `WorkStealingThreadPool` | `work_stealing_thread_pool.hpp` | High-performance thread pool with work stealing |
 
 ### Packet Ownership Model
 
@@ -89,9 +92,6 @@ zero-copy fan-out to parallel branches race-free. A node that needs to
 modify a received packet uses `ai_pipe::mutableCopy(packet)` — an explicit
 copy-on-write escape hatch that leaves the original untouched for sibling
 consumers.
-| `IFrameMetadata` | `frame_metadata.hpp` | Frame identification and multi-stream synchronization |
-| `LockFreeQueue` | `lock_free_queue.hpp` | Bounded MPMC queue with drop policy support |
-| `WorkStealingThreadPool` | `work_stealing_thread_pool.hpp` | High-performance thread pool with work stealing |
 
 ---
 

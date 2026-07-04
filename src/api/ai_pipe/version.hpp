@@ -13,7 +13,7 @@
 
 // for cmake
 #define AI_PIPE_VER_MAJOR 0
-#define AI_PIPE_VER_MINOR 4
+#define AI_PIPE_VER_MINOR 5
 #define AI_PIPE_VER_PATCH 0
 
 #define AI_PIPE_VERSION                                                        \

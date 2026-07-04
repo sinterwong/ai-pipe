@@ -168,7 +168,7 @@ jobs:
   clang-tidy:
     runs-on: ubuntu-24.04
     # Advisory for now: promote to a required gate once the existing
-    # findings are triaged (tracked under docs/TODO.md P6.4 follow-up).
+    # findings are triaged.
     continue-on-error: true
     env:
       CC: clang-18
