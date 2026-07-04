@@ -1,6 +1,6 @@
 # AI Pipe 框架设计说明文档
 
-> **版本**: v0.4.0（与 `ai_pipe_version.hpp` 保持一致）
+> **版本**: v0.5.0（与 `ai_pipe_version.hpp` 保持一致）
 > **变更概览**: 见 `CHANGELOG.md` 与 `docs/Migration_Guide.md`；节点编写规范见 `docs/Node_Development_Guide.md`
 > **作者**: Sinter Wong (sintercver@gmail.com)  
 > **日期**: 2026-02  

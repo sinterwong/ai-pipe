@@ -187,6 +187,34 @@ TEST_F(CompiledGraphTest, DeepChainDoesNotOverflow) {
             static_cast<std::size_t>(k_depth));
 }
 
+TEST_F(CompiledGraphTest, UnconnectedRequiredInputPortRejected) {
+  addPassThrough("src");
+  // Join declares two inputs but only input1 gets an edge: with
+  // in-degree > 0 it would wait for input2 forever.
+  addJoin("join", {"input1", "input2"});
+  ASSERT_TRUE(m_graph.addEdge("src", "output", "join", "input1"));
+
+  auto result = CompiledGraph::compile(m_graph);
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.errorCode(), ErrorCode::InvalidConfiguration);
+  // Error names the starving port and node
+  auto err = result.errorMessage();
+  EXPECT_NE(err.find("input2"), std::string::npos);
+  EXPECT_NE(err.find("join"), std::string::npos);
+}
+
+TEST_F(CompiledGraphTest, SourceNodePortsAreExemptFromConnectivity) {
+  // A source node's declared input ports are fed externally; a graph
+  // consisting of source -> sink must compile even though the source
+  // has a declared, unconnected input port.
+  addPassThrough("entry"); // declares "input", in-degree 0
+  addPassThrough("exit");
+  ASSERT_TRUE(m_graph.addEdge("entry", "output", "exit", "input"));
+
+  auto result = CompiledGraph::compile(m_graph);
+  ASSERT_TRUE(result) << result.errorMessage();
+}
+
 TEST_F(CompiledGraphTest, LookupByNameAndPointer) {
   auto node = std::make_shared<PassThroughNode>("only");
   m_graph.addNode(node);

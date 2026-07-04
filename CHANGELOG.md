@@ -5,6 +5,31 @@ All notable changes to AI Pipe are documented here. The format follows
 (pre-1.0: minor bumps may contain breaking changes, see the Migration
 Guide).
 
+## [0.5.0] - 2026-07-04
+
+Closes the gaps identified in the post-0.4.0 goal review.
+
+### Added
+
+- **Graph connectivity validation**: `CompiledGraph::compile` (and thus
+  engine initialize / pipeline build) rejects graphs where a non-source
+  node declares an input port with no incoming edge - previously such
+  nodes silently never executed. Error: `InvalidConfiguration` naming
+  the starving port.
+- **Benchmark regression gate in CI** (`scripts/check_benchmarks.py`):
+  structural, same-run assertions (compiled routing >= 10x over legacy
+  scan, size-independent lookups, O(E) construction/compile linearity).
+  It caught a real O(V*E) regression on its first run.
+
+### Performance
+
+- **Fully indexed hot path**: the schedule -> execute -> gather ->
+  propagate chain now passes CompiledGraph node indices and state
+  references end to end. Per-execution node-state hashing and
+  per-propagation port-name map lookups are gone; `OutEdge` carries the
+  destination port's queue index. Hash lookups remain only at boundary
+  APIs (one per external `pushInput`/`queueDepth` call).
+
 ## [0.4.0] - 2026-07-04
 
 Delivered through the architecture-audit roadmap, Phases 0–6 (the

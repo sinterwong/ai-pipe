@@ -46,6 +46,9 @@ public:
   static constexpr NodeIndex k_invalid_index =
       std::numeric_limits<NodeIndex>::max();
 
+  static constexpr std::uint32_t k_invalid_port =
+      std::numeric_limits<std::uint32_t>::max();
+
   /**
    * @brief One outgoing connection of a node, precomputed for routing
    */
@@ -53,6 +56,11 @@ public:
     std::string source_port;
     NodeIndex dest_node{k_invalid_index};
     std::string dest_port;
+
+    /// Position of dest_port within the destination node's declared
+    /// input ports; lets the engine index straight into its per-port
+    /// queue array without hashing the port name.
+    std::uint32_t dest_port_index{k_invalid_port};
   };
 
   /**
@@ -60,6 +68,8 @@ public:
    * @return CompiledGraph on success, or Error with:
    *   - GraphEmpty: graph has no nodes
    *   - GraphCycleDetected: graph contains a cycle
+   *   - InvalidConfiguration: a non-source node declares an input port
+   *     with no incoming edge (it could never become schedulable)
    */
   static Result<CompiledGraph> compile(const Graph &graph) {
     CompiledGraph cg;
@@ -77,9 +87,18 @@ public:
     cg.m_predecessors.resize(node_count);
     cg.m_inDegree.assign(node_count, 0);
 
+    std::vector<std::vector<std::string>> input_ports(node_count);
     for (NodeIndex i = 0; i < node_count; ++i) {
       cg.m_nameToIndex[nodes[i]->getName()] = i;
       cg.m_ptrToIndex[nodes[i].get()] = i;
+      input_ports[i] = nodes[i]->getExpectedInputPorts();
+    }
+
+    // Which declared input ports receive at least one edge; filled in
+    // the single edge pass below and used for connectivity validation.
+    std::vector<std::vector<bool>> port_covered(node_count);
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      port_covered[i].assign(input_ports[i].size(), false);
     }
 
     // Edge-count in-degrees drive Kahn's algorithm; adjacency lists are
@@ -93,7 +112,17 @@ public:
             "Edge references a node that is not in the graph");
       }
 
-      cg.m_outEdges[src].push_back({edge.source_port, dst, edge.dest_port});
+      std::uint32_t dest_port_index = k_invalid_port;
+      for (std::uint32_t pi = 0;
+           pi < static_cast<std::uint32_t>(input_ports[dst].size()); ++pi) {
+        if (input_ports[dst][pi] == edge.dest_port) {
+          dest_port_index = pi;
+          port_covered[dst][pi] = true;
+          break;
+        }
+      }
+      cg.m_outEdges[src].push_back(
+          {edge.source_port, dst, edge.dest_port, dest_port_index});
       cg.m_inDegree[dst]++;
 
       auto &succ = cg.m_successors[src];
@@ -139,6 +168,28 @@ public:
       }
       if (cg.m_outEdges[i].empty()) {
         cg.m_sinkNodes.push_back(i);
+      }
+    }
+
+    // Connectivity validation: a node that has upstream edges only
+    // executes when ALL of its declared input ports hold data, so any
+    // unconnected declared port would starve it forever. Source nodes
+    // (in-degree 0) are exempt - their ports are fed externally via
+    // pushInput / initial inputs. Coverage was collected during the
+    // single edge pass above, keeping compilation O(V + E).
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      if (cg.m_inDegree[i] == 0) {
+        continue;
+      }
+      for (std::size_t pi = 0; pi < input_ports[i].size(); ++pi) {
+        if (!port_covered[i][pi]) {
+          return Result<CompiledGraph>::err(
+              ErrorCode::InvalidConfiguration,
+              "Input port '" + input_ports[i][pi] + "' of node '" +
+                  nodes[i]->getName() +
+                  "' has no incoming edge; the node could never execute",
+              nodes[i]->getName());
+        }
       }
     }
 
