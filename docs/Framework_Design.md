@@ -851,6 +851,40 @@ class TimestampSyncStrategy : public ai_pipe::ISyncStrategy {
 };
 ```
 
+### 12.4 动态节点插件 — `PluginLoader`（F8）
+
+节点可打包为共享库在运行时加载（`ai_pipe/plugin.hpp`）：
+
+```cpp
+// 插件侧（编译为 MODULE 共享库，链接 libai_pipe.so）
+AI_PIPE_PLUGIN("my_detector_pack");   // 导出版本握手描述符
+AI_PIPE_REGISTER_NODE(MyDetectorNode); // 静态初始化时注册（dlopen 触发）
+
+// 宿主侧
+ai_pipe::PluginLoader loader;
+auto loaded = loader.load("plugins/libmy_detector_pack.so");
+// 或整目录扫描（非递归，按路径排序保证确定性）：
+auto all = loader.loadDirectory("plugins/");
+// loaded->registered_types 列出该插件贡献的节点类型
+```
+
+**ABI 边界与版本握手**：
+
+- 插件必须与宿主链接**同一个** `libai_pipe.so`（NodeRegistry 单例与跨界
+  C++ 类型都在其中），并使用 ABI 兼容的工具链/编译选项——握手无法检测
+  工具链 ABI 漂移，这是文档化的边界而非可验证项。
+- 握手经 C-linkage 符号 `ai_pipe_plugin_descriptor` 进行（跨 dlopen 边界
+  只读一个 standard-layout C 结构体）：插件协议修订号
+  （`k_plugin_abi_version`）须精确相等；框架版本 pre-1.0 要求
+  major.minor 相同。
+- 注册发生在 dlopen 静态初始化期间、握手之前（机制使然），故加载器对
+  注册表做前后快照：握手失败时回滚该插件注册的全部节点类型再 dlclose，
+  错误码为 `PluginSymbolMissing` / `PluginVersionMismatch`。
+- 卸载（`unload`/析构）先反注册再 dlclose；调用方须保证该插件创建的节点
+  实例已全部销毁。注意 GCC 的 STB_GNU_UNIQUE 符号会使 glibc 将库标记为
+  NODELETE（dlclose 不真正卸载、重载不会重跑注册）——插件建议以
+  `-fno-gnu-unique` 编译。
+
 ---
 
 ## 13. 设计模式总结

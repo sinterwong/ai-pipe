@@ -83,9 +83,20 @@
   Schedule/Execute/Propagate 区间），未启用时开销为一次指针判空。
   文档 Framework_Design §9.4。4 个新测试（test_trace.cpp）。
   提交 `feat: execution tracing hooks with Chrome trace export (F7)`。
-- [ ] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
+- [x] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
   静态初始化时生效，NodeRegistry 基础已具备），需定义插件 ABI 边界与
   版本握手。
+  ——新增 `ai_pipe/plugin.hpp`：`AI_PIPE_PLUGIN` 宏导出 C-linkage 描述符
+  （插件协议修订号 + 构建时 AI_PIPE_VERSION），`PluginLoader` 提供
+  `load`/`loadDirectory`（非递归、排序确定）/`unload`。注册仍走静态
+  初始化（dlopen 触发）；加载器以注册表前后快照识别插件贡献的类型，
+  握手失败（缺符号/ABI 修订不符/major.minor 不符）回滚注册再 dlclose。
+  新错误码 5xx（PluginLoadFailed/PluginSymbolMissing/
+  PluginVersionMismatch）。ABI 边界（同一 libai_pipe.so、工具链兼容、
+  STB_GNU_UNIQUE/NODELETE 注意事项）文档化于 Framework_Design §12.4。
+  测试基建：3 个真实测试插件（有效/无描述符/ABI 不符）+ 5 个测试
+  （test_plugin_loader.cpp，含卸载后真实重载验证）。提交
+  `feat: dlopen node plugin loading with ABI handshake (F8)`。
 - [ ] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
   （`std::map<string, ptr>`）是热路径上最后的字符串键容器（每次执行构造）。
   替换为索引化端口数组的新 process API 是**重大 API 变更**——先在真实负载

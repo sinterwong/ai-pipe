@@ -47,4 +47,7 @@
 // Execution Tracing (per-frame span events)
 #include "ai_pipe/trace.hpp"
 
+// Dynamic Node Plugins (dlopen loading)
+#include "ai_pipe/plugin.hpp"
+
 #endif // AI_PIPE_AI_PIPE_HPP
