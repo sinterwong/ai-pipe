@@ -526,6 +526,13 @@ auto stream_pipe = makeStreamPipeline(std::move(graph), 4, 16);
 - **宽松内存序**：非同步路径使用 `relaxed`，仅在同步点使用 `acquire/release`
 - **集成丢弃策略**：`DropHead`（CAS 推进 head）、`DropTail`（拒绝新入）、`KeepLatest`
 
+**KeepLatest 并发语义**（F3，完整契约见 `pushKeepLatest` 注释）：push 恒成功，
+背压完全表现为驱逐（逐条计数并回调）。"至多保留 N 帧"对单生产者严格成立；
+P 个并发生产者下 evict-then-push 非原子，竞争窗口内 size 可短暂达到
+N + P − 1（不超过容量），且若推送恰好停在窗口内，超出会持续到下一次操作。
+该超出是自愈的：每次 push 先驱逐到 size < N 再入队，后续任意一次无竞争
+push 即恢复 ≤ N。需要硬性 "任意时刻 ≤ N" 的调用方必须在外部串行化生产者。
+
 ### 7.2 Work-Stealing 线程池
 
 **特性**：

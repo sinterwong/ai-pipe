@@ -57,7 +57,13 @@ inline std::string executionModeToString(ExecutionMode mode) {
 struct QueueConfig {
   std::size_t capacity = 0;               ///< 0 = unbounded
   std::string drop_strategy = "DropHead"; ///< DropHead, DropTail, KeepLatest
-  std::size_t keep_latest_n = 1;          ///< For KeepLatest strategy
+  /**
+   * Window size N for KeepLatest. "At most N" is strict for a single
+   * producer per queue; with concurrent producers the bound is
+   * eventual (transient overshoot up to N + producers - 1). See the
+   * KeepLatest contract in the framework design doc, section 7.1.
+   */
+  std::size_t keep_latest_n = 1;
   bool track_statistics = true;
 };
 

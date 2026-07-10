@@ -24,8 +24,13 @@
   （未知键报错），文档 `docs/JSON_Graph_Loader.md`。提交 9a1d721。
 - [ ] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
   `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
-- [ ] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
+- [x] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
   语义边界（当前实现在竞争窗口内可能短暂超出 N），补契约文档与并发测试。
+  ——契约定稿：单生产者严格 ≤ N；P 个并发生产者短暂超出上界 N + P − 1
+  （自愈：任一后续无竞争 push 恢复窗口）。契约写入 `pushKeepLatest` 注释、
+  `QueueConfig`、Framework_Design §7.1；新增 4 个测试（单生产者逐 push 严格
+  窗口、N=0 视作 1、并发超出上界 + 自愈、生产者+消费者守恒），TSan 验证通过。
+  提交 `docs+test: KeepLatest concurrency contract (F3)`。
 - [x] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
   外部 NDK 式 clang 工具链；补一个基于 `g++-aarch64-linux-gnu` 的通用
   toolchain 文件 + CI build-only job，守住嵌入式可移植性宣称。

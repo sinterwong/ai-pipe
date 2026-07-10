@@ -18,6 +18,14 @@ Guide).
   when the option is OFF (the API then returns `InvalidConfiguration`;
   probe with `jsonGraphLoaderAvailable()`). Strict schema - unknown
   keys are rejected by name. Reference: `docs/JSON_Graph_Loader.md`.
+- **KeepLatest concurrency contract** (F3): the "keep newest N" bound
+  is now precisely specified - strict for a single producer, eventual
+  under P concurrent producers (transient overshoot bounded by
+  N + P - 1, self-healing on the next uncontended push). Documented at
+  `pushKeepLatest` / `QueueConfig` / design doc section 7.1 and locked in
+  by four new tests (per-push strict window, N=0 as 1, concurrent
+  overshoot bound + self-healing, producer/consumer conservation),
+  TSan-verified. No behavior change.
 - **aarch64 cross-compile gate** (F4): generic toolchain file
   `platforms/linux/aarch64-gnu.cmake` (distro `g++-aarch64-linux-gnu`,
   no external toolchain inputs), an `aarch64` CMake preset, and a
