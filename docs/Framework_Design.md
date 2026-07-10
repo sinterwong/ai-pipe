@@ -424,6 +424,9 @@ struct EngineConfig {
   bool allow_partial_inputs = false;          // 允许部分输入即调度
   std::chrono::milliseconds min_execution_interval{0}; // 最小执行间隔
 
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId; // 多输入对齐键
+  std::chrono::microseconds alignment_tolerance{33000};       // Timestamp 策略容差
+
   bool enable_statistics = true;
   bool enable_drop_logging = true;
 };
@@ -583,6 +586,32 @@ auto eos  = FrameMetadataFactory::createEndOfStream();       // 流结束标记
 - `k_invalid_frame_id = 0`：无效帧
 - `k_end_of_stream_frame_id = UINT64_MAX`：流结束标记
 - `k_max_frame_drift = 100`：最大允许帧偏移
+
+### 8.2 多流对齐 — `AlignmentPolicy`（F5）
+
+多输入（Join）节点的对齐取数由 `EngineConfig::alignment_policy` 选择对齐键；
+非默认策略是显式选择，即使未安装同步策略也会启用对齐取数：
+
+| 策略 | 配对条件 | 适用场景 |
+|------|---------|---------|
+| `FrameId`（默认） | 各端口队头 FrameId 精确相等 | 单流，或 ID 全局唯一的多流（如引擎自动编号） |
+| `StreamFrameId` | 各端口队头 (stream_id, frame_id) 二元组相等 | 多流各自独立编号（跨流 ID 可能碰撞） |
+| `Timestamp` | 队头时间戳极差 ≤ `alignment_tolerance`（默认 33ms） | 多摄像头无共享帧号，仅按采集时间配对 |
+
+**滞留帧丢弃契约**（保证取数循环单调推进，不会死锁在永失配对的队头）：
+
+- `StreamFrameId`：队头不齐时，丢弃入线时间戳**严格早于**最新队头的帧——
+  端口队列 FIFO 且入线时间戳单调不减，更早的帧在最新端口上已错过配对窗口。
+  各队头时间戳完全相同时（病态情形）按最小 (stream, frame) 确定性丢弃。
+  该模式下引擎对未编号包的自动 FrameId 改为**流内单调**（按 stream_id 分桶计数）。
+- `Timestamp`：丢弃落后最新队头超过容差的帧（同样依赖端口内时间戳单调不减）。
+  该策略完全忽略 FrameId。
+
+**边界**：跨分支丢弃协调（`ISyncStrategy` 的 reportDrop/shouldDrop 及水位线）
+仍以 FrameId 为键。多流场景下若跨流 ID 碰撞，协调记录可能跨流误伤——
+需要精确协调时应保证 ID 全局唯一（引擎默认编号即满足），或仅依赖对齐层丢弃。
+时间戳来源：入线时若包未携带时间戳由引擎盖章（`stampIncomingFrame`）；
+用户自带采集时间戳时需自行保证端口内单调不减。
 
 ---
 

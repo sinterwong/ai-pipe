@@ -49,9 +49,18 @@
 
 ## 中期（v0.7+）
 
-- [ ] **F5. 多流同步**：帧对齐目前仅按 FrameId（P4.1），`stream_id` 已在
+- [x] **F5. 多流同步**：帧对齐目前仅按 FrameId（P4.1），`stream_id` 已在
   DataPacket 头部但不参与对齐。多摄像头场景需要 (stream, frame) 二元对齐
   或基于 `TimestampFrameMetadata` 的时间戳容差对齐（API 已定义未接线）。
+  ——新增 `EngineConfig::alignment_policy`（FrameId 默认 / StreamFrameId /
+  Timestamp + `alignment_tolerance`，默认 33ms 对齐
+  `TimestampFrameMetadata::k_default_sync_tolerance`）；StreamFrameId 模式
+  下引擎自动编号改为流内单调；滞留帧按入线时间戳序丢弃（契约见
+  Framework_Design §8.2，含丢弃协调仍以 FrameId 为键的边界说明）。
+  PipelineOptions 与 JSON loader（`alignment_policy`/
+  `alignment_tolerance_us`）同步暴露。5 个新测试
+  （test_multistream_alignment.cpp）。提交 `feat: multi-stream join
+  alignment policies (F5)`。
 - [ ] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
   落后分支由重调度机制自然等待、永失配对帧直接丢弃。为"宁要不完整数据也
   不要等待"的场景提供可配置的等待上限与降级策略（部分输入执行/跳帧）。

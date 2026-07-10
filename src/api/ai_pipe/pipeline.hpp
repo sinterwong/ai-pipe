@@ -45,6 +45,11 @@ struct PipelineOptions {
   bool enable_sync_coordination = false;
   bool enable_statistics = true;
 
+  /// Multi-input alignment key; see AlignmentPolicy (execution_types.hpp)
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId;
+  /// Pairing tolerance for AlignmentPolicy::Timestamp
+  std::chrono::microseconds alignment_tolerance{33000};
+
   static PipelineOptions batch(std::uint8_t workers = 4) {
     PipelineOptions opts;
     opts.mode = ExecutionMode::BATCH;

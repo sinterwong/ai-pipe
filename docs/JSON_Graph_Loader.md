@@ -143,6 +143,8 @@ alone is a fully sane streaming configuration.
 | `drop_strategy`            | string  | e.g. `"DropHead"`     |
 | `enable_sync_coordination` | boolean |                       |
 | `enable_statistics`        | boolean |                       |
+| `alignment_policy`         | string  | `"frame_id"`/`"stream_frame_id"`/`"timestamp"` |
+| `alignment_tolerance_us`   | integer | >= 0 (`timestamp` policy pairing tolerance) |
 
 ## Error reporting
 

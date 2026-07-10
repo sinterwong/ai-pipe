@@ -52,6 +52,48 @@ inline std::string executionModeToString(ExecutionMode mode) {
 }
 
 /**
+ * @brief Frame alignment policy for multi-input (join) nodes
+ *
+ * Selects the key used by the engine's aligned-gather path when a node
+ * has more than one input port:
+ *
+ * - FrameId (default): heads pair when their FrameIds match exactly.
+ *   Correct for single-stream pipelines and for multi-stream pipelines
+ *   whose ids are globally unique (e.g. engine-stamped ids).
+ * - StreamFrameId: heads pair when both stream_id and FrameId match.
+ *   Use when several streams flow through the same graph with
+ *   per-stream frame numbering (ids may collide across streams).
+ *   Engine stamping becomes per-stream monotonic in this mode.
+ * - Timestamp: heads pair when their header timestamps agree within
+ *   EngineConfig::alignment_tolerance. Use for multi-camera capture
+ *   where streams share no frame numbering; this wires the
+ *   TimestampFrameMetadata tolerance semantics into the engine.
+ *
+ * Lag/drop contract per policy is documented at gatherAlignedInputs()
+ * and in the framework design doc, section 4 (multi-stream alignment).
+ */
+enum class AlignmentPolicy : std::uint8_t {
+  FrameId,
+  StreamFrameId,
+  Timestamp,
+};
+
+/**
+ * @brief Convert alignment policy to string
+ */
+inline std::string alignmentPolicyToString(AlignmentPolicy policy) {
+  switch (policy) {
+  case AlignmentPolicy::FrameId:
+    return "FrameId";
+  case AlignmentPolicy::StreamFrameId:
+    return "StreamFrameId";
+  case AlignmentPolicy::Timestamp:
+    return "Timestamp";
+  }
+  return "UNKNOWN";
+}
+
+/**
  * @brief Configuration for node input queues
  */
 struct QueueConfig {
@@ -115,6 +157,20 @@ struct EngineConfig {
   bool enable_sync_coordination = false;
   bool allow_partial_inputs = false;
   std::chrono::milliseconds min_execution_interval{0};
+
+  /**
+   * Multi-input alignment key (see AlignmentPolicy). Non-default
+   * policies activate aligned gathering for multi-input nodes even
+   * when no sync strategy is installed (batch mode included).
+   */
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId;
+
+  /**
+   * Pairing tolerance for AlignmentPolicy::Timestamp. Default matches
+   * TimestampFrameMetadata::k_default_sync_tolerance (33ms ~ one frame
+   * at 30fps).
+   */
+  std::chrono::microseconds alignment_tolerance{33000};
 
   bool enable_statistics = true;
   bool enable_drop_logging = true;

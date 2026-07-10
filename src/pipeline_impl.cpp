@@ -187,6 +187,8 @@ EngineConfig Pipeline::Impl::buildEngineConfig() const {
   config.default_drop_strategy = m_options.drop_strategy;
   config.enable_sync_coordination = m_options.enable_sync_coordination;
   config.enable_statistics = m_options.enable_statistics;
+  config.alignment_policy = m_options.alignment_policy;
+  config.alignment_tolerance = m_options.alignment_tolerance;
   return config;
 }
 

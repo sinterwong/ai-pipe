@@ -194,6 +194,46 @@ private:
    */
   bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
 
+  /**
+   * @brief (stream, frame) aligned gather for AlignmentPolicy::StreamFrameId
+   *
+   * Heads pair only when every port head carries the same
+   * (stream_id, frame_id). When heads disagree, the head(s) that can
+   * never be paired are discarded: any head strictly older (by entry
+   * timestamp) than the newest head - a FIFO port never rewinds in
+   * time, so its partner can no longer arrive. If no head is strictly
+   * older (identical timestamps), the smallest (stream, frame) heads
+   * are dropped as a deterministic tie-break. Unassigned ids (0) act
+   * as wildcards, matching the FrameId policy.
+   */
+  bool gatherStreamAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Timestamp-tolerance gather for AlignmentPolicy::Timestamp
+   *
+   * Heads pair when (max_ts - min_ts) <= alignment_tolerance across
+   * all port heads. Otherwise every head with
+   * ts < max_ts - tolerance is discarded: per-port timestamps are
+   * non-decreasing (stamped at ingress in arrival order), so such a
+   * head can never fall within tolerance of the newest port's future
+   * frames. Frame ids are ignored by this policy.
+   */
+  bool gatherTimestampAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Peek a port head, consuming pending coordinated sync drops
+   * @return The head packet, or nullopt if the port has no poppable data
+   */
+  std::optional<PortDataPtr> peekAlignmentHead(NodeState &state,
+                                               std::size_t port_index);
+
+  /**
+   * @brief Pop an unpairable head, recording the drop and reporting it
+   *        to the sync strategy for tracked nodes
+   */
+  void dropStaleHead(NodeState &state, std::size_t port_index,
+                     const PortData &head, const char *reason);
+
   void recordSyncDrop(const NodeState &state, const std::string &port_name,
                       FrameId frame_id, const char *reason);
 
@@ -317,6 +357,12 @@ private:
   // Monotonic FrameId source for packets entering the pipeline without
   // an assigned id (see stampIncomingFrame).
   std::atomic<FrameId> m_nextFrameId{1};
+
+  // Per-stream FrameId sources, used instead of m_nextFrameId when the
+  // alignment policy is StreamFrameId (ids must be monotonic within a
+  // stream, not globally). Ingress-only, so a plain mutex suffices.
+  std::mutex m_streamStampMutex;
+  std::unordered_map<StreamId, FrameId> m_nextStreamFrameId;
 
   std::atomic<EngineState> m_engineState{EngineState::IDLE};
   std::atomic<int> m_activeTasks{0};
