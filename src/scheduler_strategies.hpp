@@ -127,7 +127,7 @@ struct StreamSchedulerConfig {
 class StreamSchedulerStrategy final : public ISchedulerStrategy {
 public:
   explicit StreamSchedulerStrategy(StreamSchedulerConfig config = {})
-      : m_config(std::move(config)) {}
+      : m_config(config) {}
 
   [[nodiscard]] ScheduleResult
   shouldSchedule(const SchedulingContext &context) const override {

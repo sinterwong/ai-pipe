@@ -14,17 +14,38 @@
 
 ## 近期（v0.6 候选）
 
-- [ ] **F1. JSON 构图加载器**：基于 `NodeRegistry`（v0.4.0 P6.1）实现
+- [x] **F1. JSON 构图加载器**：基于 `NodeRegistry`（v0.4.0 P6.1）实现
   `Result<Graph> loadGraphFromJson(...)`——节点（type/name/config）+ 边 +
   引擎选项的声明式描述。nlohmann/json 已在 3rdparty 中（目前仅测试用），
   需决策：作为可选组件（`AI_PIPE_WITH_JSON`）保持核心零依赖。
-- [ ] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
+  ——已按可选组件方案落地（`AI_PIPE_WITH_JSON`，默认 OFF，OFF 时编译为返回
+  `InvalidConfiguration` 的 stub，链接兼容不变），提供
+  `loadGraphFromJson` / `loadPipelineFromJson` 及文件变体，schema 严格校验
+  （未知键报错），文档 `docs/JSON_Graph_Loader.md`。提交 9a1d721。
+- [x] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
   `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
-- [ ] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
+  ——checks 集固化为 bugprone/concurrency/performance/portability 全组 +
+  命名检查，排除 3 个误报/低价值类（easily-swappable-parameters、
+  unchecked-optional-access、enum-size，理由见 `.clang-tidy` 注释）；
+  `HeaderFilterRegex` 覆盖 src/ 头文件，`WarningsAsErrors: '*'` 保证退出码
+  把关。分诊 65 条告警：34 条归入排除类，其余修净（含 shared_ptr 传参优化、
+  窄化转换显式化等），3 处有意偏离用行内 NOLINT + 理由标注。CI 移除
+  `continue-on-error`。提交 `fix+ci: promote clang-tidy to a required
+  gate (F2)`。
+- [x] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
   语义边界（当前实现在竞争窗口内可能短暂超出 N），补契约文档与并发测试。
-- [ ] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
+  ——契约定稿：单生产者严格 ≤ N；P 个并发生产者短暂超出上界 N + P − 1
+  （自愈：任一后续无竞争 push 恢复窗口）。契约写入 `pushKeepLatest` 注释、
+  `QueueConfig`、Framework_Design §7.1；新增 4 个测试（单生产者逐 push 严格
+  窗口、N=0 视作 1、并发超出上界 + 自愈、生产者+消费者守恒），TSan 验证通过。
+  提交 `docs+test: KeepLatest concurrency contract (F3)`。
+- [x] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
   外部 NDK 式 clang 工具链；补一个基于 `g++-aarch64-linux-gnu` 的通用
   toolchain 文件 + CI build-only job，守住嵌入式可移植性宣称。
+  ——新增 `platforms/linux/aarch64-gnu.cmake`（零外部输入）、`aarch64`
+  CMake preset、CI `build-aarch64` job（WERROR + JSON 加载器一并交叉编译，
+  `file` 校验产物确为 ARM aarch64）。提交 `feat: aarch64 cross-compile
+  toolchain + CI build-only gate (F4)`。
 
 ## 中期（v0.7+）
 

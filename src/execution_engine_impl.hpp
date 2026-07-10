@@ -179,7 +179,7 @@ private:
 
   void scheduleNodeExecution(NodeState &state);
   void executeNodeTask(CompiledGraph::NodeIndex index,
-                       std::shared_ptr<PipelineContext> context);
+                       const std::shared_ptr<PipelineContext> &context);
 
   bool gatherNodeInputs(NodeState &state, PortDataMap &inputs);
 
@@ -282,7 +282,7 @@ private:
 
   Result<PushStatus> routeToDownstream(const NodePtr &source_node,
                                        const std::string &output_port,
-                                       PortDataPtr data);
+                                       const PortDataPtr &data);
 
 private:
   EngineConfig m_config;

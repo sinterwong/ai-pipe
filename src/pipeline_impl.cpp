@@ -286,10 +286,8 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
   notifyExecutionStarted();
 
   // Setup completion handlers that fulfill the promise
-  auto promise_ptr = promise;
-
   m_engine->setPipelineResultCallback(
-      [this, promise_ptr, start_time](const PortDataMap &results) {
+      [this, promise, start_time](const PortDataMap &results) {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time);
 
@@ -303,17 +301,17 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
         ExecutionOutput output;
         output.outputs = results;
         output.elapsed = elapsed;
-        promise_ptr->set_value(Result<ExecutionOutput>::ok(std::move(output)));
+        promise->set_value(Result<ExecutionOutput>::ok(std::move(output)));
         notifyExecutionCompleted(results);
       });
 
   m_engine->setPipelineErrorCallback(
-      [this, promise_ptr, start_time](const std::string &error,
-                                      const std::string &node_name) {
+      [this, promise, start_time](const std::string &error,
+                                  const std::string &node_name) {
         transitionTo(PipelineState::ERROR);
 
         auto err = Error::nodeException(error, node_name);
-        promise_ptr->set_value(Result<ExecutionOutput>::err(std::move(err)));
+        promise->set_value(Result<ExecutionOutput>::err(std::move(err)));
         notifyExecutionFailed(Error::nodeException(error, node_name));
       });
 
@@ -371,7 +369,7 @@ Result<void> Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
   }
 
   if (context) {
-    m_context = context;
+    m_context = std::move(context);
   }
 
   transitionTo(PipelineState::RUNNING);

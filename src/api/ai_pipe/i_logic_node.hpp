@@ -40,7 +40,12 @@ public:
    * and tears down already-set-up nodes in reverse order.
    *
    * Default: no-op success, so existing nodes are unaffected.
+   *
+   * The by-value shared_ptr is part of the stable public signature
+   * (overriders may keep the context); changing it would break every
+   * existing node.
    */
+  // NOLINTNEXTLINE(performance-unnecessary-value-param)
   virtual Result<void> setup(std::shared_ptr<PipelineContext> context) {
     (void)context;
     return Result<void>::ok();

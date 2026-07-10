@@ -367,6 +367,159 @@ TEST_F(LockFreeDropStrategyTest, KeepLatest_MaintainsWindowSize) {
 }
 
 // =============================================================================
+// 5b. KeepLatest concurrency contract (F3)
+//     Strict window for one producer; bounded, self-healing overshoot for
+//     concurrent producers. Mirrors the contract documented at
+//     pushKeepLatest().
+// =============================================================================
+
+TEST_F(LockFreeDropStrategyTest, KeepLatest_SingleProducer_StrictWindow) {
+  // Single producer: size() <= N must hold after EVERY push, not just at
+  // the end - this is the strict half of the contract.
+  constexpr std::size_t keep_n = 3;
+  LockFreeNodeQueue<int> queue({
+      .capacity = 16,
+      .drop_policy = LockFreeDropPolicy::KeepLatest,
+      .keep_latest_n = keep_n,
+      .track_statistics = true,
+  });
+
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_TRUE(queue.push(i));
+    ASSERT_LE(queue.size(), keep_n) << "after push #" << i;
+  }
+}
+
+TEST_F(LockFreeDropStrategyTest, KeepLatest_ZeroWindowTreatedAsOne) {
+  LockFreeNodeQueue<int> queue({
+      .capacity = 16,
+      .drop_policy = LockFreeDropPolicy::KeepLatest,
+      .keep_latest_n = 0,
+      .track_statistics = true,
+  });
+
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_TRUE(queue.push(i));
+    ASSERT_LE(queue.size(), 1u);
+  }
+  // The single retained item is the newest one
+  auto front = queue.tryPop();
+  ASSERT_TRUE(front.has_value());
+  EXPECT_EQ(*front, 9);
+}
+
+TEST_F(LockFreeDropStrategyTest,
+       KeepLatest_ConcurrentProducers_BoundedOvershootAndSelfHealing) {
+  // P concurrent producers may transiently exceed N because the
+  // evict-then-push sequence is not atomic. The contract bounds the
+  // overshoot at N + P - 1 and guarantees one subsequent uncontended
+  // push restores the window.
+  constexpr std::size_t keep_n = 3;
+  constexpr std::size_t num_producers = 4;
+  constexpr std::size_t items_per_producer = 5000;
+
+  LockFreeNodeQueue<std::uint64_t> queue({
+      .capacity = 64,
+      .drop_policy = LockFreeDropPolicy::KeepLatest,
+      .keep_latest_n = keep_n,
+      .track_statistics = true,
+  });
+
+  std::atomic<std::uint64_t> callback_drops{0};
+  queue.setDropCallback([&](const DropEvent &) {
+    callback_drops.fetch_add(1, std::memory_order_relaxed);
+  });
+
+  std::vector<std::thread> producers;
+  producers.reserve(num_producers);
+  for (std::size_t p = 0; p < num_producers; ++p) {
+    producers.emplace_back([&queue, p]() {
+      for (std::size_t i = 0; i < items_per_producer; ++i) {
+        ASSERT_TRUE(queue.push(p * items_per_producer + i));
+      }
+    });
+  }
+  for (auto &t : producers) {
+    t.join();
+  }
+
+  // After all pushes complete the residual overshoot is bounded by the
+  // documented race window: at most N + P - 1 items.
+  EXPECT_LE(queue.size(), keep_n + num_producers - 1)
+      << "overshoot beyond the documented N + P - 1 bound";
+
+  // Conservation: every accepted item is either still queued or was
+  // counted (and reported) as dropped - no silent loss.
+  auto &stats = queue.statistics();
+  auto pushed = stats.total_pushed.load();
+  auto dropped = stats.total_dropped.load();
+  EXPECT_EQ(pushed, num_producers * items_per_producer);
+  EXPECT_EQ(pushed, queue.size() + dropped);
+  EXPECT_EQ(dropped, callback_drops.load());
+
+  // Self-healing: a single uncontended push evicts down into the
+  // window before enqueueing, restoring size() <= N.
+  ASSERT_TRUE(queue.push(0xFFFFFFFF));
+  EXPECT_LE(queue.size(), keep_n);
+}
+
+TEST_F(LockFreeDropStrategyTest,
+       KeepLatest_ProducersPlusConsumer_ConservationHolds) {
+  // Consumer pops (total_popped) and producer-side evictions
+  // (total_dropped) are accounted separately; together with the final
+  // queue contents they must equal every accepted push.
+  constexpr std::size_t keep_n = 4;
+  constexpr std::size_t num_producers = 3;
+  constexpr std::size_t items_per_producer = 4000;
+
+  LockFreeNodeQueue<std::uint64_t> queue({
+      .capacity = 32,
+      .drop_policy = LockFreeDropPolicy::KeepLatest,
+      .keep_latest_n = keep_n,
+      .track_statistics = true,
+  });
+
+  std::atomic<bool> producing{true};
+  std::atomic<std::uint64_t> consumed{0};
+
+  std::thread consumer([&]() {
+    while (producing.load(std::memory_order_acquire) || !queue.empty()) {
+      if (queue.tryPop().has_value()) {
+        consumed.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        std::this_thread::yield();
+      }
+    }
+  });
+
+  std::vector<std::thread> producers;
+  producers.reserve(num_producers);
+  for (std::size_t p = 0; p < num_producers; ++p) {
+    producers.emplace_back([&queue, p]() {
+      for (std::size_t i = 0; i < items_per_producer; ++i) {
+        ASSERT_TRUE(queue.push(p * items_per_producer + i));
+      }
+    });
+  }
+  for (auto &t : producers) {
+    t.join();
+  }
+  producing.store(false, std::memory_order_release);
+  consumer.join();
+
+  auto &stats = queue.statistics();
+  auto pushed = stats.total_pushed.load();
+  auto popped = stats.total_popped.load();
+  auto dropped = stats.total_dropped.load();
+
+  EXPECT_EQ(pushed, num_producers * items_per_producer);
+  EXPECT_EQ(popped, consumed.load());
+  EXPECT_EQ(pushed, popped + dropped + queue.size())
+      << "pushed=" << pushed << " popped=" << popped << " dropped=" << dropped
+      << " remaining=" << queue.size();
+}
+
+// =============================================================================
 // 6. forcePush: Guarantee No Data Loss
 //    (Direct regression test for the original bug)
 // =============================================================================

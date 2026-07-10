@@ -82,9 +82,16 @@ inline constexpr std::size_t k_cache_line_size = 64;
  * are implemented via atomic CAS loops on the ring buffer head/tail.
  */
 enum class LockFreeDropPolicy {
-  DropTail,   ///< Reject new items when queue is full (preserve oldest)
-  DropHead,   ///< Overwrite oldest item to make room for new (preserve latest)
-  KeepLatest, ///< Aggressive variant of DropHead keep only N latest items
+  DropTail, ///< Reject new items when queue is full (preserve oldest)
+  DropHead, ///< Overwrite oldest item to make room for new (preserve latest)
+  /**
+   * Aggressive variant of DropHead: evict down to a window of the
+   * keep_latest_n newest items on every push. The window bound is
+   * strict for a single producer but only eventually enforced under
+   * concurrent producers - see pushKeepLatest() for the precise
+   * contract.
+   */
+  KeepLatest,
 };
 
 // =============================================================================
@@ -520,7 +527,12 @@ public:
   struct Config {
     size_type capacity = 16;
     LockFreeDropPolicy drop_policy = LockFreeDropPolicy::DropHead;
-    size_type keep_latest_n = 1; ///< For KeepLatest policy
+    /**
+     * Window size N for the KeepLatest policy. 0 is treated as 1;
+     * N >= capacity degenerates to DropHead behavior. The "at most N"
+     * bound is strict only for a single producer (see pushKeepLatest).
+     */
+    size_type keep_latest_n = 1;
     bool track_statistics = true;
     std::string node_name;
     std::string port_name;
@@ -579,9 +591,8 @@ public:
   template <typename Accessor> void setFrameIdAccessor(Accessor accessor) {
     m_frameIdAccessor = [accessor](const T &item) -> std::optional<FrameId> {
       auto result = accessor(item);
-      if constexpr (std::is_same_v<decltype(result), std::optional<FrameId>>) {
-        return result;
-      } else if constexpr (std::is_same_v<decltype(result), FrameId>) {
+      if constexpr (std::is_same_v<decltype(result), std::optional<FrameId>> ||
+                    std::is_same_v<decltype(result), FrameId>) {
         return result;
       } else {
         if (result) {
@@ -601,7 +612,9 @@ public:
    *
    * - DropTail: reject if full
    * - DropHead: evict oldest to make room
-   * - KeepLatest: evict multiple oldest items to maintain keep_latest_n window
+   * - KeepLatest: evict multiple oldest items to maintain keep_latest_n
+   *   window (strict for one producer, eventual under concurrent
+   *   producers - see pushKeepLatest for the precise contract)
    *
    * @param item Item to push
    * @return true if item was accepted, false if rejected (DropTail only)
@@ -774,7 +787,33 @@ private:
   }
 
   /**
-   * @brief KeepLatest: evict excess to maintain at most keep_latest_n.
+   * @brief KeepLatest: evict excess to maintain at most keep_latest_n
+   *
+   * Contract (F3). Let N = max(keep_latest_n, 1):
+   *
+   * - The push always succeeds (returns true); backpressure is
+   *   expressed purely as evictions, and every evicted item is counted
+   *   in total_dropped and reported through the drop callback.
+   *
+   * - Single producer: when push() returns and no other push is in
+   *   flight, size() <= N. Concurrent consumer pops only shrink the
+   *   queue, so the bound holds regardless of consumer activity.
+   *
+   * - P concurrent producers: the evict-then-push sequence is not
+   *   atomic, so producers that pass the size check in the same race
+   *   window can each add an item before any of them observes the
+   *   others'. size() may therefore transiently reach N + P - 1
+   *   (never beyond capacity), and if pushing stops inside that
+   *   window the overshoot persists until the next operation.
+   *
+   * - Eventual enforcement (self-healing): every push first evicts
+   *   until it observes size() < N, so a single subsequent push with
+   *   no concurrent pushes restores size() <= N. Under a steady
+   *   stream of pushes the window converges without external help.
+   *
+   * Callers needing a hard "never more than N" guarantee must
+   * serialize producers externally; consumers should treat N as the
+   * steady-state window, not an invariant of every instant.
    */
   bool pushKeepLatest(T item) {
     auto target_keep = m_config.keep_latest_n > 0 ? m_config.keep_latest_n : 1;

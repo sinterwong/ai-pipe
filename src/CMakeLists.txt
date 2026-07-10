@@ -60,6 +60,14 @@ target_include_directories(ai_pipe
 # Link dependencies
 target_link_libraries(ai_pipe PRIVATE ${DEPENDENCY_LIBS})
 
+# Optional JSON graph loader: nlohmann/json is vendored, header-only, and
+# consumed PRIVATE-ly, so enabling it adds no link-time or install-time
+# dependency; graph_loader.cpp compiles to stubs when the option is OFF.
+if(AI_PIPE_WITH_JSON)
+    target_compile_definitions(ai_pipe PRIVATE AI_PIPE_WITH_JSON=1)
+    target_include_directories(ai_pipe SYSTEM PRIVATE ${3RDPARTY_ROOT})
+endif()
+
 # Generate package configuration files
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"

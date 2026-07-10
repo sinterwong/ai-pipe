@@ -8,7 +8,8 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "BUILD_AI_PIPE_TESTS": "ON"
+        "BUILD_AI_PIPE_TESTS": "ON",
+        "AI_PIPE_WITH_JSON": "ON"
       }
     },
     {
@@ -53,6 +54,17 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_SHARED_LIBS": "OFF"
       }
+    },
+    {
+      "name": "aarch64",
+      "displayName": "aarch64 cross-compile (GNU toolchain, build-only)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/platforms/linux/aarch64-gnu.cmake",
+        "AI_PIPE_WITH_JSON": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -60,6 +72,7 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "tsan", "configurePreset": "tsan" },
-    { "name": "static", "configurePreset": "static" }
+    { "name": "static", "configurePreset": "static" },
+    { "name": "aarch64", "configurePreset": "aarch64" }
   ]
 }

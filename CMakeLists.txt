@@ -24,6 +24,8 @@ option(BUILD_AI_PIPE_TESTS "Build with tests" OFF)
 option(AI_PIPE_WERROR "Treat ai_pipe warnings as errors" OFF)
 option(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
 option(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
+option(AI_PIPE_WITH_JSON
+    "Enable the JSON graph loader (vendored header-only nlohmann/json; core stays dependency-free when OFF)" OFF)
 
 # Sanitizer support (e.g. -DAI_PIPE_SANITIZER=address / thread / undefined)
 set(AI_PIPE_SANITIZER "" CACHE STRING
@@ -43,6 +45,7 @@ message(STATUS "Build AIPipe: ${AI_PIPE_VERSION}")
 message(STATUS "Build with tests: ${BUILD_AI_PIPE_TESTS}")
 message(STATUS "Build with examples: ${BUILD_AI_PIPE_EXAMPLES}")
 message(STATUS "Build with benchmarks: ${BUILD_AI_PIPE_BENCHMARKS}")
+message(STATUS "Build with JSON graph loader: ${AI_PIPE_WITH_JSON}")
 message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 

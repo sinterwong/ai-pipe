@@ -5,6 +5,45 @@ All notable changes to AI Pipe are documented here. The format follows
 (pre-1.0: minor bumps may contain breaking changes, see the Migration
 Guide).
 
+## [Unreleased]
+
+### Changed
+
+- **clang-tidy is now a required CI gate** (F2): the check set is
+  curated in `.clang-tidy` (bugprone / concurrency / performance /
+  portability groups + identifier naming; three false-positive/low-value
+  checks excluded with rationale), covers headers under `src/`, and
+  fails on any finding via `WarningsAsErrors`. All 31 actionable
+  findings from the triage were fixed - notably fewer `shared_ptr`
+  refcount bumps on the scheduling hot path (`executeNodeTask` /
+  `routeToDownstream` now take const refs) - with 3 intentional
+  deviations documented inline via NOLINT.
+
+### Added
+
+- **JSON graph loader** (F1, `AI_PIPE_WITH_JSON`, default OFF):
+  `ai_pipe/graph_loader.hpp` loads a declarative pipeline description -
+  nodes (type/name/config), edges, engine options - and assembles a
+  `Graph` through the `NodeRegistry` (`loadGraphFromJson`,
+  `loadPipelineFromJson`, plus file variants). Vendored header-only
+  nlohmann/json, consumed privately: the core stays dependency-free
+  when the option is OFF (the API then returns `InvalidConfiguration`;
+  probe with `jsonGraphLoaderAvailable()`). Strict schema - unknown
+  keys are rejected by name. Reference: `docs/JSON_Graph_Loader.md`.
+- **KeepLatest concurrency contract** (F3): the "keep newest N" bound
+  is now precisely specified - strict for a single producer, eventual
+  under P concurrent producers (transient overshoot bounded by
+  N + P - 1, self-healing on the next uncontended push). Documented at
+  `pushKeepLatest` / `QueueConfig` / design doc section 7.1 and locked in
+  by four new tests (per-push strict window, N=0 as 1, concurrent
+  overshoot bound + self-healing, producer/consumer conservation),
+  TSan-verified. No behavior change.
+- **aarch64 cross-compile gate** (F4): generic toolchain file
+  `platforms/linux/aarch64-gnu.cmake` (distro `g++-aarch64-linux-gnu`,
+  no external toolchain inputs), an `aarch64` CMake preset, and a
+  build-only CI job that cross-compiles the core (with `-Werror` and
+  the JSON loader) and verifies the artifact is really ARM aarch64.
+
 ## [0.5.0] - 2026-07-04
 
 Closes the gaps identified in the post-0.4.0 goal review.

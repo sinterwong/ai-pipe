@@ -73,7 +73,8 @@ Result<void>
 ExecutionEngine::execute(const PortDataMap &initial_inputs,
                          bool wait_for_completion,
                          std::shared_ptr<PipelineContext> context) {
-  return m_impl->execute(initial_inputs, wait_for_completion, context);
+  return m_impl->execute(initial_inputs, wait_for_completion,
+                         std::move(context));
 }
 
 void ExecutionEngine::stopExecutionAsync() { m_impl->stopExecutionAsync(); }
@@ -115,7 +116,7 @@ void ExecutionEngine::setDropCallback(
 
 Result<void>
 ExecutionEngine::startStreaming(std::shared_ptr<PipelineContext> context) {
-  return m_impl->startStreaming(context);
+  return m_impl->startStreaming(std::move(context));
 }
 
 void ExecutionEngine::stopStreaming(bool wait_for_drain) {
@@ -637,7 +638,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
     auto size = getQueueSize(node, actual_port);
     return PushStatus::enqueued(size);
   } else if (isOutputPort(node, actual_port)) {
-    return routeToDownstream(node, actual_port, std::move(data));
+    return routeToDownstream(node, actual_port, data);
   } else {
     return Result<PushStatus>::err(
         Error::portNotFound(actual_port, source_node));
@@ -1085,7 +1086,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
                 static_cast<std::uint64_t>(delay), std::memory_order_relaxed);
           }
         }
-        executeNodeTask(index, std::move(context));
+        executeNodeTask(index, context);
       });
 
   if (!posted) {
@@ -1101,7 +1102,8 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
 }
 
 void ExecutionEngine::Impl::executeNodeTask(
-    CompiledGraph::NodeIndex index, std::shared_ptr<PipelineContext> context) {
+    CompiledGraph::NodeIndex index,
+    const std::shared_ptr<PipelineContext> &context) {
   NodeState *state_ptr = m_statesByIndex[index];
   if (!state_ptr) {
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
@@ -1793,7 +1795,7 @@ ExecutionEngine::Impl::getFirstInputPort(const NodePtr &node) const {
 Result<PushStatus>
 ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
                                          const std::string &output_port,
-                                         PortDataPtr data) {
+                                         const PortDataPtr &data) {
 
   const auto src_index = m_compiledGraph->indexOfPtr(source_node.get());
   if (src_index == CompiledGraph::k_invalid_index) {

@@ -676,9 +676,12 @@ public:
 
     // Notify affected branches via callback (outside lock)
     if (m_dropCallback) {
+      std::string drop_reason = "Sync drop from ";
+      drop_reason += branch_id;
+      drop_reason += ": ";
+      drop_reason += reason;
       for (const auto &affected : affected_branches) {
-        m_dropCallback(group_id, affected, frame_id,
-                       "Sync drop from " + branch_id + ": " + reason);
+        m_dropCallback(group_id, affected, frame_id, drop_reason);
       }
     }
   }

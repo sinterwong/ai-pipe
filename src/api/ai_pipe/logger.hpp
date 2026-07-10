@@ -130,7 +130,7 @@ struct LoggerConfig {
   bool json_output = false; // Structured logging mode
 
   std::string file_path = "app.log";
-  size_t max_file_size = 10 * 1024 * 1024; // 10MB
+  size_t max_file_size = 10UL * 1024 * 1024; // 10MB
   int max_backup_count = 5;
   size_t async_queue_size = 8192;  // Ring buffer size for async mode
   size_t flush_interval_ms = 1000; // Periodic flush interval
@@ -259,7 +259,7 @@ public:
     int v = value;
 
     do {
-      temp[len++] = '0' + (v % 10);
+      temp[len++] = static_cast<char>('0' + (v % 10));
       v /= 10;
     } while (v > 0);
 

@@ -55,6 +55,7 @@ jobs:
         -DBUILD_AI_PIPE_TESTS=ON
         -DBUILD_AI_PIPE_EXAMPLES=ON
         -DBUILD_AI_PIPE_BENCHMARKS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
 
     - name: Build
@@ -105,6 +106,7 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -DAI_PIPE_SANITIZER=${{ matrix.sanitizer }}
         -S ${{ github.workspace }}
 
@@ -139,12 +141,47 @@ jobs:
         -DBUILD_SHARED_LIBS=OFF
         -DAI_PIPE_WERROR=ON
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j
     - name: Run GTests
       working-directory: ${{ github.workspace }}/build
       run: ./x86_64/bin/tests/ai_pipe_tests
+
+  build-aarch64:
+    runs-on: ubuntu-24.04
+    # Build-only portability gate: cross-compiles the dependency-free core
+    # (+ JSON loader) for aarch64 with the distro GNU toolchain. Tests need
+    # target hardware/qemu, so only compilation and linking are verified.
+    env:
+      CC: aarch64-linux-gnu-gcc
+      CXX: aarch64-linux-gnu-g++
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+          lfs: true
+    - name: Install aarch64 cross toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++-aarch64-linux-gnu
+    - name: Configure (aarch64 cross, warnings as errors)
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_TOOLCHAIN_FILE=platforms/linux/aarch64-gnu.cmake
+        -DCMAKE_BUILD_TYPE=Release
+        -DAI_PIPE_WERROR=ON
+        -DAI_PIPE_WITH_JSON=ON
+        -S ${{ github.workspace }}
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build -j
+    - name: Verify target architecture
+      run: |
+        file ${{ github.workspace }}/build/aarch64/lib/libai_pipe.so*
+        file ${{ github.workspace }}/build/aarch64/lib/libai_pipe.so.* \
+          | grep -q "ARM aarch64"
 
   lint:
     runs-on: ubuntu-24.04
@@ -167,9 +204,9 @@ jobs:
 
   clang-tidy:
     runs-on: ubuntu-24.04
-    # Advisory for now: promote to a required gate once the existing
-    # findings are triaged.
-    continue-on-error: true
+    # Required gate since F2: the curated check set in .clang-tidy runs
+    # clean over src/ (headers included via HeaderFilterRegex), and
+    # WarningsAsErrors turns any new finding into a nonzero exit.
     env:
       CC: clang-18
       CXX: clang++-18
@@ -187,6 +224,7 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=Debug
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
     - name: Run clang-tidy on library sources
       run: |

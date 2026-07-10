@@ -57,7 +57,13 @@ inline std::string executionModeToString(ExecutionMode mode) {
 struct QueueConfig {
   std::size_t capacity = 0;               ///< 0 = unbounded
   std::string drop_strategy = "DropHead"; ///< DropHead, DropTail, KeepLatest
-  std::size_t keep_latest_n = 1;          ///< For KeepLatest strategy
+  /**
+   * Window size N for KeepLatest. "At most N" is strict for a single
+   * producer per queue; with concurrent producers the bound is
+   * eventual (transient overshoot up to N + producers - 1). See the
+   * KeepLatest contract in the framework design doc, section 7.1.
+   */
+  std::size_t keep_latest_n = 1;
   bool track_statistics = true;
 };
 
@@ -585,7 +591,7 @@ struct EngineStatisticsSnapshot {
       return result;
     }
 
-    auto getPercentile = [&](double percentile) -> double {
+    auto get_percentile = [&](double percentile) -> double {
       std::uint64_t target = static_cast<std::uint64_t>(
           static_cast<double>(total) * percentile / 100.0);
       std::uint64_t cumulative = 0;
@@ -602,11 +608,11 @@ struct EngineStatisticsSnapshot {
       return 500000.0;
     };
 
-    result.emplace_back("p50", getPercentile(50.0));
-    result.emplace_back("p90", getPercentile(90.0));
-    result.emplace_back("p95", getPercentile(95.0));
-    result.emplace_back("p99", getPercentile(99.0));
-    result.emplace_back("p99.9", getPercentile(99.9));
+    result.emplace_back("p50", get_percentile(50.0));
+    result.emplace_back("p90", get_percentile(90.0));
+    result.emplace_back("p95", get_percentile(95.0));
+    result.emplace_back("p99", get_percentile(99.0));
+    result.emplace_back("p99.9", get_percentile(99.9));
 
     return result;
   }
