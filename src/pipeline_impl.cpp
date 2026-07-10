@@ -189,6 +189,8 @@ EngineConfig Pipeline::Impl::buildEngineConfig() const {
   config.enable_statistics = m_options.enable_statistics;
   config.alignment_policy = m_options.alignment_policy;
   config.alignment_tolerance = m_options.alignment_tolerance;
+  config.join_wait_timeout = m_options.join_wait_timeout;
+  config.join_timeout_policy = m_options.join_timeout_policy;
   return config;
 }
 

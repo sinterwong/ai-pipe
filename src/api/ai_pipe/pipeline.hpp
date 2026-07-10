@@ -50,6 +50,11 @@ struct PipelineOptions {
   /// Pairing tolerance for AlignmentPolicy::Timestamp
   std::chrono::microseconds alignment_tolerance{33000};
 
+  /// Join wait cap before degradation; 0 = wait indefinitely (default)
+  std::chrono::milliseconds join_wait_timeout{0};
+  /// Degradation on join timeout; see JoinTimeoutPolicy
+  JoinTimeoutPolicy join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
+
   static PipelineOptions batch(std::uint8_t workers = 4) {
     PipelineOptions opts;
     opts.mode = ExecutionMode::BATCH;

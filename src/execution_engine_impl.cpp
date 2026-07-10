@@ -189,6 +189,10 @@ ExecutionEngine::Impl::Impl(const EngineConfig &config) : m_config(config) {
 }
 
 ExecutionEngine::Impl::~Impl() {
+  // The watchdog posts tasks through the pool and reads node states, so
+  // it must stop before either is torn down.
+  stopJoinTimeoutWatchdog();
+
   // Always shut down the thread pool first, regardless of engine state.
   // Worker threads may still be executing tasks that access members
   // (m_nodeStates, m_activeTasks, m_stopFlag, callbacks, etc.) via the
@@ -269,6 +273,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   std::lock_guard<std::mutex> lock(m_engineMutex);
 
   // Re-initialization with a new graph: release the previous nodes.
+  stopJoinTimeoutWatchdog();
   teardownNodes();
 
   // Compile the graph up front: rejects empty graphs and cycles, and
@@ -556,6 +561,10 @@ Result<void> ExecutionEngine::Impl::startStreaming(
   m_engineState.store(EngineState::RUNNING, std::memory_order_release);
   m_statistics.reset();
 
+  if (m_config.join_wait_timeout.count() > 0 && !m_multiInputIndices.empty()) {
+    startJoinTimeoutWatchdog();
+  }
+
   LOG_INFO_S << "ExecutionEngine: Started streaming mode.";
   return Result<void>::ok();
 }
@@ -568,6 +577,8 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     }
     m_stopFlag.store(true, std::memory_order_release);
   }
+
+  stopJoinTimeoutWatchdog();
 
   notifyCompletionWaiters();
 
@@ -866,6 +877,7 @@ void ExecutionEngine::Impl::initializeNodeStates() {
   m_nodeStates.clear();
   m_nodeNameMap.clear();
   m_statesByIndex.assign(m_compiledGraph->nodeCount(), nullptr);
+  m_multiInputIndices.clear();
 
   for (const auto &node : m_graph->getNodes()) {
     auto state = std::make_unique<NodeState>(node, node->getName());
@@ -919,6 +931,11 @@ void ExecutionEngine::Impl::initializeQueues() {
       auto queue = std::make_shared<LockFreeQueueType>(queue_config);
       state->input_queues.push_back(queue.get());
       state->lock_free_queues[port_name] = std::move(queue);
+    }
+
+    if (state->input_ports.size() > 1 &&
+        state->index != CompiledGraph::k_invalid_index) {
+      m_multiInputIndices.push_back(state->index);
     }
   }
 }
@@ -1239,16 +1256,51 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
   // regardless of the sync strategy (multi-stream pipelines need
   // pairing even without cross-branch drop coordination).
   if (state.input_ports.size() > 1) {
+    // Consume the watchdog's timeout flag up front: if the gather below
+    // succeeds anyway (the missing input arrived in the meantime), the
+    // flag must not linger and degrade a later, unrelated wait.
+    const bool degrade_requested =
+        m_config.join_wait_timeout.count() > 0 &&
+        state.degrade_pending.exchange(false, std::memory_order_acq_rel);
+
+    bool gathered = false;
+    bool aligned_path = true;
     switch (m_config.alignment_policy) {
     case AlignmentPolicy::StreamFrameId:
-      return gatherStreamAlignedInputs(state, inputs);
+      gathered = gatherStreamAlignedInputs(state, inputs);
+      break;
     case AlignmentPolicy::Timestamp:
-      return gatherTimestampAlignedInputs(state, inputs);
+      gathered = gatherTimestampAlignedInputs(state, inputs);
+      break;
     case AlignmentPolicy::FrameId:
       if (m_syncStrategy && m_syncStrategy->isEnabled()) {
-        return gatherAlignedInputs(state, inputs);
+        gathered = gatherAlignedInputs(state, inputs);
+      } else {
+        aligned_path = false;
       }
       break;
+    }
+
+    if (aligned_path) {
+      if (!gathered && degrade_requested) {
+        gathered = degradeJoinGather(state, inputs);
+      }
+      return gathered;
+    }
+    // No aligned path (FrameId without a sync strategy): the plain
+    // gather below pops destructively, so a degraded partial read must
+    // happen before it touches the queues.
+    if (degrade_requested) {
+      bool any_port_dry = false;
+      for (const auto *queue : state.input_queues) {
+        if (!queue || queue->empty()) {
+          any_port_dry = true;
+          break;
+        }
+      }
+      if (any_port_dry) {
+        return degradeJoinGather(state, inputs);
+      }
     }
   }
 
@@ -1382,6 +1434,175 @@ void ExecutionEngine::Impl::dropStaleHead(NodeState &state,
   recordSyncDrop(state, state.input_ports[port_index], head.frameId(), reason);
   if (state.sync_tracked && head.hasFrameId()) {
     (void)m_syncStrategy->reportDrop(state.name, head.frameId(), reason);
+  }
+}
+
+bool ExecutionEngine::Impl::degradeJoinGather(NodeState &state,
+                                              PortDataMap &inputs) {
+  const std::size_t port_count = state.input_ports.size();
+  std::vector<std::optional<PortDataPtr>> heads(port_count);
+
+  std::size_t available = 0;
+  for (std::size_t i = 0; i < port_count; ++i) {
+    heads[i] = peekAlignmentHead(state, i);
+    if (heads[i].has_value()) {
+      ++available;
+    }
+  }
+  if (available == 0 || available == port_count) {
+    // Nothing is stuck (all dry, or the missing input arrived between
+    // the failed gather and now): let the normal path handle it.
+    return false;
+  }
+
+  // Reference = the oldest available head; that is the frame that has
+  // been waiting past the timeout. Null packets and unassigned ids are
+  // wildcards, pairing with anything.
+  const PortData *reference = nullptr;
+  for (std::size_t i = 0; i < port_count; ++i) {
+    if (!heads[i].has_value() || !heads[i].value()) {
+      continue;
+    }
+    const PortData &head = *heads[i].value();
+    if (m_config.alignment_policy != AlignmentPolicy::Timestamp &&
+        !head.hasFrameId()) {
+      continue;
+    }
+    if (!reference || head.timestamp < reference->timestamp) {
+      reference = &head;
+    }
+  }
+
+  auto pairs_with_reference = [&](const PortData &head) {
+    if (!reference) {
+      return true; // All wildcards
+    }
+    switch (m_config.alignment_policy) {
+    case AlignmentPolicy::StreamFrameId:
+      return !head.hasFrameId() || (head.stream_id == reference->stream_id &&
+                                    head.id == reference->id);
+    case AlignmentPolicy::Timestamp: {
+      const auto diff = head.timestamp >= reference->timestamp
+                            ? head.timestamp - reference->timestamp
+                            : reference->timestamp - head.timestamp;
+      return diff <= m_config.alignment_tolerance;
+    }
+    case AlignmentPolicy::FrameId:
+      break;
+    }
+    return !head.hasFrameId() || head.id == reference->id;
+  };
+
+  m_statistics.total_join_timeouts.fetch_add(1, std::memory_order_relaxed);
+
+  const bool deliver =
+      m_config.join_timeout_policy == JoinTimeoutPolicy::PartialInputs;
+  bool delivered = false;
+  for (std::size_t i = 0; i < port_count; ++i) {
+    if (!heads[i].has_value()) {
+      continue;
+    }
+    const PortDataPtr &head = heads[i].value();
+    if (head && !pairs_with_reference(*head)) {
+      continue; // Not part of the stuck frame; leave for normal pairing
+    }
+    if (deliver) {
+      auto data = state.input_queues[i]->tryPop();
+      if (!data.has_value()) {
+        continue;
+      }
+      recordDequeue(data.value());
+      inputs[state.input_ports[i]] = std::move(data.value());
+      delivered = true;
+    } else {
+      dropStaleHead(state, i, head ? *head : PortData{},
+                    "join wait timeout - frame skipped");
+    }
+  }
+
+  if (m_config.enable_drop_logging) {
+    LOG_DEBUG_S << "ExecutionEngine: Join timeout at " << state.name << " - "
+                << (deliver ? "executing with partial inputs"
+                            : "skipping stuck frame");
+  }
+
+  return deliver && delivered;
+}
+
+void ExecutionEngine::Impl::startJoinTimeoutWatchdog() {
+  stopJoinTimeoutWatchdog();
+  {
+    std::lock_guard<std::mutex> lock(m_watchdogMutex);
+    m_watchdogStop = false;
+  }
+  m_joinWatchdog = std::thread([this] { joinTimeoutWatchdogLoop(); });
+}
+
+void ExecutionEngine::Impl::stopJoinTimeoutWatchdog() {
+  {
+    std::lock_guard<std::mutex> lock(m_watchdogMutex);
+    m_watchdogStop = true;
+  }
+  m_watchdogCV.notify_all();
+  if (m_joinWatchdog.joinable()) {
+    m_joinWatchdog.join();
+  }
+}
+
+void ExecutionEngine::Impl::joinTimeoutWatchdogLoop() {
+  const auto timeout = m_config.join_wait_timeout;
+  const auto tick = std::chrono::milliseconds(
+      std::max<std::int64_t>(1, timeout.count() / 4));
+
+  std::unique_lock<std::mutex> lock(m_watchdogMutex);
+  for (;;) {
+    if (m_watchdogCV.wait_for(lock, tick, [this] { return m_watchdogStop; })) {
+      return;
+    }
+    if (m_stopFlag.load(std::memory_order_acquire)) {
+      continue; // Draining: leave remaining frames alone
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto index : m_multiInputIndices) {
+      NodeState *state = m_statesByIndex[index];
+      if (!state) {
+        continue;
+      }
+
+      std::size_t ready = 0;
+      for (const auto *queue : state->input_queues) {
+        if (queue && !queue->empty()) {
+          ++ready;
+        }
+      }
+      if (ready == 0 || ready == state->input_queues.size()) {
+        state->join_wait_since_ticks.store(0, std::memory_order_relaxed);
+        continue;
+      }
+
+      const auto since_ticks =
+          state->join_wait_since_ticks.load(std::memory_order_relaxed);
+      if (since_ticks == 0) {
+        state->join_wait_since_ticks.store(now.time_since_epoch().count(),
+                                           std::memory_order_relaxed);
+        continue;
+      }
+      const auto since = std::chrono::steady_clock::time_point{
+          std::chrono::steady_clock::duration{since_ticks}};
+      if (now - since < timeout) {
+        continue;
+      }
+
+      // Timed out: restart the window and request a degraded execution.
+      // If the node is currently EXECUTING the schedule attempt loses
+      // the CAS and the pending flag is consumed (possibly as a no-op)
+      // by that execution's own gather - never lost, never duplicated.
+      state->join_wait_since_ticks.store(now.time_since_epoch().count(),
+                                         std::memory_order_relaxed);
+      state->degrade_pending.store(true, std::memory_order_release);
+      scheduleNodeExecution(*state);
+    }
   }
 }
 
@@ -1799,6 +2020,8 @@ void ExecutionEngine::Impl::resetInternalState() {
       state->exec_state.store(NodeExecutionState::WAITING,
                               std::memory_order_relaxed);
       state->execution_count.store(0, std::memory_order_relaxed);
+      state->join_wait_since_ticks.store(0, std::memory_order_relaxed);
+      state->degrade_pending.store(false, std::memory_order_relaxed);
       state->stats.reset();
 
       for (auto &[port, queue] : state->lock_free_queues) {

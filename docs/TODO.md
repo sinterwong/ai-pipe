@@ -61,9 +61,17 @@
   `alignment_tolerance_us`）同步暴露。5 个新测试
   （test_multistream_alignment.cpp）。提交 `feat: multi-stream join
   alignment policies (F5)`。
-- [ ] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
+- [x] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
   落后分支由重调度机制自然等待、永失配对帧直接丢弃。为"宁要不完整数据也
   不要等待"的场景提供可配置的等待上限与降级策略（部分输入执行/跳帧）。
+  ——新增 `EngineConfig::join_wait_timeout`（0 = 无限等待，默认保持原行为）
+  + `JoinTimeoutPolicy`（PartialInputs / SkipFrame）。部分就绪的 Join 无
+  新数据时不会被重调度，故由轻量看门狗线程（仅超时启用且存在多输入节点时
+  运行，timeout/4 节拍）主动触发降级执行；降级取数按当前 AlignmentPolicy
+  选取最老配对集。新增 `total_join_timeouts` 统计；PipelineOptions 与
+  JSON loader（`join_wait_timeout_ms`/`join_timeout_policy`）同步暴露；
+  文档 Framework_Design §8.3。4 个新测试（test_join_timeout.cpp）。
+  提交 `feat: join alignment timeout degradation (F6)`。
 - [ ] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
   可注入 sink 输出，支持导出 chrome://tracing / Perfetto 格式，把第 9 章
   统计从聚合数字升级为可视化时间线。

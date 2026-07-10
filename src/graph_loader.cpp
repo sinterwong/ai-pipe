@@ -200,7 +200,8 @@ Result<PipelineOptions> parseOptions(const json &doc) {
           opts, "'options'",
           {"mode", "num_workers", "execution_timeout_ms", "queue_capacity",
            "drop_strategy", "enable_sync_coordination", "enable_statistics",
-           "alignment_policy", "alignment_tolerance_us"});
+           "alignment_policy", "alignment_tolerance_us",
+           "join_wait_timeout_ms", "join_timeout_policy"});
       !known) {
     return Result<PipelineOptions>::err(known.error());
   }
@@ -307,6 +308,35 @@ Result<PipelineOptions> parseOptions(const json &doc) {
     }
     options.alignment_tolerance = std::chrono::microseconds(
         static_cast<std::int64_t>(tolerance.value()));
+  }
+  if (opts.contains("join_wait_timeout_ms")) {
+    auto timeout =
+        parseUintOption(opts["join_wait_timeout_ms"], "join_wait_timeout_ms",
+                        0, std::numeric_limits<std::int64_t>::max());
+    if (!timeout) {
+      return Result<PipelineOptions>::err(timeout.error());
+    }
+    options.join_wait_timeout =
+        std::chrono::milliseconds(static_cast<std::int64_t>(timeout.value()));
+  }
+  if (opts.contains("join_timeout_policy")) {
+    if (!opts["join_timeout_policy"].is_string()) {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'join_timeout_policy' must be a string");
+    }
+    const auto policy = opts["join_timeout_policy"].get<std::string>();
+    if (policy == "partial_inputs") {
+      options.join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
+    } else if (policy == "skip_frame") {
+      options.join_timeout_policy = JoinTimeoutPolicy::SkipFrame;
+    } else {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'join_timeout_policy' must be \"partial_inputs\" or "
+          "\"skip_frame\" (got '" +
+              policy + "')");
+    }
   }
   return options;
 }

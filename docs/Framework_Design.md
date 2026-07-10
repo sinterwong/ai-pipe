@@ -427,6 +427,10 @@ struct EngineConfig {
   AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId; // 多输入对齐键
   std::chrono::microseconds alignment_tolerance{33000};       // Timestamp 策略容差
 
+  std::chrono::milliseconds join_wait_timeout{0};             // Join 等待上限（0 = 无限等待）
+  JoinTimeoutPolicy join_timeout_policy =                     // 超时降级策略
+      JoinTimeoutPolicy::PartialInputs;
+
   bool enable_statistics = true;
   bool enable_drop_logging = true;
 };
@@ -612,6 +616,25 @@ auto eos  = FrameMetadataFactory::createEndOfStream();       // 流结束标记
 需要精确协调时应保证 ID 全局唯一（引擎默认编号即满足），或仅依赖对齐层丢弃。
 时间戳来源：入线时若包未携带时间戳由引擎盖章（`stampIncomingFrame`）；
 用户自带采集时间戳时需自行保证端口内单调不减。
+
+### 8.3 Join 对齐超时降级 — `JoinTimeoutPolicy`（F6）
+
+默认行为（`join_wait_timeout = 0`）：落后分支由重调度机制自然等待，
+永失配对的帧由对齐层丢弃——即"宁等待也不要不完整数据"。为相反偏好
+（"宁要不完整数据也不要等待"）提供可配置降级（**仅流模式**；批模式对缺失
+输入立即失败，不存在等待）：
+
+| 策略 | 超时后的行为 |
+|------|------------|
+| `PartialInputs`（默认） | 以已就绪端口执行节点；缺失端口在 `PortDataMap` 中不出现，节点须自行容忍 |
+| `SkipFrame` | 丢弃卡住的队头帧（drop 回调 reason 为 `join wait timeout`），让后续帧正常配对 |
+
+**机制**：部分就绪的 Join 在无新数据到达时不会被重调度，超时需要主动唤醒——
+仅当 `join_wait_timeout > 0` 且图中存在多输入节点时，引擎启动一个轻量看门狗
+线程（随 `startStreaming`/`stopStreaming` 起停），以 timeout/4 为节拍扫描
+多输入节点：持续部分就绪超过上限者被调度一次降级执行。降级取数选取已就绪
+端口中**最老的配对集**（按当前 `AlignmentPolicy` 语义），超时精度为 ±一个
+节拍。降级次数计入 `EngineStatistics::total_join_timeouts`。
 
 ---
 

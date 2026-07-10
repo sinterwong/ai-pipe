@@ -26,6 +26,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace ai_pipe {
@@ -75,6 +76,14 @@ public:
     // previous execution racing a resetInternalState), hence atomic.
     std::atomic<std::chrono::steady_clock::rep> last_execution_ticks{0};
     std::atomic<std::uint64_t> execution_count{0};
+
+    // Join timeout tracking (F6), touched only when
+    // EngineConfig::join_wait_timeout > 0. join_wait_since_ticks marks
+    // when the watchdog first saw this node partially ready (0 = not
+    // waiting); degrade_pending asks the next failed aligned gather to
+    // apply the configured degradation instead of waiting.
+    std::atomic<std::chrono::steady_clock::rep> join_wait_since_ticks{0};
+    std::atomic<bool> degrade_pending{false};
 
     [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
       return std::chrono::steady_clock::time_point{
@@ -234,6 +243,31 @@ private:
   void dropStaleHead(NodeState &state, std::size_t port_index,
                      const PortData &head, const char *reason);
 
+  /**
+   * @brief Apply the join timeout degradation to a blocked join (F6)
+   *
+   * Called when an aligned gather failed and the watchdog flagged the
+   * node as timed out. Selects the oldest pairing set among the ports
+   * that do have data (per the active alignment policy) and either
+   * delivers it as partial inputs (returns true) or discards it as a
+   * skipped frame (returns false; reported through the drop callback).
+   */
+  bool degradeJoinGather(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Watchdog driving join timeouts (streaming mode only)
+   *
+   * Nothing re-schedules a partially-ready join while no new data
+   * arrives, so timeouts need an active wakeup: a lightweight thread
+   * (started only when join_wait_timeout > 0 and the graph has
+   * multi-input nodes) scans those nodes every timeout/4 and schedules
+   * a degraded execution once a node stays partially ready past the
+   * timeout. Timeout accuracy is one tick (+-timeout/4).
+   */
+  void startJoinTimeoutWatchdog();
+  void stopJoinTimeoutWatchdog();
+  void joinTimeoutWatchdogLoop();
+
   void recordSyncDrop(const NodeState &state, const std::string &port_name,
                       FrameId frame_id, const char *reason);
 
@@ -350,6 +384,16 @@ private:
   // Dense index -> state lookup aligned with CompiledGraph::NodeIndex;
   // the raw pointers are owned by m_nodeStates.
   std::vector<NodeState *> m_statesByIndex;
+
+  // Multi-input node indices, precomputed at initialize; the join
+  // timeout watchdog scans only these.
+  std::vector<CompiledGraph::NodeIndex> m_multiInputIndices;
+
+  // Join timeout watchdog (see startJoinTimeoutWatchdog)
+  std::thread m_joinWatchdog;
+  std::mutex m_watchdogMutex;
+  std::condition_variable m_watchdogCV;
+  bool m_watchdogStop{false};
 
   // Nodes that completed setup(), in setup order; drives teardown.
   std::vector<NodePtr> m_setUpNodes;
