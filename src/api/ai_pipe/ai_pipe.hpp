@@ -44,4 +44,7 @@
 // Frame Metadata (for streaming scenarios)
 #include "ai_pipe/frame_metadata.hpp"
 
+// Execution Tracing (per-frame span events)
+#include "ai_pipe/trace.hpp"
+
 #endif // AI_PIPE_AI_PIPE_HPP

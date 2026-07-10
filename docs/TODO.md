@@ -72,9 +72,17 @@
   JSON loader（`join_wait_timeout_ms`/`join_timeout_policy`）同步暴露；
   文档 Framework_Design §8.3。4 个新测试（test_join_timeout.cpp）。
   提交 `feat: join alignment timeout degradation (F6)`。
-- [ ] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
+- [x] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
   可注入 sink 输出，支持导出 chrome://tracing / Perfetto 格式，把第 9 章
   统计从聚合数字升级为可视化时间线。
+  ——新增公共头 `ai_pipe/trace.hpp`：`ITraceSink` 接口 + `TraceEvent`
+  （phase/node/detail/frame/stream/start/duration/thread）+ 内置
+  `ChromeTraceSink`（Chrome Trace Event JSON，chrome://tracing 与
+  Perfetto 均可打开）。注入点 `ExecutionEngine::setTraceSink` 与
+  `Pipeline::setTraceSink`（仅 IDLE）；四个埋点（Enqueue 瞬时 +
+  Schedule/Execute/Propagate 区间），未启用时开销为一次指针判空。
+  文档 Framework_Design §9.4。4 个新测试（test_trace.cpp）。
+  提交 `feat: execution tracing hooks with Chrome trace export (F7)`。
 - [ ] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
   静态初始化时生效，NodeRegistry 基础已具备），需定义插件 ABI 边界与
   版本握手。

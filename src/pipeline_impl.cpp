@@ -544,6 +544,14 @@ EngineStatisticsSnapshot Pipeline::Impl::statistics() const {
   return m_engine->statistics();
 }
 
+Result<void> Pipeline::Impl::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  if (!m_engine) {
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             "Pipeline has no engine");
+  }
+  return m_engine->setTraceSink(std::move(sink));
+}
+
 // -------------------------------------------------------------------------
 // Accessors
 // -------------------------------------------------------------------------
@@ -792,6 +800,10 @@ ExecutionMode Pipeline::mode() const { return m_impl->mode(); }
 
 EngineStatisticsSnapshot Pipeline::statistics() const {
   return m_impl->statistics();
+}
+
+Result<void> Pipeline::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  return m_impl->setTraceSink(std::move(sink));
 }
 
 // Accessors

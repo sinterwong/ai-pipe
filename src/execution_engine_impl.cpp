@@ -57,6 +57,10 @@ Result<void> ExecutionEngine::setSyncStrategy(SyncStrategyPtr strategy) {
   return m_impl->setSyncStrategy(std::move(strategy));
 }
 
+Result<void> ExecutionEngine::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  return m_impl->setTraceSink(std::move(sink));
+}
+
 void ExecutionEngine::configureForMode(ExecutionMode mode) {
   m_impl->configureForMode(mode);
 }
@@ -231,6 +235,49 @@ Result<void> ExecutionEngine::Impl::setSyncStrategy(
   }
   m_syncStrategy = std::move(strategy);
   return Result<void>::ok();
+}
+
+Result<void>
+ExecutionEngine::Impl::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  if (m_engineState.load(std::memory_order_acquire) != EngineState::IDLE) {
+    return Result<void>::err(ErrorCode::InvalidState,
+                             "Cannot change trace sink while engine is "
+                             "running");
+  }
+  m_traceSink = std::move(sink);
+  return Result<void>::ok();
+}
+
+void ExecutionEngine::Impl::emitTrace(TracePhase phase, const std::string &node,
+                                      std::string_view detail,
+                                      const PortData *packet, Timestamp start,
+                                      std::chrono::microseconds duration) {
+  ITraceSink *sink = m_traceSink.get();
+  if (!sink) {
+    return;
+  }
+  TraceEvent event;
+  event.phase = phase;
+  event.node = node;
+  event.detail = detail;
+  if (packet) {
+    event.frame_id = packet->id;
+    event.stream_id = packet->stream_id;
+  }
+  event.start = start;
+  event.duration = duration;
+  event.thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+  sink->onEvent(event);
+}
+
+const PortData *
+ExecutionEngine::Impl::primaryFrame(const PortDataMap &packets) {
+  for (const auto &[port, packet] : packets) {
+    if (packet && packet->hasFrameId()) {
+      return packet.get();
+    }
+  }
+  return nullptr;
 }
 
 void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
@@ -1094,15 +1141,16 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
   const bool posted = m_threadPool->post(
       [this, index = state.index, context = m_currentContext.load(),
        scheduled_at = std::chrono::steady_clock::now()]() mutable {
-        if (m_config.enable_statistics) {
-          const auto delay =
-              std::chrono::duration_cast<std::chrono::microseconds>(
-                  std::chrono::steady_clock::now() - scheduled_at)
-                  .count();
-          if (delay > 0) {
-            m_statistics.total_schedule_time_us.fetch_add(
-                static_cast<std::uint64_t>(delay), std::memory_order_relaxed);
-          }
+        const auto delay = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - scheduled_at);
+        if (m_config.enable_statistics && delay.count() > 0) {
+          m_statistics.total_schedule_time_us.fetch_add(
+              static_cast<std::uint64_t>(delay.count()),
+              std::memory_order_relaxed);
+        }
+        if (NodeState *scheduled = m_statesByIndex[index]) {
+          emitTrace(TracePhase::Schedule, scheduled->name, {}, nullptr,
+                    scheduled_at, delay);
         }
         executeNodeTask(index, context);
       });
@@ -1182,9 +1230,15 @@ void ExecutionEngine::Impl::executeNodeTask(
 
   // Process node - now returns Result<void> with rich error context
   m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
+  const auto process_start = std::chrono::steady_clock::now();
   auto process_result = processNode(state.node, inputs, outputs, context);
 
   auto end_time = std::chrono::steady_clock::now();
+  emitTrace(TracePhase::Execute, state.name,
+            process_result ? std::string_view{} : std::string_view{"failed"},
+            primaryFrame(inputs), process_start,
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                end_time - process_start));
   auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
                          end_time - start_time)
                          .count();
@@ -1877,7 +1931,14 @@ void ExecutionEngine::Impl::handleNodeSuccess(NodeState &state,
   }
 
   // Propagate outputs
+  const auto propagate_start = std::chrono::steady_clock::now();
   propagateOutputs(state, outputs);
+  if (m_traceSink && !outputs.empty()) {
+    emitTrace(TracePhase::Propagate, state.name, {}, primaryFrame(outputs),
+              propagate_start,
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  std::chrono::steady_clock::now() - propagate_start));
+  }
 
   // Check if node should be rescheduled
   if (m_schedulerStrategy->onNodeComplete(state.node, true, outputs)) {
@@ -2048,7 +2109,20 @@ bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
 
   auto queue_it = state.lock_free_queues.find(port_name);
   if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+    // Copy the identity header before the queue takes ownership: once
+    // pushed, a consumer may pop and release the packet concurrently.
+    PortData trace_header;
+    const bool tracing = m_traceSink != nullptr;
+    if (tracing && data) {
+      trace_header.id = data->id;
+      trace_header.stream_id = data->stream_id;
+    }
     if (queue_it->second->push(std::move(data))) {
+      if (tracing) {
+        emitTrace(TracePhase::Enqueue, state.name, port_name, &trace_header,
+                  std::chrono::steady_clock::now(),
+                  std::chrono::microseconds{0});
+      }
       return true;
     }
     recordQueueRejection(state.name, port_name);

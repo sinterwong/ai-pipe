@@ -684,6 +684,28 @@ snap.node_stats;            // 每节点统计
 - 输入/输出计数
 - 当前队列深度
 
+### 9.4 执行追踪 — `ITraceSink` / `ChromeTraceSink`（F7）
+
+把第 9 章的聚合数字升级为 per-frame 时间线：注入 `ITraceSink`
+（`ExecutionEngine::setTraceSink` / `Pipeline::setTraceSink`，仅 IDLE 时可换）
+后，引擎在四个生命周期点发出 `TraceEvent`：
+
+| Phase | 语义 | 类型 |
+|-------|------|------|
+| `Enqueue` | 包被节点输入队列接收（含 detail=端口名） | 瞬时 |
+| `Schedule` | READY → worker 取走（span = 调度延迟） | 区间 |
+| `Execute` | `process()` 调用（携带输入帧的 frame/stream id） | 区间 |
+| `Propagate` | 输出路由到下游队列 | 区间 |
+
+**约定**：`onEvent` 在 worker 线程/入线线程上并发调用且处于热路径——sink
+必须线程安全且廉价；`TraceEvent` 的 string_view 字段仅在调用期间有效，
+留存需拷贝。未安装 sink 时每个埋点只花一次指针判空。
+
+**内置导出**：`ChromeTraceSink` 缓冲全部事件（互斥保护，适合测试/有界
+采集，不适合无界 7×24），`toJson()`/`writeFile()` 输出 Chrome Trace Event
+格式——chrome://tracing 或 https://ui.perfetto.dev 直接打开；frame_id/
+stream_id 挂在 args 上可按帧切片。
+
 ---
 
 ## 10. 日志系统

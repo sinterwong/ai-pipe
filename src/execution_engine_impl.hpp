@@ -19,6 +19,7 @@
 
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
+#include "ai_pipe/trace.hpp"
 #include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
@@ -115,6 +116,7 @@ public:
   Result<void>
   setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
   Result<void> setSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
   void configureForMode(ExecutionMode mode);
 
   Result<void> initialize(Graph *graph, std::uint8_t num_workers);
@@ -268,6 +270,19 @@ private:
   void stopJoinTimeoutWatchdog();
   void joinTimeoutWatchdogLoop();
 
+  /**
+   * @brief Emit a trace event if a sink is installed (F7)
+   *
+   * Frame identity is taken from `packet` when non-null. Costs one
+   * pointer check when tracing is disabled.
+   */
+  void emitTrace(TracePhase phase, const std::string &node,
+                 std::string_view detail, const PortData *packet,
+                 Timestamp start, std::chrono::microseconds duration);
+
+  /** @brief First packet carrying a frame id, or nullptr */
+  static const PortData *primaryFrame(const PortDataMap &packets);
+
   void recordSyncDrop(const NodeState &state, const std::string &port_name,
                       FrameId frame_id, const char *reason);
 
@@ -364,6 +379,10 @@ private:
 
   std::unique_ptr<ISchedulerStrategy> m_schedulerStrategy;
   std::unique_ptr<ISyncStrategy> m_syncStrategy;
+
+  // Trace sink (F7). Set only while IDLE, read from worker threads
+  // while running; the start/stop transitions provide the ordering.
+  std::shared_ptr<ITraceSink> m_traceSink;
 
   Graph *m_graph{nullptr};
 

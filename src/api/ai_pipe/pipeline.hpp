@@ -34,6 +34,7 @@
 namespace ai_pipe {
 
 class PipelineBuilder;
+class ITraceSink;
 
 struct PipelineOptions {
   ExecutionMode mode = ExecutionMode::BATCH;
@@ -254,6 +255,13 @@ public:
   nodeStates() const;
   [[nodiscard]] ExecutionMode mode() const;
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
+
+  /**
+   * @brief Install a trace sink on the underlying engine (F7)
+   *
+   * See ai_pipe/trace.hpp. Only allowed while the engine is idle.
+   */
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
   // ---- Accessors ----
   [[nodiscard]] const Graph &graph() const;
