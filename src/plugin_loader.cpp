@@ -107,9 +107,13 @@ PluginLoader::load(const std::string &path) {
   const std::unordered_set<std::string> before_set(types_before.begin(),
                                                    types_before.end());
 
+  // PluginLoader is documented single-threaded (startup-time loading),
+  // and glibc's dlerror state is thread-local anyway.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
   ::dlerror(); // Clear any stale error
   void *handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (!handle) {
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *reason = ::dlerror();
     return Result<LoadedPlugin>::err(ErrorCode::PluginLoadFailed,
                                      "dlopen failed for '" + path +
