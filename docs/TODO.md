@@ -26,9 +26,13 @@
   `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
 - [ ] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
   语义边界（当前实现在竞争窗口内可能短暂超出 N），补契约文档与并发测试。
-- [ ] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
+- [x] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
   外部 NDK 式 clang 工具链；补一个基于 `g++-aarch64-linux-gnu` 的通用
   toolchain 文件 + CI build-only job，守住嵌入式可移植性宣称。
+  ——新增 `platforms/linux/aarch64-gnu.cmake`（零外部输入）、`aarch64`
+  CMake preset、CI `build-aarch64` job（WERROR + JSON 加载器一并交叉编译，
+  `file` 校验产物确为 ARM aarch64）。提交 `feat: aarch64 cross-compile
+  toolchain + CI build-only gate (F4)`。
 
 ## 中期（v0.7+）
 

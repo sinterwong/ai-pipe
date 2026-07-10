@@ -18,6 +18,11 @@ Guide).
   when the option is OFF (the API then returns `InvalidConfiguration`;
   probe with `jsonGraphLoaderAvailable()`). Strict schema - unknown
   keys are rejected by name. Reference: `docs/JSON_Graph_Loader.md`.
+- **aarch64 cross-compile gate** (F4): generic toolchain file
+  `platforms/linux/aarch64-gnu.cmake` (distro `g++-aarch64-linux-gnu`,
+  no external toolchain inputs), an `aarch64` CMake preset, and a
+  build-only CI job that cross-compiles the core (with `-Werror` and
+  the JSON loader) and verifies the artifact is really ARM aarch64.
 
 ## [0.5.0] - 2026-07-04
 
