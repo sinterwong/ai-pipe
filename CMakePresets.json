@@ -8,7 +8,8 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "BUILD_AI_PIPE_TESTS": "ON"
+        "BUILD_AI_PIPE_TESTS": "ON",
+        "AI_PIPE_WITH_JSON": "ON"
       }
     },
     {

@@ -5,6 +5,20 @@ All notable changes to AI Pipe are documented here. The format follows
 (pre-1.0: minor bumps may contain breaking changes, see the Migration
 Guide).
 
+## [Unreleased]
+
+### Added
+
+- **JSON graph loader** (F1, `AI_PIPE_WITH_JSON`, default OFF):
+  `ai_pipe/graph_loader.hpp` loads a declarative pipeline description -
+  nodes (type/name/config), edges, engine options - and assembles a
+  `Graph` through the `NodeRegistry` (`loadGraphFromJson`,
+  `loadPipelineFromJson`, plus file variants). Vendored header-only
+  nlohmann/json, consumed privately: the core stays dependency-free
+  when the option is OFF (the API then returns `InvalidConfiguration`;
+  probe with `jsonGraphLoaderAvailable()`). Strict schema - unknown
+  keys are rejected by name. Reference: `docs/JSON_Graph_Loader.md`.
+
 ## [0.5.0] - 2026-07-04
 
 Closes the gaps identified in the post-0.4.0 goal review.

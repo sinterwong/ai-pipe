@@ -55,6 +55,7 @@ jobs:
         -DBUILD_AI_PIPE_TESTS=ON
         -DBUILD_AI_PIPE_EXAMPLES=ON
         -DBUILD_AI_PIPE_BENCHMARKS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
 
     - name: Build
@@ -105,6 +106,7 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -DAI_PIPE_SANITIZER=${{ matrix.sanitizer }}
         -S ${{ github.workspace }}
 
@@ -139,6 +141,7 @@ jobs:
         -DBUILD_SHARED_LIBS=OFF
         -DAI_PIPE_WERROR=ON
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j
@@ -187,6 +190,7 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=Debug
         -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=ON
         -S ${{ github.workspace }}
     - name: Run clang-tidy on library sources
       run: |
