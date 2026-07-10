@@ -14,10 +14,14 @@
 
 ## 近期（v0.6 候选）
 
-- [ ] **F1. JSON 构图加载器**：基于 `NodeRegistry`（v0.4.0 P6.1）实现
+- [x] **F1. JSON 构图加载器**：基于 `NodeRegistry`（v0.4.0 P6.1）实现
   `Result<Graph> loadGraphFromJson(...)`——节点（type/name/config）+ 边 +
   引擎选项的声明式描述。nlohmann/json 已在 3rdparty 中（目前仅测试用），
   需决策：作为可选组件（`AI_PIPE_WITH_JSON`）保持核心零依赖。
+  ——已按可选组件方案落地（`AI_PIPE_WITH_JSON`，默认 OFF，OFF 时编译为返回
+  `InvalidConfiguration` 的 stub，链接兼容不变），提供
+  `loadGraphFromJson` / `loadPipelineFromJson` 及文件变体，schema 严格校验
+  （未知键报错），文档 `docs/JSON_Graph_Loader.md`。提交 9a1d721。
 - [ ] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
   `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
 - [ ] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
