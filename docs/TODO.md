@@ -97,10 +97,17 @@
   测试基建：3 个真实测试插件（有效/无描述符/ABI 不符）+ 5 个测试
   （test_plugin_loader.cpp，含卸载后真实重载验证）。提交
   `feat: dlopen node plugin loading with ABI handshake (F8)`。
-- [ ] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
+- [x] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
   （`std::map<string, ptr>`）是热路径上最后的字符串键容器（每次执行构造）。
   替换为索引化端口数组的新 process API 是**重大 API 变更**——先在真实负载
   上 profile 证明收益再动手，避免为微优化破坏 API。
+  ——按条目自身的门槛完成 profile 并**决策不实施**：map 版 47–153 ns/次
+  执行 vs 索引版 17–21 ns（1–4 端口），最大节省 30–132 ns，仅与纯框架
+  开销同量级；对任意真实负载（≥100 μs/节点）占比 < 0.15%，不值得破坏
+  API。基准 `benchmarks/portdatamap_benchmark.cpp`，证据与重开条件
+  （F10 真实负载 profile 中 PortDataMap 进入热点前列）记录于
+  Performance_Report §7。提交 `perf: F9 profiling verdict - keep
+  PortDataMap, no API break`。
 
 ## v1.0 / API 冻结条件
 
