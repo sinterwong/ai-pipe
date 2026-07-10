@@ -335,10 +335,14 @@ Result<Graph> assembleGraph(const json &doc, const NodeRegistry &registry) {
 
     auto node = registry.create(type, name, config);
     if (!node) {
-      return Result<Graph>::err(
-          ErrorCode::InvalidConfiguration,
-          "Node '" + name + "' (type '" + type +
-              "') could not be created: " + node.error().toString());
+      std::string message = "Node '";
+      message += name;
+      message += "' (type '";
+      message += type;
+      message += "') could not be created: ";
+      message += node.error().toString();
+      return Result<Graph>::err(ErrorCode::InvalidConfiguration,
+                                std::move(message));
     }
     if (!graph.addNode(node.value())) {
       return Result<Graph>::err(ErrorCode::InvalidConfiguration,
@@ -385,12 +389,19 @@ Result<Graph> assembleGraph(const json &doc, const NodeRegistry &registry) {
       // payload-type agreement, and duplicate edges; details are logged
       // by the graph, so the error here locates the offending entry.
       if (!graph.addEdge(from_node, from_port, to_node, to_port)) {
-        return Result<Graph>::err(
-            ErrorCode::InvalidConfiguration,
-            where + " (" + from_node + "." + from_port + " -> " + to_node +
-                "." + to_port +
-                ") was rejected: check node names, declared ports, payload "
-                "types, and duplicates (see log for details)");
+        std::string message = where;
+        message += " (";
+        message += from_node;
+        message += '.';
+        message += from_port;
+        message += " -> ";
+        message += to_node;
+        message += '.';
+        message += to_port;
+        message += ") was rejected: check node names, declared ports, "
+                   "payload types, and duplicates (see log for details)";
+        return Result<Graph>::err(ErrorCode::InvalidConfiguration,
+                                  std::move(message));
       }
       ++index;
     }

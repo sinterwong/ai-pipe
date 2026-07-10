@@ -591,9 +591,8 @@ public:
   template <typename Accessor> void setFrameIdAccessor(Accessor accessor) {
     m_frameIdAccessor = [accessor](const T &item) -> std::optional<FrameId> {
       auto result = accessor(item);
-      if constexpr (std::is_same_v<decltype(result), std::optional<FrameId>>) {
-        return result;
-      } else if constexpr (std::is_same_v<decltype(result), FrameId>) {
+      if constexpr (std::is_same_v<decltype(result), std::optional<FrameId>> ||
+                    std::is_same_v<decltype(result), FrameId>) {
         return result;
       } else {
         if (result) {

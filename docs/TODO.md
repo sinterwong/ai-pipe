@@ -22,8 +22,16 @@
   `InvalidConfiguration` 的 stub，链接兼容不变），提供
   `loadGraphFromJson` / `loadPipelineFromJson` 及文件变体，schema 严格校验
   （未知键报错），文档 `docs/JSON_Graph_Loader.md`。提交 9a1d721。
-- [ ] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
+- [x] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
   `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
+  ——checks 集固化为 bugprone/concurrency/performance/portability 全组 +
+  命名检查，排除 3 个误报/低价值类（easily-swappable-parameters、
+  unchecked-optional-access、enum-size，理由见 `.clang-tidy` 注释）；
+  `HeaderFilterRegex` 覆盖 src/ 头文件，`WarningsAsErrors: '*'` 保证退出码
+  把关。分诊 65 条告警：34 条归入排除类，其余修净（含 shared_ptr 传参优化、
+  窄化转换显式化等），3 处有意偏离用行内 NOLINT + 理由标注。CI 移除
+  `continue-on-error`。提交 `fix+ci: promote clang-tidy to a required
+  gate (F2)`。
 - [x] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
   语义边界（当前实现在竞争窗口内可能短暂超出 N），补契约文档与并发测试。
   ——契约定稿：单生产者严格 ≤ N；P 个并发生产者短暂超出上界 N + P − 1

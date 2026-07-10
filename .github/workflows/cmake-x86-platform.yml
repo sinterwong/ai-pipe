@@ -204,9 +204,9 @@ jobs:
 
   clang-tidy:
     runs-on: ubuntu-24.04
-    # Advisory for now: promote to a required gate once the existing
-    # findings are triaged.
-    continue-on-error: true
+    # Required gate since F2: the curated check set in .clang-tidy runs
+    # clean over src/ (headers included via HeaderFilterRegex), and
+    # WarningsAsErrors turns any new finding into a nonzero exit.
     env:
       CC: clang-18
       CXX: clang++-18

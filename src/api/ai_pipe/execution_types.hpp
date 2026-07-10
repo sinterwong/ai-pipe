@@ -591,7 +591,7 @@ struct EngineStatisticsSnapshot {
       return result;
     }
 
-    auto getPercentile = [&](double percentile) -> double {
+    auto get_percentile = [&](double percentile) -> double {
       std::uint64_t target = static_cast<std::uint64_t>(
           static_cast<double>(total) * percentile / 100.0);
       std::uint64_t cumulative = 0;
@@ -608,11 +608,11 @@ struct EngineStatisticsSnapshot {
       return 500000.0;
     };
 
-    result.emplace_back("p50", getPercentile(50.0));
-    result.emplace_back("p90", getPercentile(90.0));
-    result.emplace_back("p95", getPercentile(95.0));
-    result.emplace_back("p99", getPercentile(99.0));
-    result.emplace_back("p99.9", getPercentile(99.9));
+    result.emplace_back("p50", get_percentile(50.0));
+    result.emplace_back("p90", get_percentile(90.0));
+    result.emplace_back("p95", get_percentile(95.0));
+    result.emplace_back("p99", get_percentile(99.0));
+    result.emplace_back("p99.9", get_percentile(99.9));
 
     return result;
   }

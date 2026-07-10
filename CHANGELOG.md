@@ -7,6 +7,18 @@ Guide).
 
 ## [Unreleased]
 
+### Changed
+
+- **clang-tidy is now a required CI gate** (F2): the check set is
+  curated in `.clang-tidy` (bugprone / concurrency / performance /
+  portability groups + identifier naming; three false-positive/low-value
+  checks excluded with rationale), covers headers under `src/`, and
+  fails on any finding via `WarningsAsErrors`. All 31 actionable
+  findings from the triage were fixed - notably fewer `shared_ptr`
+  refcount bumps on the scheduling hot path (`executeNodeTask` /
+  `routeToDownstream` now take const refs) - with 3 intentional
+  deviations documented inline via NOLINT.
+
 ### Added
 
 - **JSON graph loader** (F1, `AI_PIPE_WITH_JSON`, default OFF):

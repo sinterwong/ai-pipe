@@ -71,7 +71,7 @@ void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
   // Thread-safe output
   static std::mutex cout_mutex;
   std::lock_guard<std::mutex> lock(cout_mutex);
-  std::cout << oss.str() << std::endl;
+  std::cout << oss.str() << '\n' << std::flush;
 }
 
 // =============================================================================

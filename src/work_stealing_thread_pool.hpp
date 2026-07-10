@@ -461,7 +461,7 @@ private:
 
       if (task) {
         m_unclaimedTasks.fetch_sub(1, std::memory_order_acq_rel);
-        executeTask(std::move(task));
+        executeTask(task);
         continue;
       }
 
@@ -512,7 +512,7 @@ private:
     return nullptr;
   }
 
-  void executeTask(Task task) {
+  void executeTask(const Task &task) {
     try {
       if (task) {
         task();
@@ -529,7 +529,7 @@ private:
     }
   }
 
-  void handleException(std::exception_ptr eptr) {
+  void handleException(const std::exception_ptr &eptr) {
     WorkStealingExceptionHandler handler;
     {
       std::lock_guard<std::mutex> lock(m_handlerMutex);

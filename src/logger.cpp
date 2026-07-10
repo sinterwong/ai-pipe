@@ -216,8 +216,9 @@ void Logger::log(LogLevel level, std::string_view message,
   if (m_asyncEnabled.load(std::memory_order_acquire) && m_ringBuffer) {
     // Try lock-free push; fall back to sync if queue full
     if (!m_ringBuffer->tryPush(std::move(entry))) {
-      // Queue full - process synchronously to avoid log loss
-      processEntry(entry);
+      // Queue full - process synchronously to avoid log loss. tryPush
+      // returns before moving on failure, so entry is still intact.
+      processEntry(entry); // NOLINT(bugprone-use-after-move)
     } else {
       // Notify worker thread
       m_workerCv.notify_one();
@@ -332,8 +333,9 @@ void Logger::processEntry(const LogEntry &entry) {
     for (const auto &[id, cb] : m_callbacks) {
       try {
         cb(entry);
-      } catch (...) {
-        // Ignore callback exceptions
+      } catch (...) { // NOLINT(bugprone-empty-catch)
+        // Swallow callback exceptions by design: a throwing log sink
+        // must never take down the logging path or the caller.
       }
     }
   }
