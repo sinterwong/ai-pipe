@@ -9,7 +9,7 @@
  *
  */
 #include "ai_pipe/graph.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 #include <algorithm>
 #include <deque>
 

@@ -3,7 +3,7 @@
  * @brief Custom main entry point for all-in-one benchmark executable
  */
 
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 #include <benchmark/benchmark.h>
 
 int main(int argc, char **argv) {
