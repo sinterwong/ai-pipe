@@ -281,6 +281,147 @@ TEST(GraphLoaderTest, SchemaViolationsAreRejected) {
   }
 }
 
+TEST(GraphLoaderTest, AllOptionKeysRoundTrip) {
+  SKIP_WITHOUT_JSON();
+  const std::string doc = R"({
+    "nodes": [{"type": "JsonSourceNode", "name": "src"}],
+    "options": {
+      "mode": "stream",
+      "num_workers": 3,
+      "execution_timeout_ms": 1500,
+      "queue_capacity": 64,
+      "drop_strategy": "KeepLatest",
+      "enable_sync_coordination": false,
+      "enable_statistics": false,
+      "alignment_policy": "stream_frame_id",
+      "alignment_tolerance_us": 5000,
+      "join_wait_timeout_ms": 250,
+      "join_timeout_policy": "skip_frame"
+    }
+  })";
+  auto result = loadPipelineFromJson(doc);
+  ASSERT_TRUE(result.isOk()) << result.errorMessage();
+
+  const PipelineOptions &options = result.value().options;
+  EXPECT_EQ(options.mode, ExecutionMode::STREAM);
+  EXPECT_EQ(options.num_workers, 3);
+  EXPECT_EQ(options.execution_timeout, std::chrono::milliseconds{1500});
+  EXPECT_EQ(options.queue_capacity, 64u);
+  EXPECT_EQ(options.drop_strategy, "KeepLatest");
+  EXPECT_FALSE(options.enable_sync_coordination);
+  EXPECT_FALSE(options.enable_statistics);
+  EXPECT_EQ(options.alignment_policy, AlignmentPolicy::StreamFrameId);
+  EXPECT_EQ(options.alignment_tolerance, std::chrono::microseconds{5000});
+  EXPECT_EQ(options.join_wait_timeout, std::chrono::milliseconds{250});
+  EXPECT_EQ(options.join_timeout_policy, JoinTimeoutPolicy::SkipFrame);
+}
+
+TEST(GraphLoaderTest, AlignmentAndJoinPolicyNamesParse) {
+  SKIP_WITHOUT_JSON();
+  const std::string source_only =
+      R"("nodes": [{"type": "JsonSourceNode", "name": "src"}])";
+
+  struct Case {
+    const char *options;
+    AlignmentPolicy alignment;
+    JoinTimeoutPolicy join;
+  };
+  const Case cases[] = {
+      {R"({"alignment_policy": "frame_id"})", AlignmentPolicy::FrameId,
+       JoinTimeoutPolicy::PartialInputs},
+      {R"({"alignment_policy": "stream_frame_id"})",
+       AlignmentPolicy::StreamFrameId, JoinTimeoutPolicy::PartialInputs},
+      {R"({"alignment_policy": "timestamp"})", AlignmentPolicy::Timestamp,
+       JoinTimeoutPolicy::PartialInputs},
+      {R"({"join_timeout_policy": "partial_inputs"})", AlignmentPolicy::FrameId,
+       JoinTimeoutPolicy::PartialInputs},
+      {R"({"join_timeout_policy": "skip_frame"})", AlignmentPolicy::FrameId,
+       JoinTimeoutPolicy::SkipFrame},
+  };
+
+  for (const Case &c : cases) {
+    const std::string doc =
+        "{" + source_only + R"(, "options": )" + c.options + "}";
+    auto result = loadPipelineFromJson(doc);
+    ASSERT_TRUE(result.isOk()) << c.options << ": " << result.errorMessage();
+    EXPECT_EQ(result.value().options.alignment_policy, c.alignment)
+        << c.options;
+    EXPECT_EQ(result.value().options.join_timeout_policy, c.join) << c.options;
+  }
+}
+
+TEST(GraphLoaderTest, OptionValueViolationsAreRejected) {
+  SKIP_WITHOUT_JSON();
+  const std::string source_only =
+      R"("nodes": [{"type": "JsonSourceNode", "name": "src"}])";
+
+  struct Case {
+    const char *label;
+    const char *options;
+    const char *expect_in_message;
+  };
+  const Case cases[] = {
+      {"options not an object", "3", "'options' must be an object"},
+      {"mode not a string", R"({"mode": 5})", "'mode' must be a string"},
+      {"unknown alignment policy", R"({"alignment_policy": "diagonal"})",
+       "diagonal"},
+      {"alignment policy not a string", R"({"alignment_policy": 1})",
+       "'alignment_policy' must be a string"},
+      {"unknown join timeout policy", R"({"join_timeout_policy": "panic"})",
+       "panic"},
+      {"join timeout policy not a string", R"({"join_timeout_policy": false})",
+       "'join_timeout_policy' must be a string"},
+      {"drop strategy not a string", R"({"drop_strategy": 5})",
+       "'drop_strategy' must be a string"},
+      {"sync coordination not a bool", R"({"enable_sync_coordination": 1})",
+       "'enable_sync_coordination' must be a boolean"},
+      {"statistics not a bool", R"({"enable_statistics": "yes"})",
+       "'enable_statistics' must be a boolean"},
+      {"timeout not an integer", R"({"execution_timeout_ms": "fast"})",
+       "'execution_timeout_ms' must be an integer"},
+      {"negative queue capacity", R"({"queue_capacity": -1})",
+       "'queue_capacity' must be non-negative"},
+      {"tolerance not an integer", R"({"alignment_tolerance_us": 1.5})",
+       "'alignment_tolerance_us' must be an integer"},
+      {"negative join wait timeout", R"({"join_wait_timeout_ms": -3})",
+       "'join_wait_timeout_ms' must be non-negative"},
+      {"workers out of range", R"({"num_workers": 300})", "out of range"},
+  };
+
+  for (const Case &c : cases) {
+    const std::string doc =
+        "{" + source_only + R"(, "options": )" + c.options + "}";
+    auto result = loadPipelineFromJson(doc);
+    ASSERT_FALSE(result.isOk()) << c.label;
+    EXPECT_EQ(result.errorCode(), ErrorCode::InvalidConfiguration) << c.label;
+    EXPECT_NE(result.errorMessage().find(c.expect_in_message),
+              std::string::npos)
+        << c.label << ": " << result.errorMessage();
+  }
+}
+
+TEST(GraphLoaderTest, PipelineFileVariantLoads) {
+  SKIP_WITHOUT_JSON();
+  const std::string path =
+      testing::TempDir() + "/ai_pipe_pipeline_loader_test.json";
+  {
+    std::ofstream out(path);
+    out << R"({
+      "nodes": [{"type": "JsonSourceNode", "name": "src"}],
+      "options": {"mode": "stream", "queue_capacity": 8}
+    })";
+  }
+  auto result = loadPipelineFromJsonFile(path);
+  ASSERT_TRUE(result.isOk()) << result.errorMessage();
+  EXPECT_EQ(result.value().graph.getNodes().size(), 1u);
+  EXPECT_EQ(result.value().options.mode, ExecutionMode::STREAM);
+  EXPECT_EQ(result.value().options.queue_capacity, 8u);
+
+  auto missing = loadPipelineFromJsonFile(path + ".does-not-exist");
+  ASSERT_FALSE(missing.isOk());
+  EXPECT_EQ(missing.errorCode(), ErrorCode::InvalidArgument);
+}
+
 TEST(GraphLoaderTest, CycleIsRejected) {
   SKIP_WITHOUT_JSON();
   const std::string doc = R"({

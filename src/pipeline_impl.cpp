@@ -201,6 +201,13 @@ void Pipeline::Impl::setupEngineCallbacks() {
       m_lastResults = results;
       m_lastError.reset();
     }
+    // Fire-and-forget submit(): a completed batch execution must return the
+    // pipeline to IDLE or every later run()/submit() fails AlreadyRunning.
+    // Streaming delivers per-frame results here, so keep RUNNING in that case.
+    if (!isStreaming() &&
+        m_state.load(std::memory_order_acquire) == PipelineState::RUNNING) {
+      transitionTo(PipelineState::IDLE);
+    }
     notifyExecutionCompleted(results);
   });
 
@@ -305,8 +312,11 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
         ExecutionOutput output;
         output.outputs = results;
         output.elapsed = elapsed;
-        promise->set_value(Result<ExecutionOutput>::ok(std::move(output)));
+        // Notify observers before fulfilling the promise: the caller may
+        // destroy the pipeline as soon as the future resolves, so the
+        // promise must be the last touch of pipeline state
         notifyExecutionCompleted(results);
+        promise->set_value(Result<ExecutionOutput>::ok(std::move(output)));
       });
 
   m_engine->setPipelineErrorCallback(
@@ -315,8 +325,9 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
         transitionTo(PipelineState::ERROR);
 
         auto err = Error::nodeException(error, node_name);
+        // Same ordering rule as the result callback: promise last
+        notifyExecutionFailed(err);
         promise->set_value(Result<ExecutionOutput>::err(std::move(err)));
-        notifyExecutionFailed(Error::nodeException(error, node_name));
       });
 
   // Start async execution

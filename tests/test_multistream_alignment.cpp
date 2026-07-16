@@ -91,9 +91,8 @@ protected:
     return packet;
   }
 
-  std::unique_ptr<ExecutionEngine> makeEngine(AlignmentPolicy policy,
-                                              std::chrono::microseconds tol =
-                                                  33000us) {
+  std::unique_ptr<ExecutionEngine>
+  makeEngine(AlignmentPolicy policy, std::chrono::microseconds tol = 33000us) {
     auto config = EngineConfig::stream(4, 16);
     config.alignment_policy = policy;
     config.alignment_tolerance = tol;
@@ -124,12 +123,10 @@ TEST_F(MultiStreamAlignmentTest, StreamFrameIdPairsInterleavedStreams) {
       {0, 1}, {1, 1}, {0, 2}, {1, 2}};
   for (std::size_t i = 0; i < sequence.size(); ++i) {
     const auto ts = base + std::chrono::milliseconds(10 * i);
-    (void)engine->pushInput("srcA",
-                            makeFrame(sequence[i].first, sequence[i].second,
-                                      ts));
-    (void)engine->pushInput("srcB",
-                            makeFrame(sequence[i].first, sequence[i].second,
-                                      ts));
+    (void)engine->pushInput(
+        "srcA", makeFrame(sequence[i].first, sequence[i].second, ts));
+    (void)engine->pushInput(
+        "srcB", makeFrame(sequence[i].first, sequence[i].second, ts));
   }
 
   ASSERT_TRUE(engine->waitForDrain(0, 10000ms).isOk());
@@ -199,6 +196,30 @@ TEST_F(MultiStreamAlignmentTest, StreamFrameIdStampsPerStreamMonotonicIds) {
     EXPECT_EQ(right.frame, left.frame);
     ++next_expected[left.stream];
   }
+}
+
+TEST_F(MultiStreamAlignmentTest, StreamFrameIdEqualTimestampsDropSmallestKey) {
+  auto engine = makeEngine(AlignmentPolicy::StreamFrameId);
+
+  // Misaligned heads with IDENTICAL timestamps: the age-based discard
+  // cannot pick a loser (no head is strictly older), so the engine must
+  // fall back to dropping the smallest (stream, frame) key - here
+  // stream0/frame1 on srcA, which will never find a partner on srcB.
+  const auto base = std::chrono::steady_clock::now();
+  (void)engine->pushInput("srcA", makeFrame(0, 1, base));
+  (void)engine->pushInput("srcB", makeFrame(1, 1, base));
+  (void)engine->pushInput("srcA", makeFrame(1, 1, base));
+
+  ASSERT_TRUE(engine->waitForDrain(0, 10000ms).isOk());
+  engine->stopStreaming(false);
+
+  const auto pairs = m_join->pairs();
+  ASSERT_EQ(pairs.size(), 1u);
+  EXPECT_EQ(pairs[0].first.stream, 1u);
+  EXPECT_EQ(pairs[0].first.frame, 1u);
+  EXPECT_EQ(pairs[0].second.stream, 1u);
+  EXPECT_EQ(pairs[0].second.frame, 1u);
+  EXPECT_GE(m_dropCount.load(), 1);
 }
 
 TEST_F(MultiStreamAlignmentTest, TimestampPairsWithinTolerance) {

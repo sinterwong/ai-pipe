@@ -4,12 +4,16 @@
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/pipeline.hpp"
+#include "ai_pipe/trace.hpp"
 #include "scheduler_strategies.hpp"
 #include "sync_strategies.hpp"
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -836,4 +840,755 @@ TEST_F(PipelineTest, CancellationMidExecution) {
   EXPECT_FALSE(result.isOk());
   EXPECT_TRUE(result.errorCode() == ErrorCode::ExecutionStopped ||
               result.errorCode() == ErrorCode::ExecutionFailed);
+}
+
+// =============================================================================
+// Pipeline Facade Coverage: build failures, streaming, submit/runAsync,
+// observers wired end-to-end, trace sink, uninitialized safety
+// =============================================================================
+
+namespace {
+
+// Sink whose process() blocks until released, for deterministic queue-depth
+// and drop-path tests
+class GatedSinkNode : public ILogicNode {
+public:
+  explicit GatedSinkNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext>) override {
+    m_entered.fetch_add(1);
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this] { return m_open; });
+    m_processed.fetch_add(1);
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {};
+  }
+
+  void open() {
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_open = true;
+    }
+    m_cv.notify_all();
+  }
+
+  // Wait until at least `count` process() calls have started
+  bool waitEntered(int count,
+                   std::chrono::milliseconds timeout = 2000ms) const {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (m_entered.load() < count) {
+      if (std::chrono::steady_clock::now() > deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(1ms);
+    }
+    return true;
+  }
+
+  int processed() const { return m_processed.load(); }
+
+private:
+  mutable std::mutex m_mutex;
+  std::condition_variable m_cv;
+  bool m_open = false;
+  std::atomic<int> m_entered{0};
+  std::atomic<int> m_processed{0};
+};
+
+// Node that always throws, for end-to-end error propagation
+class ThrowingNode : public ILogicNode {
+public:
+  explicit ThrowingNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext>) override {
+    if (m_armed.load()) {
+      throw std::runtime_error("ThrowingNode failure");
+    }
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {};
+  }
+
+  void disarm() { m_armed.store(false); }
+
+private:
+  std::atomic<bool> m_armed{true};
+};
+
+class CountingTraceSink : public ITraceSink {
+public:
+  void onEvent(const TraceEvent &) override { m_events.fetch_add(1); }
+  int events() const { return m_events.load(); }
+
+private:
+  std::atomic<int> m_events{0};
+};
+
+// Poll a predicate until it holds or the timeout elapses
+template <typename Pred>
+bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2000ms) {
+  auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (!pred()) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(1ms);
+  }
+  return true;
+}
+
+} // namespace
+
+// =============================================================================
+// PipelineBuilder Failure Paths
+// =============================================================================
+
+TEST(PipelineBuildFailureTest, BuildWithoutGraphFails) {
+  auto result = Pipeline::create().build();
+
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::InvalidArgument);
+  EXPECT_NE(result.errorMessage().find("No graph"), std::string::npos);
+}
+
+TEST(PipelineBuildFailureTest, BuildWithCyclicGraphFails) {
+  auto node_a = std::make_shared<TestNode>("a");
+  auto node_b = std::make_shared<TestNode>("b");
+
+  Graph graph;
+  graph.addNode(node_a);
+  graph.addNode(node_b);
+  graph.addEdge("a", "output", "b", "input");
+  graph.addEdge("b", "output", "a", "input");
+
+  auto result = Pipeline::create().withGraph(std::move(graph)).build();
+
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::GraphCycleDetected);
+}
+
+// =============================================================================
+// Streaming via the Pipeline Facade
+// =============================================================================
+
+class PipelineStreamingTest : public ::testing::Test {
+protected:
+  // source (no input ports) -> sink; pushes to "source" route downstream
+  Pipeline buildSourceSinkStream(std::size_t queue_capacity = 8) {
+    m_source = std::make_shared<SourceNode>("source");
+    m_sink = std::make_shared<SinkNode>("sink");
+
+    Graph graph;
+    graph.addNode(m_source);
+    graph.addNode(m_sink);
+    graph.addEdge("source", "output", "sink", "input");
+
+    auto result = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::STREAM)
+                      .withWorkers(2)
+                      .withQueueCapacity(queue_capacity)
+                      .build();
+    EXPECT_TRUE(result) << result.errorMessage();
+    return std::move(result).value();
+  }
+
+  // Single gated sink; pushes go straight into its input queue
+  Pipeline buildGatedStream(std::size_t queue_capacity,
+                            PipelineBuilder &&builder) {
+    m_gate = std::make_shared<GatedSinkNode>("gate");
+
+    Graph graph;
+    graph.addNode(m_gate);
+
+    // Single worker: the gate blocks it, so queue depths and drop points
+    // are deterministic (a second worker would run the node concurrently)
+    auto result = std::move(builder)
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::STREAM)
+                      .withWorkers(1)
+                      .withQueueCapacity(queue_capacity)
+                      .build();
+    EXPECT_TRUE(result) << result.errorMessage();
+    return std::move(result).value();
+  }
+
+  std::shared_ptr<SourceNode> m_source;
+  std::shared_ptr<SinkNode> m_sink;
+  std::shared_ptr<GatedSinkNode> m_gate;
+};
+
+TEST_F(PipelineStreamingTest, StartPushDrainStopFullChain) {
+  auto pipeline = buildSourceSinkStream();
+
+  EXPECT_FALSE(pipeline.isStreaming());
+  ASSERT_TRUE(pipeline.start().isOk());
+  EXPECT_TRUE(pipeline.isStreaming());
+  EXPECT_EQ(pipeline.state(), PipelineState::RUNNING);
+
+  constexpr int k_frames = 5;
+  for (int i = 1; i <= k_frames; ++i) {
+    auto push = pipeline.pushInput("source", makeDataPacket(i));
+    ASSERT_TRUE(push.isOk()) << push.errorMessage();
+  }
+
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  EXPECT_EQ(m_sink->processCount(), k_frames);
+
+  auto stats = pipeline.statistics();
+  EXPECT_GE(stats.total_input_frames, static_cast<std::uint64_t>(k_frames));
+
+  pipeline.stop(true);
+  EXPECT_FALSE(pipeline.isStreaming());
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+}
+
+TEST_F(PipelineStreamingTest, StartFailsInBatchMode) {
+  auto source = std::make_shared<SourceNode>("source");
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink);
+  graph.addEdge("source", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::BATCH)
+                      .build()
+                      .value();
+
+  auto result = pipeline.start();
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::InvalidState);
+  EXPECT_FALSE(pipeline.isStreaming());
+}
+
+TEST_F(PipelineStreamingTest, StartTwiceFails) {
+  auto pipeline = buildSourceSinkStream();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  auto second = pipeline.start();
+  ASSERT_FALSE(second.isOk());
+  EXPECT_EQ(second.errorCode(), ErrorCode::AlreadyRunning);
+
+  pipeline.stop(false);
+}
+
+TEST_F(PipelineStreamingTest, PushBeforeStartIsRejected) {
+  auto pipeline = buildSourceSinkStream();
+
+  auto result = pipeline.pushInput("source", makeDataPacket(1));
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::NotStreaming);
+}
+
+TEST_F(PipelineStreamingTest, PushToUnknownNodeFails) {
+  auto pipeline = buildSourceSinkStream();
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  auto result = pipeline.pushInput("no_such_node", makeDataPacket(1));
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::NodeNotFound);
+
+  pipeline.stop(false);
+}
+
+TEST_F(PipelineStreamingTest, NamedPortPushReachesSink) {
+  auto pipeline = buildSourceSinkStream();
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  auto push = pipeline.pushInput("sink", "input", makeDataPacket(7));
+  ASSERT_TRUE(push.isOk()) << push.errorMessage();
+
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  ASSERT_EQ(m_sink->receivedData().size(), 1u);
+  EXPECT_EQ(m_sink->receivedData()[0]->id, 7u);
+
+  pipeline.stop(true);
+}
+
+TEST_F(PipelineStreamingTest, QueueDepthAndCapacityDuringStream) {
+  auto pipeline = buildGatedStream(4, Pipeline::create());
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  // First frame occupies the worker; the gate blocks it inside process()
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(m_gate->waitEntered(1));
+
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(2)).isOk());
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(3)).isOk());
+
+  EXPECT_EQ(pipeline.queueDepth("gate"), 2u);
+  EXPECT_TRUE(pipeline.hasQueueCapacity("gate"));
+  EXPECT_EQ(pipeline.queueDepth("no_such_node"), 0u);
+
+  m_gate->open();
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  EXPECT_EQ(pipeline.queueDepth("gate"), 0u);
+  EXPECT_EQ(m_gate->processed(), 3);
+
+  pipeline.stop(true);
+}
+
+TEST_F(PipelineStreamingTest, WaitForDrainTimesOutWhileBlocked) {
+  auto pipeline = buildGatedStream(4, Pipeline::create());
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(m_gate->waitEntered(1));
+
+  auto result = pipeline.waitForDrain(0, 100ms);
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+
+  m_gate->open();
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  pipeline.stop(true);
+}
+
+TEST_F(PipelineStreamingTest, DropNotificationReachesBuilderOnDrop) {
+  std::atomic<int> drop_count{0};
+  std::string dropped_node;
+  std::string drop_reason;
+  std::mutex drop_mutex;
+
+  auto builder = Pipeline::create();
+  builder.onDrop(
+      [&](const std::string &node, std::uint64_t, const std::string &reason) {
+        std::lock_guard<std::mutex> lock(drop_mutex);
+        dropped_node = node;
+        drop_reason = reason;
+        drop_count.fetch_add(1);
+      });
+
+  auto pipeline = buildGatedStream(1, std::move(builder));
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  // Frame 1 blocks inside the gate. The queue rounds the requested
+  // capacity 1 up to the minimum of 2, so frames 2+3 fill it and frame 4
+  // evicts frame 2 (DropHead default)
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(m_gate->waitEntered(1));
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(2)).isOk());
+  ASSERT_TRUE(pipeline.pushInput("gate", makeDataPacket(3)).isOk());
+  // Direct input-port pushes report the eviction via the drop callback
+  // (the push itself is accepted)
+  auto fourth = pipeline.pushInput("gate", makeDataPacket(4));
+  ASSERT_TRUE(fourth.isOk()) << fourth.errorMessage();
+
+  m_gate->open();
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  pipeline.stop(true);
+
+  EXPECT_EQ(drop_count.load(), 1);
+  EXPECT_EQ(m_gate->processed(), 3);
+  {
+    std::lock_guard<std::mutex> lock(drop_mutex);
+    EXPECT_EQ(dropped_node, "gate");
+    EXPECT_FALSE(drop_reason.empty());
+  }
+  EXPECT_GE(pipeline.statistics().total_dropped_frames, 1u);
+}
+
+// =============================================================================
+// submit() / runAsync() via the Facade
+// =============================================================================
+
+class PipelineAsyncTest : public ::testing::Test {
+protected:
+  Pipeline buildWithResultFlag() {
+    m_source = std::make_shared<SourceNode>("source");
+    m_sink = std::make_shared<SinkNode>("sink");
+
+    Graph graph;
+    graph.addNode(m_source);
+    graph.addNode(m_sink);
+    graph.addEdge("source", "output", "sink", "input");
+
+    auto result =
+        Pipeline::create()
+            .withGraph(std::move(graph))
+            .onResult([this](const PortDataMap &) { m_results.fetch_add(1); })
+            .build();
+    EXPECT_TRUE(result) << result.errorMessage();
+    return std::move(result).value();
+  }
+
+  std::shared_ptr<SourceNode> m_source;
+  std::shared_ptr<SinkNode> m_sink;
+  std::atomic<int> m_results{0};
+};
+
+TEST_F(PipelineAsyncTest, SubmitCompletesAndReturnsToIdle) {
+  auto pipeline = buildWithResultFlag();
+
+  PortDataMap inputs;
+  inputs["source"] = makeDataPacket(1);
+
+  ASSERT_TRUE(pipeline.submit(inputs).isOk());
+  ASSERT_TRUE(waitFor([&] { return m_results.load() >= 1; }));
+
+  // Fire-and-forget completion must return the pipeline to IDLE so that
+  // subsequent executions are possible. The engine flips its own state
+  // shortly after the result callback, so wait for both.
+  ASSERT_TRUE(waitFor([&] {
+    return pipeline.state() == PipelineState::IDLE &&
+           pipeline.engineState() == EngineState::IDLE;
+  }));
+
+  ASSERT_TRUE(pipeline.submit(inputs).isOk());
+  ASSERT_TRUE(waitFor([&] { return m_results.load() >= 2; }));
+  ASSERT_TRUE(waitFor([&] {
+    return pipeline.state() == PipelineState::IDLE &&
+           pipeline.engineState() == EngineState::IDLE;
+  }));
+  EXPECT_EQ(m_sink->processCount(), 2);
+}
+
+TEST_F(PipelineAsyncTest, RunAsyncDeliversResult) {
+  auto pipeline = buildWithResultFlag();
+
+  PortDataMap inputs;
+  inputs["source"] = makeDataPacket(1);
+
+  auto future = pipeline.runAsync(inputs);
+  ASSERT_EQ(future.wait_for(5s), std::future_status::ready);
+
+  auto result = future.get();
+  ASSERT_TRUE(result.isOk()) << result.errorMessage();
+  EXPECT_GE(result.value().elapsed.count(), 0);
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+}
+
+TEST_F(PipelineAsyncTest, RunAsyncPropagatesNodeFailure) {
+  auto thrower = std::make_shared<ThrowingNode>("thrower");
+
+  Graph graph;
+  graph.addNode(thrower);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["thrower"] = makeDataPacket(1);
+
+  auto future = pipeline.runAsync(inputs);
+  ASSERT_EQ(future.wait_for(5s), std::future_status::ready);
+
+  auto result = future.get();
+  ASSERT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::NodeException);
+  EXPECT_TRUE(pipeline.hasError());
+}
+
+// =============================================================================
+// End-to-End Observer Error Notification + reset()
+// =============================================================================
+
+TEST(PipelineErrorRecoveryTest, ObserverSeesErrorAndResetRecovers) {
+  auto thrower = std::make_shared<ThrowingNode>("thrower");
+
+  Graph graph;
+  graph.addNode(thrower);
+
+  std::atomic<int> error_count{0};
+  std::atomic<ErrorCode> seen_code{ErrorCode::Ok};
+
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .onError([&](const Error &error) {
+                        seen_code.store(error.code());
+                        error_count.fetch_add(1);
+                      })
+                      .build()
+                      .value();
+
+  PortDataMap inputs;
+  inputs["thrower"] = makeDataPacket(1);
+
+  auto result = pipeline.run(inputs);
+  ASSERT_FALSE(result.isOk());
+  EXPECT_TRUE(pipeline.hasError());
+  EXPECT_GE(error_count.load(), 1);
+  EXPECT_EQ(seen_code.load(), ErrorCode::NodeException);
+
+  // While in ERROR state further runs are rejected until reset()
+  auto rejected = pipeline.run(inputs);
+  ASSERT_FALSE(rejected.isOk());
+  EXPECT_EQ(rejected.errorCode(), ErrorCode::InvalidState);
+
+  pipeline.reset();
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+  EXPECT_TRUE(pipeline.isReady());
+
+  thrower->disarm();
+  auto retry = pipeline.run(inputs);
+  ASSERT_TRUE(retry.isOk()) << retry.errorMessage();
+}
+
+// =============================================================================
+// Trace Sink via the Facade
+// =============================================================================
+
+TEST(PipelineTraceSinkTest, BatchRunEmitsEventsToInstalledSink) {
+  auto source = std::make_shared<SourceNode>("source");
+  auto sink_node = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink_node);
+  graph.addEdge("source", "output", "sink", "input");
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  auto trace_sink = std::make_shared<CountingTraceSink>();
+  ASSERT_TRUE(pipeline.setTraceSink(trace_sink).isOk());
+
+  PortDataMap inputs;
+  inputs["source"] = makeDataPacket(1);
+  ASSERT_TRUE(pipeline.run(inputs).isOk());
+
+  EXPECT_GT(trace_sink->events(), 0);
+}
+
+TEST(PipelineTraceSinkTest, InstallWhileStreamingIsRejected) {
+  auto source = std::make_shared<SourceNode>("source");
+  auto sink_node = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink_node);
+  graph.addEdge("source", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::STREAM)
+                      .withQueueCapacity(4)
+                      .build()
+                      .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  auto result = pipeline.setTraceSink(std::make_shared<CountingTraceSink>());
+  EXPECT_FALSE(result.isOk());
+  pipeline.stop(false);
+}
+
+// =============================================================================
+// Uninitialized Pipeline: accessors must be safe
+// =============================================================================
+
+TEST(PipelineUninitializedTest, AccessorsAreSafeWithoutEngine) {
+  Pipeline pipeline;
+
+  EXPECT_EQ(pipeline.engineState(), EngineState::ERROR);
+  EXPECT_TRUE(pipeline.nodeStates().empty());
+  EXPECT_EQ(pipeline.statistics().total_executions, 0u);
+  EXPECT_EQ(pipeline.queueDepth("any"), 0u);
+  EXPECT_FALSE(pipeline.hasQueueCapacity("any"));
+  EXPECT_FALSE(pipeline.isStreaming());
+  EXPECT_TRUE(pipeline.waitForDrain(0, 10ms).isOk());
+  EXPECT_NE(pipeline.info().find("Not initialized"), std::string::npos);
+
+  auto push = pipeline.pushInput("any", makeDataPacket(1));
+  ASSERT_FALSE(push.isOk());
+  EXPECT_EQ(push.errorCode(), ErrorCode::NotInitialized);
+
+  auto sink_result = pipeline.setTraceSink(nullptr);
+  ASSERT_FALSE(sink_result.isOk());
+  EXPECT_EQ(sink_result.errorCode(), ErrorCode::NotInitialized);
+
+  auto start_result = pipeline.start();
+  ASSERT_FALSE(start_result.isOk());
+  EXPECT_EQ(start_result.errorCode(), ErrorCode::NotInitialized);
+
+  // No-ops rather than crashes
+  pipeline.stop(true);
+  pipeline.cancel();
+  pipeline.wait();
+}
+
+// =============================================================================
+// HYBRID Execution Mode (end-to-end through the facade)
+//
+// Existing HYBRID coverage stopped at config/strategy-creation assertions;
+// these tests actually move data through a HYBRID pipeline in both its
+// streaming and batch invocations.
+// =============================================================================
+
+namespace {
+
+// Two-input join emitting one packet per aligned pair
+class JoinPairNode : public ILogicNode {
+public:
+  explicit JoinPairNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &inputs, PortDataMap &outputs,
+               std::shared_ptr<PipelineContext>) override {
+    m_pairs.fetch_add(1);
+    auto it = inputs.find("input1");
+    outputs["output"] =
+        (it != inputs.end() && it->second) ? it->second : makeDataPacket(0);
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input1", "input2"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {"output"};
+  }
+
+  int pairs() const { return m_pairs.load(); }
+
+private:
+  std::atomic<int> m_pairs{0};
+};
+
+} // namespace
+
+class PipelineHybridTest : public ::testing::Test {
+protected:
+  // source (no input ports) -> sink
+  Pipeline buildLinearHybrid() {
+    m_source = std::make_shared<SourceNode>("source");
+    m_sink = std::make_shared<SinkNode>("sink");
+
+    Graph graph;
+    graph.addNode(m_source);
+    graph.addNode(m_sink);
+    graph.addEdge("source", "output", "sink", "input");
+
+    auto result = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::HYBRID)
+                      .withWorkers(2)
+                      .withQueueCapacity(8)
+                      .build();
+    EXPECT_TRUE(result) << result.errorMessage();
+    return std::move(result).value();
+  }
+
+  std::shared_ptr<SourceNode> m_source;
+  std::shared_ptr<SinkNode> m_sink;
+};
+
+TEST_F(PipelineHybridTest, ModeAccessorReportsHybrid) {
+  auto pipeline = buildLinearHybrid();
+  EXPECT_EQ(pipeline.mode(), ExecutionMode::HYBRID);
+  EXPECT_TRUE(pipeline.isReady());
+}
+
+TEST_F(PipelineHybridTest, StreamingFullChainProcessesEveryFrame) {
+  auto pipeline = buildLinearHybrid();
+
+  // start() accepts HYBRID alongside STREAM
+  ASSERT_TRUE(pipeline.start().isOk());
+  EXPECT_TRUE(pipeline.isStreaming());
+
+  constexpr int k_frames = 5;
+  for (int i = 1; i <= k_frames; ++i) {
+    auto push = pipeline.pushInput("source", makeDataPacket(i));
+    ASSERT_TRUE(push.isOk()) << push.errorMessage();
+  }
+
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  EXPECT_EQ(m_sink->processCount(), k_frames);
+  EXPECT_GE(pipeline.statistics().total_input_frames,
+            static_cast<std::uint64_t>(k_frames));
+
+  pipeline.stop(true);
+  EXPECT_FALSE(pipeline.isStreaming());
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+}
+
+TEST_F(PipelineHybridTest, StreamingForkJoinAlignsFrames) {
+  // source fans out to two branches that rejoin: exercises the
+  // JoinAwareSyncStrategy + frame alignment path under HYBRID
+  auto source = std::make_shared<SourceNode>("source");
+  auto branch1 = std::make_shared<TestNode>("branch1");
+  auto branch2 = std::make_shared<TestNode>("branch2");
+  auto join = std::make_shared<JoinPairNode>("join");
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(branch1);
+  graph.addNode(branch2);
+  graph.addNode(join);
+  graph.addNode(sink);
+  graph.addEdge("source", "output", "branch1", "input");
+  graph.addEdge("source", "output", "branch2", "input");
+  graph.addEdge("branch1", "output", "join", "input1");
+  graph.addEdge("branch2", "output", "join", "input2");
+  graph.addEdge("join", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::HYBRID)
+                      .withWorkers(2)
+                      .withQueueCapacity(8)
+                      .build()
+                      .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+
+  constexpr int k_frames = 4;
+  for (int i = 1; i <= k_frames; ++i) {
+    ASSERT_TRUE(pipeline.pushInput("source", makeDataPacket(i)).isOk());
+  }
+
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+  pipeline.stop(true);
+
+  EXPECT_EQ(join->pairs(), k_frames);
+  EXPECT_EQ(sink->processCount(), k_frames);
+}
+
+TEST_F(PipelineHybridTest, BatchRunOverInputDrivenNodesCompletes) {
+  // HYBRID reschedules nodes on success (continuous semantics), so a
+  // batch run only terminates when every node is input-driven: with no
+  // fresh input the reschedule stalls and the execution drains.
+  // (A self-generating source node under a HYBRID batch run keeps
+  // regenerating until queues overflow - that combination belongs to
+  // streaming, where pushInput drives the pace.)
+  auto entry = std::make_shared<TestNode>("entry");
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(entry);
+  graph.addNode(sink);
+  graph.addEdge("entry", "output", "sink", "input");
+
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::HYBRID)
+                      .withWorkers(2)
+                      .withQueueCapacity(8)
+                      .build()
+                      .value();
+
+  PortDataMap inputs;
+  inputs["entry"] = makeDataPacket(1);
+
+  auto result = pipeline.run(inputs);
+  ASSERT_TRUE(result.isOk()) << result.errorMessage();
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+  EXPECT_EQ(sink->processCount(), 1);
+
+  // A second run must work as well
+  auto again = pipeline.run(inputs);
+  ASSERT_TRUE(again.isOk()) << again.errorMessage();
+  EXPECT_EQ(sink->processCount(), 2);
 }

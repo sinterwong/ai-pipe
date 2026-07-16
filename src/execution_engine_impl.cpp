@@ -1141,8 +1141,9 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
   const bool posted = m_threadPool->post(
       [this, index = state.index, context = m_currentContext.load(),
        scheduled_at = std::chrono::steady_clock::now()]() mutable {
-        const auto delay = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - scheduled_at);
+        const auto delay =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - scheduled_at);
         if (m_config.enable_statistics && delay.count() > 0) {
           m_statistics.total_schedule_time_us.fetch_add(
               static_cast<std::uint64_t>(delay.count()),
@@ -1605,8 +1606,8 @@ void ExecutionEngine::Impl::stopJoinTimeoutWatchdog() {
 
 void ExecutionEngine::Impl::joinTimeoutWatchdogLoop() {
   const auto timeout = m_config.join_wait_timeout;
-  const auto tick = std::chrono::milliseconds(
-      std::max<std::int64_t>(1, timeout.count() / 4));
+  const auto tick =
+      std::chrono::milliseconds(std::max<std::int64_t>(1, timeout.count() / 4));
 
   std::unique_lock<std::mutex> lock(m_watchdogMutex);
   for (;;) {
@@ -1801,8 +1802,8 @@ bool ExecutionEngine::Impl::gatherTimestampAlignedInputs(NodeState &state,
     // produce. At least one head satisfies this (min_ts), so every
     // pass makes progress.
     for (std::size_t i = 0; i < port_count; ++i) {
-      if (heads[i] && max_ts - heads[i]->timestamp >
-                          m_config.alignment_tolerance) {
+      if (heads[i] &&
+          max_ts - heads[i]->timestamp > m_config.alignment_tolerance) {
         dropStaleHead(state, i, *heads[i], "timestamp alignment drop");
       }
     }
@@ -2008,6 +2009,13 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   if (status.is_complete) {
     LOG_TRACE_S << "ExecutionEngine: Execution complete - " << status.reason;
 
+    // Fire-and-forget executions have no synchronous waiter to restore the
+    // engine state, so a completed batch returns to IDLE here; the CAS
+    // leaves ERROR/STOPPED outcomes untouched
+    EngineState expected = EngineState::RUNNING;
+    m_engineState.compare_exchange_strong(expected, EngineState::IDLE,
+                                          std::memory_order_acq_rel);
+
     if (m_resultCallback) {
       PortDataMap results;
       {
@@ -2041,7 +2049,9 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
     m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionStopped,
                              "Execution was stopped externally");
-  } else if (active_tasks == 0 && current_state == EngineState::RUNNING) {
+  } else if (active_tasks == 0 && (current_state == EngineState::RUNNING ||
+                                   current_state == EngineState::IDLE)) {
+    // IDLE means checkCompletionAndNotify already restored the state
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
     LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
     m_currentContext.store(nullptr);
@@ -2206,41 +2216,6 @@ void ExecutionEngine::Impl::recordQueueRejection(const std::string &node_name,
     m_dropCallback(node_name, frame_constants::k_invalid_frame_id,
                    "DropTail queue full");
   }
-}
-
-std::optional<PortDataPtr>
-ExecutionEngine::Impl::popFromQueue(const NodePtr &node,
-                                    const std::string &port_name) {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return std::nullopt;
-  }
-
-  auto &state = *state_it->second;
-
-  auto queue_it = state.lock_free_queues.find(port_name);
-  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    return queue_it->second->tryPop();
-  }
-
-  return std::nullopt;
-}
-
-bool ExecutionEngine::Impl::hasDataInQueue(const NodePtr &node,
-                                           const std::string &port_name) const {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return false;
-  }
-
-  auto &state = *state_it->second;
-
-  auto queue_it = state.lock_free_queues.find(port_name);
-  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    return !queue_it->second->empty();
-  }
-
-  return false;
 }
 
 std::size_t

@@ -351,9 +351,6 @@ private:
    */
   static void inheritFrameIdentity(const PortDataMap &inputs,
                                    PortDataMap &outputs);
-  std::optional<PortDataPtr> popFromQueue(const NodePtr &node,
-                                          const std::string &port_name);
-  bool hasDataInQueue(const NodePtr &node, const std::string &port_name) const;
   std::size_t getQueueSize(const NodePtr &node,
                            const std::string &port_name) const;
 

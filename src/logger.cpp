@@ -162,11 +162,16 @@ void Logger::enableJson(bool enable) noexcept {
 }
 
 void Logger::setFilePath(const std::string &path) {
-  std::lock_guard config_lock(m_configMutex);
-  if (m_config.file_path == path)
-    return;
+  // Release m_configMutex before taking m_fileMutex: writeFile/rotateFile
+  // nest them in the opposite order (file -> config), so holding both here
+  // would create a lock-order inversion
+  {
+    std::lock_guard config_lock(m_configMutex);
+    if (m_config.file_path == path)
+      return;
 
-  m_config.file_path = path;
+    m_config.file_path = path;
+  }
 
   std::lock_guard file_lock(m_fileMutex);
   if (m_fileStream.is_open()) {
@@ -400,9 +405,10 @@ void Logger::asyncWorker() {
       });
     }
 
-    // Batch process entries for efficiency
+    // Batch process entries for efficiency. Check the batch bound before
+    // popping: the other order pops a 65th entry and then drops it.
     batch.clear();
-    while (m_ringBuffer->tryPop(entry) && batch.size() < 64) {
+    while (batch.size() < 64 && m_ringBuffer->tryPop(entry)) {
       batch.push_back(std::move(entry));
     }
 
