@@ -149,6 +149,42 @@ jobs:
       working-directory: ${{ github.workspace }}/build
       run: ./x86_64/bin/tests/ai_pipe_tests
 
+  build-nojson:
+    runs-on: ubuntu-24.04
+    # The JSON loader is an optional component (F1): without
+    # AI_PIPE_WITH_JSON it compiles as a link-compatible stub returning
+    # InvalidConfiguration. Every other job builds with JSON=ON, so this
+    # is the only place the stub branch (and its dedicated test,
+    # GraphLoaderTest.StubReportsUnavailableWhenDisabled) actually runs.
+    env:
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+          submodules: 'recursive'
+          lfs: true
+    - name: Install GCC 13
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-13 g++-13
+    - name: Configure (JSON loader disabled, warnings as errors)
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Release
+        -DAI_PIPE_WERROR=ON
+        -DBUILD_AI_PIPE_TESTS=ON
+        -DAI_PIPE_WITH_JSON=OFF
+        -S ${{ github.workspace }}
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build -j
+    - name: Run GTests
+      working-directory: ${{ github.workspace }}/build
+      run: |
+        export LD_LIBRARY_PATH=$PWD/x86_64/lib:$LD_LIBRARY_PATH
+        ./x86_64/bin/tests/ai_pipe_tests
+
   build-aarch64:
     runs-on: ubuntu-24.04
     # Build-only portability gate: cross-compiles the dependency-free core
