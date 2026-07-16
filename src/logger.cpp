@@ -400,9 +400,10 @@ void Logger::asyncWorker() {
       });
     }
 
-    // Batch process entries for efficiency
+    // Batch process entries for efficiency. Check the batch bound before
+    // popping: the other order pops a 65th entry and then drops it.
     batch.clear();
-    while (m_ringBuffer->tryPop(entry) && batch.size() < 64) {
+    while (batch.size() < 64 && m_ringBuffer->tryPop(entry)) {
       batch.push_back(std::move(entry));
     }
 
