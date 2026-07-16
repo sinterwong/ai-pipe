@@ -2218,41 +2218,6 @@ void ExecutionEngine::Impl::recordQueueRejection(const std::string &node_name,
   }
 }
 
-std::optional<PortDataPtr>
-ExecutionEngine::Impl::popFromQueue(const NodePtr &node,
-                                    const std::string &port_name) {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return std::nullopt;
-  }
-
-  auto &state = *state_it->second;
-
-  auto queue_it = state.lock_free_queues.find(port_name);
-  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    return queue_it->second->tryPop();
-  }
-
-  return std::nullopt;
-}
-
-bool ExecutionEngine::Impl::hasDataInQueue(const NodePtr &node,
-                                           const std::string &port_name) const {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return false;
-  }
-
-  auto &state = *state_it->second;
-
-  auto queue_it = state.lock_free_queues.find(port_name);
-  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
-    return !queue_it->second->empty();
-  }
-
-  return false;
-}
-
 std::size_t
 ExecutionEngine::Impl::getQueueSize(const NodePtr &node,
                                     const std::string &port_name) const {

@@ -295,5 +295,130 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   EXPECT_TRUE(m_strategy->shouldDrop("E", 777));
 }
 
+// =============================================================================
+// Manual Registration Surface (ISyncStrategy contract)
+//
+// The engine wires the strategy through initialize() topology analysis;
+// registerSyncGroup/mapNodeToGroup are the manual path for custom or
+// engine-independent use and must behave equivalently.
+// =============================================================================
+
+TEST_F(JoinAwareSyncStrategyTest, ManualRegistrationMirrorsTopologyAnalysis) {
+  m_strategy->registerSyncGroup("g", {"left", "right"}, "join");
+  m_strategy->mapNodeToGroup("B", "g", "left");
+  m_strategy->mapNodeToGroup("C", "g", "right");
+
+  EXPECT_TRUE(m_strategy->tracksNode("B"));
+  EXPECT_TRUE(m_strategy->tracksNode("C"));
+  EXPECT_FALSE(m_strategy->tracksNode("unmapped"));
+
+  // Drop on one branch propagates to the sibling, exactly as with
+  // initialize()-derived groups
+  auto affected = m_strategy->reportDrop("B", 42, "manual");
+  ASSERT_EQ(affected.size(), 1u);
+  EXPECT_EQ(affected[0], "right");
+  EXPECT_TRUE(m_strategy->shouldDrop("C", 42));
+  EXPECT_FALSE(m_strategy->shouldDrop("C", 43));
+}
+
+TEST_F(JoinAwareSyncStrategyTest, WatermarkTracksSlowestBranch) {
+  m_strategy->registerSyncGroup("g", {"left", "right"}, "");
+  m_strategy->mapNodeToGroup("B", "g", "left");
+  m_strategy->mapNodeToGroup("C", "g", "right");
+
+  EXPECT_EQ(m_strategy->getWatermark("g"), 0u);
+
+  // Both branches complete frame 1; the left branch races ahead to 2
+  m_strategy->markProcessed("B", 1);
+  m_strategy->markProcessed("C", 1);
+  m_strategy->markProcessed("B", 2);
+
+  EXPECT_EQ(m_strategy->getWatermark("g"), 1u);
+
+  m_strategy->markProcessed("C", 2);
+  EXPECT_EQ(m_strategy->getWatermark("g"), 2u);
+
+  // Unknown groups read as watermark 0 rather than failing
+  EXPECT_EQ(m_strategy->getWatermark("no_such_group"), 0u);
+}
+
+TEST_F(JoinAwareSyncStrategyTest, CloneThenInitializeMatchesOriginal) {
+  // The engine clones a user-supplied strategy and re-runs initialize()
+  // on the clone (Pipeline::withSyncStrategy path); the clone must be
+  // independently usable
+  addNode("A");
+  addNode("B");
+  addNode("C");
+  addNode("D");
+  addEdge("A", "B");
+  addEdge("A", "C");
+  addEdge("B", "D");
+  addEdge("C", "D");
+
+  auto clone = m_strategy->clone();
+  ASSERT_NE(clone, nullptr);
+  EXPECT_EQ(clone->name(), m_strategy->name());
+  EXPECT_TRUE(clone->isEnabled());
+
+  clone->initialize(&m_graph);
+  EXPECT_TRUE(clone->tracksNode("B"));
+  EXPECT_TRUE(clone->tracksNode("C"));
+
+  auto affected = clone->reportDrop("B", 5, "clone_drop");
+  EXPECT_FALSE(affected.empty());
+  EXPECT_TRUE(clone->shouldDrop("C", 5));
+  // The original is untouched by activity on the clone
+  EXPECT_FALSE(m_strategy->shouldDrop("C", 5));
+}
+
+// =============================================================================
+// ISyncStrategy default tracksNode() (interface contract)
+// =============================================================================
+
+namespace {
+
+/// Minimal strategy overriding only the pure virtuals, so the default
+/// tracksNode() implementation (delegate to isEnabled) is exercised
+class MinimalSyncStrategy : public ISyncStrategy {
+public:
+  explicit MinimalSyncStrategy(bool enabled) : m_enabled(enabled) {}
+
+  void initialize(const Graph *) override {}
+  void reset() override {}
+  void registerSyncGroup(const SyncGroupId &, const std::vector<BranchId> &,
+                         const std::string &) override {}
+  void mapNodeToGroup(const std::string &, const SyncGroupId &,
+                      const BranchId &) override {}
+  [[nodiscard]] std::vector<BranchId> reportDrop(const std::string &, FrameId,
+                                                 const std::string &) override {
+    return {};
+  }
+  [[nodiscard]] bool shouldDrop(const std::string &, FrameId) const override {
+    return false;
+  }
+  void markProcessed(const std::string &, FrameId) override {}
+  [[nodiscard]] FrameId getWatermark(const SyncGroupId &) const override {
+    return 0;
+  }
+  [[nodiscard]] bool isEnabled() const override { return m_enabled; }
+  [[nodiscard]] std::string name() const override { return "Minimal"; }
+  [[nodiscard]] std::unique_ptr<ISyncStrategy> clone() const override {
+    return std::make_unique<MinimalSyncStrategy>(m_enabled);
+  }
+
+private:
+  bool m_enabled;
+};
+
+} // namespace
+
+TEST(ISyncStrategyDefaultsTest, TracksNodeDelegatesToIsEnabled) {
+  MinimalSyncStrategy enabled(true);
+  MinimalSyncStrategy disabled(false);
+
+  EXPECT_TRUE(enabled.tracksNode("any"));
+  EXPECT_FALSE(disabled.tracksNode("any"));
+}
+
 } // namespace testing
 } // namespace ai_pipe
