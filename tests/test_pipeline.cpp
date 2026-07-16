@@ -11,9 +11,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
-#include <mutex>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1217,12 +1217,11 @@ protected:
     graph.addNode(m_sink);
     graph.addEdge("source", "output", "sink", "input");
 
-    auto result = Pipeline::create()
-                      .withGraph(std::move(graph))
-                      .onResult([this](const PortDataMap &) {
-                        m_results.fetch_add(1);
-                      })
-                      .build();
+    auto result =
+        Pipeline::create()
+            .withGraph(std::move(graph))
+            .onResult([this](const PortDataMap &) { m_results.fetch_add(1); })
+            .build();
     EXPECT_TRUE(result) << result.errorMessage();
     return std::move(result).value();
   }

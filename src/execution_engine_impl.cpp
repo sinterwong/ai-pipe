@@ -1141,8 +1141,9 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
   const bool posted = m_threadPool->post(
       [this, index = state.index, context = m_currentContext.load(),
        scheduled_at = std::chrono::steady_clock::now()]() mutable {
-        const auto delay = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - scheduled_at);
+        const auto delay =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - scheduled_at);
         if (m_config.enable_statistics && delay.count() > 0) {
           m_statistics.total_schedule_time_us.fetch_add(
               static_cast<std::uint64_t>(delay.count()),
@@ -1605,8 +1606,8 @@ void ExecutionEngine::Impl::stopJoinTimeoutWatchdog() {
 
 void ExecutionEngine::Impl::joinTimeoutWatchdogLoop() {
   const auto timeout = m_config.join_wait_timeout;
-  const auto tick = std::chrono::milliseconds(
-      std::max<std::int64_t>(1, timeout.count() / 4));
+  const auto tick =
+      std::chrono::milliseconds(std::max<std::int64_t>(1, timeout.count() / 4));
 
   std::unique_lock<std::mutex> lock(m_watchdogMutex);
   for (;;) {
@@ -1801,8 +1802,8 @@ bool ExecutionEngine::Impl::gatherTimestampAlignedInputs(NodeState &state,
     // produce. At least one head satisfies this (min_ts), so every
     // pass makes progress.
     for (std::size_t i = 0; i < port_count; ++i) {
-      if (heads[i] && max_ts - heads[i]->timestamp >
-                          m_config.alignment_tolerance) {
+      if (heads[i] &&
+          max_ts - heads[i]->timestamp > m_config.alignment_tolerance) {
         dropStaleHead(state, i, *heads[i], "timestamp alignment drop");
       }
     }

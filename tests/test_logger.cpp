@@ -73,11 +73,11 @@ protected:
   // Unique per-test directory for file-output tests, removed in TearDown.
   std::filesystem::path makeTempDir() {
     const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
-    m_temp_dir = std::filesystem::temp_directory_path() /
-                 (std::string("ai_pipe_logger_test_") + info->name() + "_" +
-                  std::to_string(std::chrono::steady_clock::now()
-                                     .time_since_epoch()
-                                     .count()));
+    m_temp_dir =
+        std::filesystem::temp_directory_path() /
+        (std::string("ai_pipe_logger_test_") + info->name() + "_" +
+         std::to_string(
+             std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(m_temp_dir);
     return m_temp_dir;
   }
@@ -317,7 +317,9 @@ TEST_F(LoggerTest, LogStreamDisabledLevelDoesNotLog) {
     }
   });
 
-  { LogStream(logger, LogLevel::Info, SourceLocation{}) << "LogStreamDisabled"; }
+  {
+    LogStream(logger, LogLevel::Info, SourceLocation{}) << "LogStreamDisabled";
+  }
 
   EXPECT_EQ(count, 0);
 }
@@ -416,8 +418,7 @@ TEST_F(LoggerTest, ErrorLevelFlushesImmediately) {
   // No explicit flush: Error/Fatal must hit the file immediately
   logger.error("ErrorFlush immediate");
 
-  EXPECT_NE(readFile(log_path).find("ErrorFlush immediate"),
-            std::string::npos);
+  EXPECT_NE(readFile(log_path).find("ErrorFlush immediate"), std::string::npos);
 }
 
 TEST_F(LoggerTest, EnableFileToggle) {
