@@ -2008,6 +2008,13 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   if (status.is_complete) {
     LOG_TRACE_S << "ExecutionEngine: Execution complete - " << status.reason;
 
+    // Fire-and-forget executions have no synchronous waiter to restore the
+    // engine state, so a completed batch returns to IDLE here; the CAS
+    // leaves ERROR/STOPPED outcomes untouched
+    EngineState expected = EngineState::RUNNING;
+    m_engineState.compare_exchange_strong(expected, EngineState::IDLE,
+                                          std::memory_order_acq_rel);
+
     if (m_resultCallback) {
       PortDataMap results;
       {
@@ -2041,7 +2048,9 @@ Result<void> ExecutionEngine::Impl::waitForCompletion() {
     m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionStopped,
                              "Execution was stopped externally");
-  } else if (active_tasks == 0 && current_state == EngineState::RUNNING) {
+  } else if (active_tasks == 0 && (current_state == EngineState::RUNNING ||
+                                   current_state == EngineState::IDLE)) {
+    // IDLE means checkCompletionAndNotify already restored the state
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
     LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
     m_currentContext.store(nullptr);

@@ -253,8 +253,10 @@ TEST_F(ExecutionEngineTest, BatchExecuteAsynchronous) {
 
   EXPECT_GE(m_sink->processCount(), 1);
 
+  // The async execution already completed above, which returns the engine
+  // to IDLE (fire-and-forget contract); stopping an idle engine is a no-op
   engine->stopExecutionSync();
-  EXPECT_EQ(engine->getState(), EngineState::STOPPED);
+  EXPECT_EQ(engine->getState(), EngineState::IDLE);
 }
 
 TEST_F(ExecutionEngineTest, BatchExecuteWithContext) {
