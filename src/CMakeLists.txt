@@ -47,13 +47,15 @@ set_target_properties(ai_pipe PROPERTIES
     SOVERSION ${AI_PIPE_VERSION_MAJOR}
 )
 
-# Configure include directories
+# Configure include directories. Only api/ is public: consumers must not
+# see the private headers in src/, so the build-tree interface matches the
+# install-tree interface (tests/benchmarks opt back in explicitly).
 target_include_directories(ai_pipe
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${DEPENDENCY_INCLUDES}
 )
 
