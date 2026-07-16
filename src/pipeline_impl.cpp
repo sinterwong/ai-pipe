@@ -187,6 +187,10 @@ EngineConfig Pipeline::Impl::buildEngineConfig() const {
   config.default_drop_strategy = m_options.drop_strategy;
   config.enable_sync_coordination = m_options.enable_sync_coordination;
   config.enable_statistics = m_options.enable_statistics;
+  config.alignment_policy = m_options.alignment_policy;
+  config.alignment_tolerance = m_options.alignment_tolerance;
+  config.join_wait_timeout = m_options.join_wait_timeout;
+  config.join_timeout_policy = m_options.join_timeout_policy;
   return config;
 }
 
@@ -540,6 +544,14 @@ EngineStatisticsSnapshot Pipeline::Impl::statistics() const {
   return m_engine->statistics();
 }
 
+Result<void> Pipeline::Impl::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  if (!m_engine) {
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             "Pipeline has no engine");
+  }
+  return m_engine->setTraceSink(std::move(sink));
+}
+
 // -------------------------------------------------------------------------
 // Accessors
 // -------------------------------------------------------------------------
@@ -788,6 +800,10 @@ ExecutionMode Pipeline::mode() const { return m_impl->mode(); }
 
 EngineStatisticsSnapshot Pipeline::statistics() const {
   return m_impl->statistics();
+}
+
+Result<void> Pipeline::setTraceSink(std::shared_ptr<ITraceSink> sink) {
+  return m_impl->setTraceSink(std::move(sink));
 }
 
 // Accessors

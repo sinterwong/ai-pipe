@@ -424,6 +424,13 @@ struct EngineConfig {
   bool allow_partial_inputs = false;          // 允许部分输入即调度
   std::chrono::milliseconds min_execution_interval{0}; // 最小执行间隔
 
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId; // 多输入对齐键
+  std::chrono::microseconds alignment_tolerance{33000};       // Timestamp 策略容差
+
+  std::chrono::milliseconds join_wait_timeout{0};             // Join 等待上限（0 = 无限等待）
+  JoinTimeoutPolicy join_timeout_policy =                     // 超时降级策略
+      JoinTimeoutPolicy::PartialInputs;
+
   bool enable_statistics = true;
   bool enable_drop_logging = true;
 };
@@ -584,6 +591,51 @@ auto eos  = FrameMetadataFactory::createEndOfStream();       // 流结束标记
 - `k_end_of_stream_frame_id = UINT64_MAX`：流结束标记
 - `k_max_frame_drift = 100`：最大允许帧偏移
 
+### 8.2 多流对齐 — `AlignmentPolicy`（F5）
+
+多输入（Join）节点的对齐取数由 `EngineConfig::alignment_policy` 选择对齐键；
+非默认策略是显式选择，即使未安装同步策略也会启用对齐取数：
+
+| 策略 | 配对条件 | 适用场景 |
+|------|---------|---------|
+| `FrameId`（默认） | 各端口队头 FrameId 精确相等 | 单流，或 ID 全局唯一的多流（如引擎自动编号） |
+| `StreamFrameId` | 各端口队头 (stream_id, frame_id) 二元组相等 | 多流各自独立编号（跨流 ID 可能碰撞） |
+| `Timestamp` | 队头时间戳极差 ≤ `alignment_tolerance`（默认 33ms） | 多摄像头无共享帧号，仅按采集时间配对 |
+
+**滞留帧丢弃契约**（保证取数循环单调推进，不会死锁在永失配对的队头）：
+
+- `StreamFrameId`：队头不齐时，丢弃入线时间戳**严格早于**最新队头的帧——
+  端口队列 FIFO 且入线时间戳单调不减，更早的帧在最新端口上已错过配对窗口。
+  各队头时间戳完全相同时（病态情形）按最小 (stream, frame) 确定性丢弃。
+  该模式下引擎对未编号包的自动 FrameId 改为**流内单调**（按 stream_id 分桶计数）。
+- `Timestamp`：丢弃落后最新队头超过容差的帧（同样依赖端口内时间戳单调不减）。
+  该策略完全忽略 FrameId。
+
+**边界**：跨分支丢弃协调（`ISyncStrategy` 的 reportDrop/shouldDrop 及水位线）
+仍以 FrameId 为键。多流场景下若跨流 ID 碰撞，协调记录可能跨流误伤——
+需要精确协调时应保证 ID 全局唯一（引擎默认编号即满足），或仅依赖对齐层丢弃。
+时间戳来源：入线时若包未携带时间戳由引擎盖章（`stampIncomingFrame`）；
+用户自带采集时间戳时需自行保证端口内单调不减。
+
+### 8.3 Join 对齐超时降级 — `JoinTimeoutPolicy`（F6）
+
+默认行为（`join_wait_timeout = 0`）：落后分支由重调度机制自然等待，
+永失配对的帧由对齐层丢弃——即"宁等待也不要不完整数据"。为相反偏好
+（"宁要不完整数据也不要等待"）提供可配置降级（**仅流模式**；批模式对缺失
+输入立即失败，不存在等待）：
+
+| 策略 | 超时后的行为 |
+|------|------------|
+| `PartialInputs`（默认） | 以已就绪端口执行节点；缺失端口在 `PortDataMap` 中不出现，节点须自行容忍 |
+| `SkipFrame` | 丢弃卡住的队头帧（drop 回调 reason 为 `join wait timeout`），让后续帧正常配对 |
+
+**机制**：部分就绪的 Join 在无新数据到达时不会被重调度，超时需要主动唤醒——
+仅当 `join_wait_timeout > 0` 且图中存在多输入节点时，引擎启动一个轻量看门狗
+线程（随 `startStreaming`/`stopStreaming` 起停），以 timeout/4 为节拍扫描
+多输入节点：持续部分就绪超过上限者被调度一次降级执行。降级取数选取已就绪
+端口中**最老的配对集**（按当前 `AlignmentPolicy` 语义），超时精度为 ±一个
+节拍。降级次数计入 `EngineStatistics::total_join_timeouts`。
+
 ---
 
 ## 9. 统计与监控
@@ -631,6 +683,28 @@ snap.node_stats;            // 每节点统计
 - 处理时间（总/最小/最大）
 - 输入/输出计数
 - 当前队列深度
+
+### 9.4 执行追踪 — `ITraceSink` / `ChromeTraceSink`（F7）
+
+把第 9 章的聚合数字升级为 per-frame 时间线：注入 `ITraceSink`
+（`ExecutionEngine::setTraceSink` / `Pipeline::setTraceSink`，仅 IDLE 时可换）
+后，引擎在四个生命周期点发出 `TraceEvent`：
+
+| Phase | 语义 | 类型 |
+|-------|------|------|
+| `Enqueue` | 包被节点输入队列接收（含 detail=端口名） | 瞬时 |
+| `Schedule` | READY → worker 取走（span = 调度延迟） | 区间 |
+| `Execute` | `process()` 调用（携带输入帧的 frame/stream id） | 区间 |
+| `Propagate` | 输出路由到下游队列 | 区间 |
+
+**约定**：`onEvent` 在 worker 线程/入线线程上并发调用且处于热路径——sink
+必须线程安全且廉价；`TraceEvent` 的 string_view 字段仅在调用期间有效，
+留存需拷贝。未安装 sink 时每个埋点只花一次指针判空。
+
+**内置导出**：`ChromeTraceSink` 缓冲全部事件（互斥保护，适合测试/有界
+采集，不适合无界 7×24），`toJson()`/`writeFile()` 输出 Chrome Trace Event
+格式——chrome://tracing 或 https://ui.perfetto.dev 直接打开；frame_id/
+stream_id 挂在 args 上可按帧切片。
 
 ---
 
@@ -776,6 +850,40 @@ class TimestampSyncStrategy : public ai_pipe::ISyncStrategy {
   // 适用于多传感器融合场景
 };
 ```
+
+### 12.4 动态节点插件 — `PluginLoader`（F8）
+
+节点可打包为共享库在运行时加载（`ai_pipe/plugin.hpp`）：
+
+```cpp
+// 插件侧（编译为 MODULE 共享库，链接 libai_pipe.so）
+AI_PIPE_PLUGIN("my_detector_pack");   // 导出版本握手描述符
+AI_PIPE_REGISTER_NODE(MyDetectorNode); // 静态初始化时注册（dlopen 触发）
+
+// 宿主侧
+ai_pipe::PluginLoader loader;
+auto loaded = loader.load("plugins/libmy_detector_pack.so");
+// 或整目录扫描（非递归，按路径排序保证确定性）：
+auto all = loader.loadDirectory("plugins/");
+// loaded->registered_types 列出该插件贡献的节点类型
+```
+
+**ABI 边界与版本握手**：
+
+- 插件必须与宿主链接**同一个** `libai_pipe.so`（NodeRegistry 单例与跨界
+  C++ 类型都在其中），并使用 ABI 兼容的工具链/编译选项——握手无法检测
+  工具链 ABI 漂移，这是文档化的边界而非可验证项。
+- 握手经 C-linkage 符号 `ai_pipe_plugin_descriptor` 进行（跨 dlopen 边界
+  只读一个 standard-layout C 结构体）：插件协议修订号
+  （`k_plugin_abi_version`）须精确相等；框架版本 pre-1.0 要求
+  major.minor 相同。
+- 注册发生在 dlopen 静态初始化期间、握手之前（机制使然），故加载器对
+  注册表做前后快照：握手失败时回滚该插件注册的全部节点类型再 dlclose，
+  错误码为 `PluginSymbolMissing` / `PluginVersionMismatch`。
+- 卸载（`unload`/析构）先反注册再 dlclose；调用方须保证该插件创建的节点
+  实例已全部销毁。注意 GCC 的 STB_GNU_UNIQUE 符号会使 glibc 将库标记为
+  NODELETE（dlclose 不真正卸载、重载不会重跑注册）——插件建议以
+  `-fno-gnu-unique` 编译。
 
 ---
 

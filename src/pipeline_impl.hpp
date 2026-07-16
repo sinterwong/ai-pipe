@@ -97,6 +97,8 @@ public:
   [[nodiscard]] ExecutionMode mode() const;
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
 
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
+
   // ---- Accessors ----
 
   [[nodiscard]] const Graph &graph() const;

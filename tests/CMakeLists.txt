@@ -24,8 +24,21 @@ set(DEPENDENCY_LIBS
 file(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
 
+# Test plugins (F8): built into plugins/, dlopen'ed by the loader tests
+if(UNIX)
+    add_subdirectory(plugins)
+endif()
+
 # Build test executable
 add_executable(ai_pipe_tests ${TEST_SOURCES})
+
+if(UNIX)
+    # Build-tree fallback for locating the test plugins; when running
+    # from the install tree the tests find them at ./tests/plugins.
+    target_compile_definitions(ai_pipe_tests PRIVATE
+        AI_PIPE_TEST_PLUGIN_DIR="${CMAKE_CURRENT_BINARY_DIR}/plugins"
+    )
+endif()
 
 # Set target properties
 set_target_properties(ai_pipe_tests PROPERTIES

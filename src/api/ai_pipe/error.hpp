@@ -43,6 +43,7 @@ namespace ai_pipe {
  *   2xx - Execution
  *   3xx - Queue / streaming
  *   4xx - Node-level
+ *   5xx - Plugin loading
  */
 enum class ErrorCode : std::uint16_t {
   // --- General ---
@@ -78,6 +79,11 @@ enum class ErrorCode : std::uint16_t {
   NodeException = 400,
   NodeUnknownException = 401,
   InputUnavailable = 402,
+
+  // --- Plugin loading ---
+  PluginLoadFailed = 500,
+  PluginSymbolMissing = 501,
+  PluginVersionMismatch = 502,
 };
 
 /**
@@ -133,6 +139,12 @@ inline const char *errorCodeToString(ErrorCode code) {
     return "NodeUnknownException";
   case ErrorCode::InputUnavailable:
     return "InputUnavailable";
+  case ErrorCode::PluginLoadFailed:
+    return "PluginLoadFailed";
+  case ErrorCode::PluginSymbolMissing:
+    return "PluginSymbolMissing";
+  case ErrorCode::PluginVersionMismatch:
+    return "PluginVersionMismatch";
   }
   return "Unknown";
 }

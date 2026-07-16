@@ -199,7 +199,9 @@ Result<PipelineOptions> parseOptions(const json &doc) {
   if (auto known = checkKnownKeys(
           opts, "'options'",
           {"mode", "num_workers", "execution_timeout_ms", "queue_capacity",
-           "drop_strategy", "enable_sync_coordination", "enable_statistics"});
+           "drop_strategy", "enable_sync_coordination", "enable_statistics",
+           "alignment_policy", "alignment_tolerance_us",
+           "join_wait_timeout_ms", "join_timeout_policy"});
       !known) {
     return Result<PipelineOptions>::err(known.error());
   }
@@ -274,6 +276,67 @@ Result<PipelineOptions> parseOptions(const json &doc) {
           "Option 'enable_statistics' must be a boolean");
     }
     options.enable_statistics = opts["enable_statistics"].get<bool>();
+  }
+  if (opts.contains("alignment_policy")) {
+    if (!opts["alignment_policy"].is_string()) {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'alignment_policy' must be a string");
+    }
+    const auto policy = opts["alignment_policy"].get<std::string>();
+    if (policy == "frame_id") {
+      options.alignment_policy = AlignmentPolicy::FrameId;
+    } else if (policy == "stream_frame_id") {
+      options.alignment_policy = AlignmentPolicy::StreamFrameId;
+    } else if (policy == "timestamp") {
+      options.alignment_policy = AlignmentPolicy::Timestamp;
+    } else {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'alignment_policy' must be \"frame_id\", "
+          "\"stream_frame_id\" or \"timestamp\" (got '" +
+              policy + "')");
+    }
+  }
+  if (opts.contains("alignment_tolerance_us")) {
+    auto tolerance =
+        parseUintOption(opts["alignment_tolerance_us"],
+                        "alignment_tolerance_us", 0,
+                        std::numeric_limits<std::int64_t>::max());
+    if (!tolerance) {
+      return Result<PipelineOptions>::err(tolerance.error());
+    }
+    options.alignment_tolerance = std::chrono::microseconds(
+        static_cast<std::int64_t>(tolerance.value()));
+  }
+  if (opts.contains("join_wait_timeout_ms")) {
+    auto timeout =
+        parseUintOption(opts["join_wait_timeout_ms"], "join_wait_timeout_ms",
+                        0, std::numeric_limits<std::int64_t>::max());
+    if (!timeout) {
+      return Result<PipelineOptions>::err(timeout.error());
+    }
+    options.join_wait_timeout =
+        std::chrono::milliseconds(static_cast<std::int64_t>(timeout.value()));
+  }
+  if (opts.contains("join_timeout_policy")) {
+    if (!opts["join_timeout_policy"].is_string()) {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'join_timeout_policy' must be a string");
+    }
+    const auto policy = opts["join_timeout_policy"].get<std::string>();
+    if (policy == "partial_inputs") {
+      options.join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
+    } else if (policy == "skip_frame") {
+      options.join_timeout_policy = JoinTimeoutPolicy::SkipFrame;
+    } else {
+      return Result<PipelineOptions>::err(
+          ErrorCode::InvalidConfiguration,
+          "Option 'join_timeout_policy' must be \"partial_inputs\" or "
+          "\"skip_frame\" (got '" +
+              policy + "')");
+    }
   }
   return options;
 }

@@ -52,6 +52,80 @@ inline std::string executionModeToString(ExecutionMode mode) {
 }
 
 /**
+ * @brief Frame alignment policy for multi-input (join) nodes
+ *
+ * Selects the key used by the engine's aligned-gather path when a node
+ * has more than one input port:
+ *
+ * - FrameId (default): heads pair when their FrameIds match exactly.
+ *   Correct for single-stream pipelines and for multi-stream pipelines
+ *   whose ids are globally unique (e.g. engine-stamped ids).
+ * - StreamFrameId: heads pair when both stream_id and FrameId match.
+ *   Use when several streams flow through the same graph with
+ *   per-stream frame numbering (ids may collide across streams).
+ *   Engine stamping becomes per-stream monotonic in this mode.
+ * - Timestamp: heads pair when their header timestamps agree within
+ *   EngineConfig::alignment_tolerance. Use for multi-camera capture
+ *   where streams share no frame numbering; this wires the
+ *   TimestampFrameMetadata tolerance semantics into the engine.
+ *
+ * Lag/drop contract per policy is documented at gatherAlignedInputs()
+ * and in the framework design doc, section 4 (multi-stream alignment).
+ */
+enum class AlignmentPolicy : std::uint8_t {
+  FrameId,
+  StreamFrameId,
+  Timestamp,
+};
+
+/**
+ * @brief Convert alignment policy to string
+ */
+inline std::string alignmentPolicyToString(AlignmentPolicy policy) {
+  switch (policy) {
+  case AlignmentPolicy::FrameId:
+    return "FrameId";
+  case AlignmentPolicy::StreamFrameId:
+    return "StreamFrameId";
+  case AlignmentPolicy::Timestamp:
+    return "Timestamp";
+  }
+  return "UNKNOWN";
+}
+
+/**
+ * @brief Degradation applied when a join waits too long for a branch
+ *
+ * With EngineConfig::join_wait_timeout > 0 (streaming mode only), a
+ * multi-input node whose inputs stay partially ready for longer than
+ * the timeout is degraded instead of waiting indefinitely:
+ *
+ * - PartialInputs: execute the node with the ports that do have data;
+ *   missing ports are simply absent from the PortDataMap. Nodes used
+ *   under this policy must tolerate missing input ports.
+ * - SkipFrame: discard the stuck head frame(s) so later frames can
+ *   pair normally; the drop is reported via the drop callback with
+ *   reason "join wait timeout".
+ */
+enum class JoinTimeoutPolicy : std::uint8_t {
+  PartialInputs,
+  SkipFrame,
+};
+
+/**
+ * @brief Convert join timeout policy to string
+ */
+inline std::string joinTimeoutPolicyToString(JoinTimeoutPolicy policy) {
+  switch (policy) {
+  case JoinTimeoutPolicy::PartialInputs:
+    return "PartialInputs";
+  case JoinTimeoutPolicy::SkipFrame:
+    return "SkipFrame";
+  }
+  return "UNKNOWN";
+}
+
+/**
  * @brief Configuration for node input queues
  */
 struct QueueConfig {
@@ -115,6 +189,32 @@ struct EngineConfig {
   bool enable_sync_coordination = false;
   bool allow_partial_inputs = false;
   std::chrono::milliseconds min_execution_interval{0};
+
+  /**
+   * Multi-input alignment key (see AlignmentPolicy). Non-default
+   * policies activate aligned gathering for multi-input nodes even
+   * when no sync strategy is installed (batch mode included).
+   */
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId;
+
+  /**
+   * Pairing tolerance for AlignmentPolicy::Timestamp. Default matches
+   * TimestampFrameMetadata::k_default_sync_tolerance (33ms ~ one frame
+   * at 30fps).
+   */
+  std::chrono::microseconds alignment_tolerance{33000};
+
+  /**
+   * Maximum time a multi-input node may sit with partially ready
+   * inputs before the join_timeout_policy degradation kicks in.
+   * 0 (default) preserves the historical behavior: lagging branches
+   * are awaited indefinitely (streaming-mode only feature; batch mode
+   * fails fast on missing inputs and never waits).
+   */
+  std::chrono::milliseconds join_wait_timeout{0};
+
+  /** Degradation applied when join_wait_timeout expires */
+  JoinTimeoutPolicy join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
 
   bool enable_statistics = true;
   bool enable_drop_logging = true;
@@ -348,6 +448,10 @@ struct EngineStatistics {
   std::atomic<std::uint64_t> total_output_frames{0};
   std::atomic<std::uint64_t> total_dropped_frames{0};
 
+  // Join timeout degradations (partial-input executions or skipped
+  // frames triggered by EngineConfig::join_wait_timeout)
+  std::atomic<std::uint64_t> total_join_timeouts{0};
+
   // Queue stats
   std::atomic<std::uint64_t> total_queue_pushes{0};
   std::atomic<std::uint64_t> total_queue_pops{0};
@@ -373,6 +477,7 @@ struct EngineStatistics {
     total_input_frames.store(0, std::memory_order_relaxed);
     total_output_frames.store(0, std::memory_order_relaxed);
     total_dropped_frames.store(0, std::memory_order_relaxed);
+    total_join_timeouts.store(0, std::memory_order_relaxed);
     total_queue_pushes.store(0, std::memory_order_relaxed);
     total_queue_pops.store(0, std::memory_order_relaxed);
     queue_full_events.store(0, std::memory_order_relaxed);
@@ -467,6 +572,7 @@ struct EngineStatisticsSnapshot {
   std::uint64_t total_input_frames{0};
   std::uint64_t total_output_frames{0};
   std::uint64_t total_dropped_frames{0};
+  std::uint64_t total_join_timeouts{0};
 
   std::uint64_t total_queue_pushes{0};
   std::uint64_t total_queue_pops{0};
@@ -506,6 +612,8 @@ struct EngineStatisticsSnapshot {
         stats.total_output_frames.load(std::memory_order_relaxed);
     total_dropped_frames =
         stats.total_dropped_frames.load(std::memory_order_relaxed);
+    total_join_timeouts =
+        stats.total_join_timeouts.load(std::memory_order_relaxed);
 
     total_queue_pushes =
         stats.total_queue_pushes.load(std::memory_order_relaxed);

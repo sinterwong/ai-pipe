@@ -49,22 +49,65 @@
 
 ## 中期（v0.7+）
 
-- [ ] **F5. 多流同步**：帧对齐目前仅按 FrameId（P4.1），`stream_id` 已在
+- [x] **F5. 多流同步**：帧对齐目前仅按 FrameId（P4.1），`stream_id` 已在
   DataPacket 头部但不参与对齐。多摄像头场景需要 (stream, frame) 二元对齐
   或基于 `TimestampFrameMetadata` 的时间戳容差对齐（API 已定义未接线）。
-- [ ] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
+  ——新增 `EngineConfig::alignment_policy`（FrameId 默认 / StreamFrameId /
+  Timestamp + `alignment_tolerance`，默认 33ms 对齐
+  `TimestampFrameMetadata::k_default_sync_tolerance`）；StreamFrameId 模式
+  下引擎自动编号改为流内单调；滞留帧按入线时间戳序丢弃（契约见
+  Framework_Design §8.2，含丢弃协调仍以 FrameId 为键的边界说明）。
+  PipelineOptions 与 JSON loader（`alignment_policy`/
+  `alignment_tolerance_us`）同步暴露。5 个新测试
+  （test_multistream_alignment.cpp）。提交 `feat: multi-stream join
+  alignment policies (F5)`。
+- [x] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
   落后分支由重调度机制自然等待、永失配对帧直接丢弃。为"宁要不完整数据也
   不要等待"的场景提供可配置的等待上限与降级策略（部分输入执行/跳帧）。
-- [ ] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
+  ——新增 `EngineConfig::join_wait_timeout`（0 = 无限等待，默认保持原行为）
+  + `JoinTimeoutPolicy`（PartialInputs / SkipFrame）。部分就绪的 Join 无
+  新数据时不会被重调度，故由轻量看门狗线程（仅超时启用且存在多输入节点时
+  运行，timeout/4 节拍）主动触发降级执行；降级取数按当前 AlignmentPolicy
+  选取最老配对集。新增 `total_join_timeouts` 统计；PipelineOptions 与
+  JSON loader（`join_wait_timeout_ms`/`join_timeout_policy`）同步暴露；
+  文档 Framework_Design §8.3。4 个新测试（test_join_timeout.cpp）。
+  提交 `feat: join alignment timeout degradation (F6)`。
+- [x] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
   可注入 sink 输出，支持导出 chrome://tracing / Perfetto 格式，把第 9 章
   统计从聚合数字升级为可视化时间线。
-- [ ] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
+  ——新增公共头 `ai_pipe/trace.hpp`：`ITraceSink` 接口 + `TraceEvent`
+  （phase/node/detail/frame/stream/start/duration/thread）+ 内置
+  `ChromeTraceSink`（Chrome Trace Event JSON，chrome://tracing 与
+  Perfetto 均可打开）。注入点 `ExecutionEngine::setTraceSink` 与
+  `Pipeline::setTraceSink`（仅 IDLE）；四个埋点（Enqueue 瞬时 +
+  Schedule/Execute/Propagate 区间），未启用时开销为一次指针判空。
+  文档 Framework_Design §9.4。4 个新测试（test_trace.cpp）。
+  提交 `feat: execution tracing hooks with Chrome trace export (F7)`。
+- [x] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
   静态初始化时生效，NodeRegistry 基础已具备），需定义插件 ABI 边界与
   版本握手。
-- [ ] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
+  ——新增 `ai_pipe/plugin.hpp`：`AI_PIPE_PLUGIN` 宏导出 C-linkage 描述符
+  （插件协议修订号 + 构建时 AI_PIPE_VERSION），`PluginLoader` 提供
+  `load`/`loadDirectory`（非递归、排序确定）/`unload`。注册仍走静态
+  初始化（dlopen 触发）；加载器以注册表前后快照识别插件贡献的类型，
+  握手失败（缺符号/ABI 修订不符/major.minor 不符）回滚注册再 dlclose。
+  新错误码 5xx（PluginLoadFailed/PluginSymbolMissing/
+  PluginVersionMismatch）。ABI 边界（同一 libai_pipe.so、工具链兼容、
+  STB_GNU_UNIQUE/NODELETE 注意事项）文档化于 Framework_Design §12.4。
+  测试基建：3 个真实测试插件（有效/无描述符/ABI 不符）+ 5 个测试
+  （test_plugin_loader.cpp，含卸载后真实重载验证）。提交
+  `feat: dlopen node plugin loading with ABI handshake (F8)`。
+- [x] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
   （`std::map<string, ptr>`）是热路径上最后的字符串键容器（每次执行构造）。
   替换为索引化端口数组的新 process API 是**重大 API 变更**——先在真实负载
   上 profile 证明收益再动手，避免为微优化破坏 API。
+  ——按条目自身的门槛完成 profile 并**决策不实施**：map 版 47–153 ns/次
+  执行 vs 索引版 17–21 ns（1–4 端口），最大节省 30–132 ns，仅与纯框架
+  开销同量级；对任意真实负载（≥100 μs/节点）占比 < 0.15%，不值得破坏
+  API。基准 `benchmarks/portdatamap_benchmark.cpp`，证据与重开条件
+  （F10 真实负载 profile 中 PortDataMap 进入热点前列）记录于
+  Performance_Report §7。提交 `perf: F9 profiling verdict - keep
+  PortDataMap, no API break`。
 
 ## v1.0 / API 冻结条件
 

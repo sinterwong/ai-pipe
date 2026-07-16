@@ -19,6 +19,7 @@
 
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
+#include "ai_pipe/trace.hpp"
 #include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
@@ -26,6 +27,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace ai_pipe {
@@ -76,6 +78,14 @@ public:
     std::atomic<std::chrono::steady_clock::rep> last_execution_ticks{0};
     std::atomic<std::uint64_t> execution_count{0};
 
+    // Join timeout tracking (F6), touched only when
+    // EngineConfig::join_wait_timeout > 0. join_wait_since_ticks marks
+    // when the watchdog first saw this node partially ready (0 = not
+    // waiting); degrade_pending asks the next failed aligned gather to
+    // apply the configured degradation instead of waiting.
+    std::atomic<std::chrono::steady_clock::rep> join_wait_since_ticks{0};
+    std::atomic<bool> degrade_pending{false};
+
     [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
       return std::chrono::steady_clock::time_point{
           std::chrono::steady_clock::duration{
@@ -106,6 +116,7 @@ public:
   Result<void>
   setSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
   Result<void> setSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
   void configureForMode(ExecutionMode mode);
 
   Result<void> initialize(Graph *graph, std::uint8_t num_workers);
@@ -193,6 +204,84 @@ private:
    * port has no poppable data yet (transient; caller reschedules).
    */
   bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief (stream, frame) aligned gather for AlignmentPolicy::StreamFrameId
+   *
+   * Heads pair only when every port head carries the same
+   * (stream_id, frame_id). When heads disagree, the head(s) that can
+   * never be paired are discarded: any head strictly older (by entry
+   * timestamp) than the newest head - a FIFO port never rewinds in
+   * time, so its partner can no longer arrive. If no head is strictly
+   * older (identical timestamps), the smallest (stream, frame) heads
+   * are dropped as a deterministic tie-break. Unassigned ids (0) act
+   * as wildcards, matching the FrameId policy.
+   */
+  bool gatherStreamAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Timestamp-tolerance gather for AlignmentPolicy::Timestamp
+   *
+   * Heads pair when (max_ts - min_ts) <= alignment_tolerance across
+   * all port heads. Otherwise every head with
+   * ts < max_ts - tolerance is discarded: per-port timestamps are
+   * non-decreasing (stamped at ingress in arrival order), so such a
+   * head can never fall within tolerance of the newest port's future
+   * frames. Frame ids are ignored by this policy.
+   */
+  bool gatherTimestampAlignedInputs(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Peek a port head, consuming pending coordinated sync drops
+   * @return The head packet, or nullopt if the port has no poppable data
+   */
+  std::optional<PortDataPtr> peekAlignmentHead(NodeState &state,
+                                               std::size_t port_index);
+
+  /**
+   * @brief Pop an unpairable head, recording the drop and reporting it
+   *        to the sync strategy for tracked nodes
+   */
+  void dropStaleHead(NodeState &state, std::size_t port_index,
+                     const PortData &head, const char *reason);
+
+  /**
+   * @brief Apply the join timeout degradation to a blocked join (F6)
+   *
+   * Called when an aligned gather failed and the watchdog flagged the
+   * node as timed out. Selects the oldest pairing set among the ports
+   * that do have data (per the active alignment policy) and either
+   * delivers it as partial inputs (returns true) or discards it as a
+   * skipped frame (returns false; reported through the drop callback).
+   */
+  bool degradeJoinGather(NodeState &state, PortDataMap &inputs);
+
+  /**
+   * @brief Watchdog driving join timeouts (streaming mode only)
+   *
+   * Nothing re-schedules a partially-ready join while no new data
+   * arrives, so timeouts need an active wakeup: a lightweight thread
+   * (started only when join_wait_timeout > 0 and the graph has
+   * multi-input nodes) scans those nodes every timeout/4 and schedules
+   * a degraded execution once a node stays partially ready past the
+   * timeout. Timeout accuracy is one tick (+-timeout/4).
+   */
+  void startJoinTimeoutWatchdog();
+  void stopJoinTimeoutWatchdog();
+  void joinTimeoutWatchdogLoop();
+
+  /**
+   * @brief Emit a trace event if a sink is installed (F7)
+   *
+   * Frame identity is taken from `packet` when non-null. Costs one
+   * pointer check when tracing is disabled.
+   */
+  void emitTrace(TracePhase phase, const std::string &node,
+                 std::string_view detail, const PortData *packet,
+                 Timestamp start, std::chrono::microseconds duration);
+
+  /** @brief First packet carrying a frame id, or nullptr */
+  static const PortData *primaryFrame(const PortDataMap &packets);
 
   void recordSyncDrop(const NodeState &state, const std::string &port_name,
                       FrameId frame_id, const char *reason);
@@ -291,6 +380,10 @@ private:
   std::unique_ptr<ISchedulerStrategy> m_schedulerStrategy;
   std::unique_ptr<ISyncStrategy> m_syncStrategy;
 
+  // Trace sink (F7). Set only while IDLE, read from worker threads
+  // while running; the start/stop transitions provide the ordering.
+  std::shared_ptr<ITraceSink> m_traceSink;
+
   Graph *m_graph{nullptr};
 
   // Immutable indexed view of m_graph, rebuilt by initialize(). Holds the
@@ -311,12 +404,28 @@ private:
   // the raw pointers are owned by m_nodeStates.
   std::vector<NodeState *> m_statesByIndex;
 
+  // Multi-input node indices, precomputed at initialize; the join
+  // timeout watchdog scans only these.
+  std::vector<CompiledGraph::NodeIndex> m_multiInputIndices;
+
+  // Join timeout watchdog (see startJoinTimeoutWatchdog)
+  std::thread m_joinWatchdog;
+  std::mutex m_watchdogMutex;
+  std::condition_variable m_watchdogCV;
+  bool m_watchdogStop{false};
+
   // Nodes that completed setup(), in setup order; drives teardown.
   std::vector<NodePtr> m_setUpNodes;
 
   // Monotonic FrameId source for packets entering the pipeline without
   // an assigned id (see stampIncomingFrame).
   std::atomic<FrameId> m_nextFrameId{1};
+
+  // Per-stream FrameId sources, used instead of m_nextFrameId when the
+  // alignment policy is StreamFrameId (ids must be monotonic within a
+  // stream, not globally). Ingress-only, so a plain mutex suffices.
+  std::mutex m_streamStampMutex;
+  std::unordered_map<StreamId, FrameId> m_nextStreamFrameId;
 
   std::atomic<EngineState> m_engineState{EngineState::IDLE};
   std::atomic<int> m_activeTasks{0};

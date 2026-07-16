@@ -34,6 +34,7 @@
 namespace ai_pipe {
 
 class PipelineBuilder;
+class ITraceSink;
 
 struct PipelineOptions {
   ExecutionMode mode = ExecutionMode::BATCH;
@@ -44,6 +45,16 @@ struct PipelineOptions {
   std::string drop_strategy = "DropHead";
   bool enable_sync_coordination = false;
   bool enable_statistics = true;
+
+  /// Multi-input alignment key; see AlignmentPolicy (execution_types.hpp)
+  AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId;
+  /// Pairing tolerance for AlignmentPolicy::Timestamp
+  std::chrono::microseconds alignment_tolerance{33000};
+
+  /// Join wait cap before degradation; 0 = wait indefinitely (default)
+  std::chrono::milliseconds join_wait_timeout{0};
+  /// Degradation on join timeout; see JoinTimeoutPolicy
+  JoinTimeoutPolicy join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
 
   static PipelineOptions batch(std::uint8_t workers = 4) {
     PipelineOptions opts;
@@ -244,6 +255,13 @@ public:
   nodeStates() const;
   [[nodiscard]] ExecutionMode mode() const;
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
+
+  /**
+   * @brief Install a trace sink on the underlying engine (F7)
+   *
+   * See ai_pipe/trace.hpp. Only allowed while the engine is idle.
+   */
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
   // ---- Accessors ----
   [[nodiscard]] const Graph &graph() const;

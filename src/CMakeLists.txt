@@ -57,8 +57,8 @@ target_include_directories(ai_pipe
         ${DEPENDENCY_INCLUDES}
 )
 
-# Link dependencies
-target_link_libraries(ai_pipe PRIVATE ${DEPENDENCY_LIBS})
+# Link dependencies (CMAKE_DL_LIBS: dlopen for the plugin loader)
+target_link_libraries(ai_pipe PRIVATE ${DEPENDENCY_LIBS} ${CMAKE_DL_LIBS})
 
 # Optional JSON graph loader: nlohmann/json is vendored, header-only, and
 # consumed PRIVATE-ly, so enabling it adds no link-time or install-time

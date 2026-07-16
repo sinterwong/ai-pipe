@@ -30,6 +30,8 @@
 
 namespace ai_pipe {
 
+class ITraceSink;
+
 /**
  * @brief Execution engine with strategy-based architecture
  *
@@ -73,6 +75,15 @@ public:
   Result<void> setSchedulerStrategy(SchedulerStrategyPtr strategy);
   Result<void> setSyncStrategy(SyncStrategyPtr strategy);
   void configureForMode(ExecutionMode mode);
+
+  /**
+   * @brief Install a trace sink receiving per-frame span events (F7)
+   *
+   * See ai_pipe/trace.hpp. Pass nullptr to disable tracing. Like the
+   * strategies, the sink can only change while the engine is idle.
+   * @return Result<void> - success or InvalidState while running
+   */
+  Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
   // -------------------------------------------------------------------------
   // Core Interface
