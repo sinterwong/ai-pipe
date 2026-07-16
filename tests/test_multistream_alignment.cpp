@@ -201,6 +201,30 @@ TEST_F(MultiStreamAlignmentTest, StreamFrameIdStampsPerStreamMonotonicIds) {
   }
 }
 
+TEST_F(MultiStreamAlignmentTest, StreamFrameIdEqualTimestampsDropSmallestKey) {
+  auto engine = makeEngine(AlignmentPolicy::StreamFrameId);
+
+  // Misaligned heads with IDENTICAL timestamps: the age-based discard
+  // cannot pick a loser (no head is strictly older), so the engine must
+  // fall back to dropping the smallest (stream, frame) key - here
+  // stream0/frame1 on srcA, which will never find a partner on srcB.
+  const auto base = std::chrono::steady_clock::now();
+  (void)engine->pushInput("srcA", makeFrame(0, 1, base));
+  (void)engine->pushInput("srcB", makeFrame(1, 1, base));
+  (void)engine->pushInput("srcA", makeFrame(1, 1, base));
+
+  ASSERT_TRUE(engine->waitForDrain(0, 10000ms).isOk());
+  engine->stopStreaming(false);
+
+  const auto pairs = m_join->pairs();
+  ASSERT_EQ(pairs.size(), 1u);
+  EXPECT_EQ(pairs[0].first.stream, 1u);
+  EXPECT_EQ(pairs[0].first.frame, 1u);
+  EXPECT_EQ(pairs[0].second.stream, 1u);
+  EXPECT_EQ(pairs[0].second.frame, 1u);
+  EXPECT_GE(m_dropCount.load(), 1);
+}
+
 TEST_F(MultiStreamAlignmentTest, TimestampPairsWithinTolerance) {
   auto engine = makeEngine(AlignmentPolicy::Timestamp, 10000us);
 
