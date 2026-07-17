@@ -138,9 +138,9 @@ static void BM_Stream_PerNodeExecutionOverhead(::benchmark::State &state) {
 
   // items = node executions, so per-item time is the framework cost
   // one PortDataMap pair currently rides on.
-  state.SetItemsProcessed(state.iterations() *
-                          static_cast<std::int64_t>(frames_per_iter *
-                                                    nodes_per_frame));
+  state.SetItemsProcessed(
+      state.iterations() *
+      static_cast<std::int64_t>(frames_per_iter * nodes_per_frame));
   state.counters["depth"] = static_cast<double>(depth);
   state.counters["nodes_per_frame"] = static_cast<double>(nodes_per_frame);
 }

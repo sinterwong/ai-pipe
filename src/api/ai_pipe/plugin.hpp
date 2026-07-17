@@ -158,8 +158,8 @@ private:
  * @endcode
  */
 #define AI_PIPE_PLUGIN(plugin_name)                                            \
-  extern "C" const ::ai_pipe::PluginDescriptor *ai_pipe_plugin_descriptor() { \
-    static const ::ai_pipe::PluginDescriptor descriptor{                      \
+  extern "C" const ::ai_pipe::PluginDescriptor *ai_pipe_plugin_descriptor() {  \
+    static const ::ai_pipe::PluginDescriptor descriptor{                       \
         ::ai_pipe::k_plugin_abi_version,                                       \
         static_cast<std::uint32_t>(AI_PIPE_VERSION), plugin_name};             \
     return &descriptor;                                                        \

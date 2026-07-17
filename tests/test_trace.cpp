@@ -37,10 +37,9 @@ public:
 
   void onEvent(const TraceEvent &event) override {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_events.push_back(Copied{event.phase, std::string(event.node),
-                              std::string(event.detail), event.frame_id,
-                              event.stream_id, event.duration,
-                              event.thread_id});
+    m_events.push_back(Copied{
+        event.phase, std::string(event.node), std::string(event.detail),
+        event.frame_id, event.stream_id, event.duration, event.thread_id});
   }
 
   [[nodiscard]] std::vector<Copied> events() const {

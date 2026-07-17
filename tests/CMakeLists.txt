@@ -69,6 +69,12 @@ set_target_properties(ai_pipe_tests PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    # Export the executable's dynamic symbols (-rdynamic). In a static
+    # build the dlopen'ed test plugins do not link their own copy of the
+    # core library, so they resolve ai_pipe symbols (NodeRegistry
+    # singleton, node base classes) against this host at load time. Harmless
+    # for shared builds. See tests/plugins/CMakeLists.txt.
+    ENABLE_EXPORTS ON
 )
 
 # Configure include directories

@@ -200,8 +200,8 @@ Result<PipelineOptions> parseOptions(const json &doc) {
           opts, "'options'",
           {"mode", "num_workers", "execution_timeout_ms", "queue_capacity",
            "drop_strategy", "enable_sync_coordination", "enable_statistics",
-           "alignment_policy", "alignment_tolerance_us",
-           "join_wait_timeout_ms", "join_timeout_policy"});
+           "alignment_policy", "alignment_tolerance_us", "join_wait_timeout_ms",
+           "join_timeout_policy"});
       !known) {
     return Result<PipelineOptions>::err(known.error());
   }
@@ -299,20 +299,19 @@ Result<PipelineOptions> parseOptions(const json &doc) {
     }
   }
   if (opts.contains("alignment_tolerance_us")) {
-    auto tolerance =
-        parseUintOption(opts["alignment_tolerance_us"],
-                        "alignment_tolerance_us", 0,
-                        std::numeric_limits<std::int64_t>::max());
+    auto tolerance = parseUintOption(opts["alignment_tolerance_us"],
+                                     "alignment_tolerance_us", 0,
+                                     std::numeric_limits<std::int64_t>::max());
     if (!tolerance) {
       return Result<PipelineOptions>::err(tolerance.error());
     }
-    options.alignment_tolerance = std::chrono::microseconds(
-        static_cast<std::int64_t>(tolerance.value()));
+    options.alignment_tolerance =
+        std::chrono::microseconds(static_cast<std::int64_t>(tolerance.value()));
   }
   if (opts.contains("join_wait_timeout_ms")) {
     auto timeout =
-        parseUintOption(opts["join_wait_timeout_ms"], "join_wait_timeout_ms",
-                        0, std::numeric_limits<std::int64_t>::max());
+        parseUintOption(opts["join_wait_timeout_ms"], "join_wait_timeout_ms", 0,
+                        std::numeric_limits<std::int64_t>::max());
     if (!timeout) {
       return Result<PipelineOptions>::err(timeout.error());
     }

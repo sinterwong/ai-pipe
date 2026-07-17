@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -637,12 +638,18 @@ public:
   /**
    * @brief Copy the front item without consuming it
    *
-   * Inherits the core queue's single-consumer contract: only the
-   * thread that owns popping from this queue may peek.
+   * The core queue's tryPeek reads the head cell without claiming it, so
+   * it is only safe when no other thread pops the same slot concurrently.
+   * The consumer's own tryPop is same-thread and never races it, but the
+   * DropHead / KeepLatest policies evict from the *producer* side, turning
+   * a producer into a second popper. m_headMutex serializes peek against
+   * those eviction pops (see evictOne) to keep the head payload access
+   * race-free while leaving the tail push and consumer pop lock-free.
    *
    * @return Copy of the front item, or std::nullopt if empty
    */
   [[nodiscard]] std::optional<T> tryPeek() const {
+    std::lock_guard<std::mutex> guard(m_headMutex);
     T item;
     if (m_queue.tryPeek(item)) {
       return item;
@@ -684,6 +691,7 @@ public:
   // -------------------------------------------------------------------------
 
   void clear() {
+    std::lock_guard<std::mutex> guard(m_headMutex);
     T dummy;
     while (m_queue.tryPop(dummy)) {
     }
@@ -749,7 +757,7 @@ private:
 
     for (int round = 0; round < k_max_evictions; ++round) {
       T evicted;
-      if (m_queue.tryPop(evicted)) {
+      if (evictOne(evicted)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
@@ -771,7 +779,7 @@ private:
     // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
       T discard;
-      if (m_queue.tryPop(discard)) {
+      if (evictOne(discard)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
@@ -821,7 +829,7 @@ private:
     auto current_size = m_queue.size();
     while (current_size >= target_keep) {
       T evicted;
-      if (m_queue.tryPop(evicted)) {
+      if (evictOne(evicted)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
@@ -842,7 +850,7 @@ private:
 
     constexpr int k_spin_limit = 128;
     T evicted;
-    if (m_queue.tryPop(evicted)) {
+    if (evictOne(evicted)) {
       if (m_config.track_statistics) {
         m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
       }
@@ -863,7 +871,7 @@ private:
     // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
       T discard;
-      if (m_queue.tryPop(discard)) {
+      if (evictOne(discard)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
@@ -881,6 +889,20 @@ private:
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * @brief Producer-side head eviction, serialized against tryPeek.
+   *
+   * DropHead / KeepLatest make a producer evict the oldest item, which
+   * mutates the same head cell that a concurrent consumer tryPeek reads.
+   * Sharing m_headMutex with tryPeek prevents that peek-vs-evict data
+   * race. Consumer tryPop stays lock-free: pop-vs-pop is already safe via
+   * the core queue's CAS slot ownership.
+   */
+  bool evictOne(T &evicted) {
+    std::lock_guard<std::mutex> guard(m_headMutex);
+    return m_queue.tryPop(evicted);
+  }
 
   void updatePeakSize() {
     if (!m_config.track_statistics)
@@ -928,6 +950,10 @@ private:
   Config m_config;
   LockFreeMPMCQueue<T> m_queue;
   LockFreeQueueStatistics m_stats;
+
+  // Serializes tryPeek against producer-side eviction pops (evictOne) so
+  // the non-claiming peek never reads a head cell an evictor is moving out.
+  mutable std::mutex m_headMutex;
 
   DropEventCallback m_dropCallback;
   std::function<std::optional<FrameId>(const T &)> m_frameIdAccessor;
