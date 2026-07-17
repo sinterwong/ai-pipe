@@ -112,10 +112,15 @@
 
 ## R2. 命名与 API 边界清算（无兼容包袱，现在做而不是拖到 1.0）
 
-- [ ] **R2.1 DataPacket 迁出 common_utils 命名空间**：核心公共类型顶着
+- [x] **R2.1 DataPacket 迁出 common_utils 命名空间**：核心公共类型顶着
   `ai_pipe::common_utils` 工具命名空间（data_packet.hpp），迁至
   `ai_pipe` 根命名空间，`common_utils` 别名一并清除（无外部用户，不留
   过渡别名）。连带检查 data_types.hpp 里的相关 using。
+  ——已迁移：data_packet.hpp 改 `namespace ai_pipe`，不留别名；
+  data_types.hpp 的 `PortData` using、两个测试文件、
+  Framework_Design/Node_Development_Guide 引用同步更新。全库
+  `common_utils` 归零。提交 `refactor: move DataPacket to the ai_pipe
+  root namespace (R2.1)`。
 
 - [ ] **R2.2 移除异常双轨，统一 Result**：删除
   `DataPacket::getParam`/`getOptionalParam` 的抛异常路径与

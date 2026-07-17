@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-namespace ai_pipe::common_utils {
+namespace ai_pipe {
 using DataPacketId = uint64_t;
 
 struct DataPacket {
@@ -207,6 +207,6 @@ private:
   std::string m_key;
 };
 
-} // namespace ai_pipe::common_utils
+} // namespace ai_pipe
 
 #endif

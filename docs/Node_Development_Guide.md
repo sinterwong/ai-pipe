@@ -62,7 +62,7 @@ auto mat = packet->param<cv::Mat>("image");
 if (!mat) { /* mat.error() 带上下文 */ }
 
 // 声明式（键+类型只写一次）
-static inline const ai_pipe::common_utils::TypedParam<cv::Mat>
+static inline const ai_pipe::TypedParam<cv::Mat>
     k_image{"image"};
 auto mat = k_image.read(*packet);
 ```

@@ -35,7 +35,7 @@
 
 namespace ai_pipe {
 
-using PortData = common_utils::DataPacket;
+using PortData = DataPacket;
 
 /// Creation-side handle: mutate while exclusively owned, then hand off.
 using MutablePortDataPtr = std::shared_ptr<PortData>;

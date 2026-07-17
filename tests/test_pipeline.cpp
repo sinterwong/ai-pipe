@@ -26,14 +26,14 @@ using namespace std::chrono_literals;
 // =============================================================================
 
 inline PortDataPtr makeDataPacket(uint64_t id = 0) {
-  auto packet = std::make_shared<common_utils::DataPacket>();
+  auto packet = std::make_shared<DataPacket>();
   packet->id = id;
   return packet;
 }
 
 inline PortDataPtr makeDataPacketWithValue(uint64_t id, const std::string &key,
                                            int value) {
-  auto packet = std::make_shared<common_utils::DataPacket>();
+  auto packet = std::make_shared<DataPacket>();
   packet->id = id;
   packet->setParam(key, value);
   return packet;

@@ -14,7 +14,7 @@
 #include <string>
 #include <type_traits>
 
-using namespace ai_pipe::common_utils;
+using namespace ai_pipe;
 
 namespace ai_pipe_unit_test::data_packet {
 
