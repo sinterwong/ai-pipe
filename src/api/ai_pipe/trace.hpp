@@ -168,8 +168,9 @@ public:
       first = false;
       out << "{\"name\":\"" << escape(record.node) << "\",\"cat\":\""
           << tracePhaseToString(record.phase) << "\",\"ph\":\""
-          << (record.duration_us > 0 ? "X" : "i") << "\",\"ts\":"
-          << record.start_us << ",\"pid\":1,\"tid\":" << record.thread_id;
+          << (record.duration_us > 0 ? "X" : "i")
+          << "\",\"ts\":" << record.start_us
+          << ",\"pid\":1,\"tid\":" << record.thread_id;
       if (record.duration_us > 0) {
         out << ",\"dur\":" << record.duration_us;
       } else {

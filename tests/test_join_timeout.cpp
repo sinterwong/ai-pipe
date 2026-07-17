@@ -79,8 +79,8 @@ protected:
     return packet;
   }
 
-  std::unique_ptr<ExecutionEngine>
-  makeEngine(std::chrono::milliseconds timeout, JoinTimeoutPolicy policy) {
+  std::unique_ptr<ExecutionEngine> makeEngine(std::chrono::milliseconds timeout,
+                                              JoinTimeoutPolicy policy) {
     auto config = EngineConfig::stream(4, 16);
     config.join_wait_timeout = timeout;
     config.join_timeout_policy = policy;
