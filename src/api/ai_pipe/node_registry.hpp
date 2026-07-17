@@ -42,10 +42,20 @@ public:
   using Factory = std::function<Result<std::shared_ptr<ILogicNode>>(
       const std::string &node_name, const PortData &config)>;
 
-  static NodeRegistry &instance() {
-    static NodeRegistry registry;
-    return registry;
-  }
+  /**
+   * @brief The process-wide registry
+   *
+   * Defined in the library (node_registry.cpp), not inline: an inline
+   * definition is instantiated as a weak symbol in every module that
+   * includes this header, so a plugin built with hidden visibility (or
+   * statically linked against the ai_pipe archive) would silently get
+   * its own registry - node types it registers would never be visible
+   * to the host. Keeping the one definition inside libai_pipe makes
+   * every correctly linked module bind to the same instance; a plugin
+   * that still bundles its own copy of the library is a link error to
+   * fix, not a silent split registry.
+   */
+  static NodeRegistry &instance();
 
   NodeRegistry(const NodeRegistry &) = delete;
   NodeRegistry &operator=(const NodeRegistry &) = delete;
@@ -109,6 +119,36 @@ public:
   void unregisterType(const std::string &type_name) {
     std::unique_lock lock(m_mutex);
     m_factories.erase(type_name);
+  }
+
+  /**
+   * @brief Atomically replace a registered factory with a decorated one
+   *
+   * Support for PluginLoader instance tracking: after a plugin's static
+   * initializers register their factories, the loader wraps each one so
+   * created nodes carry a liveness token (see plugin_loader.cpp). The
+   * decoration happens under the registry lock, so no create() can slip
+   * between reading the original factory and installing the wrapper.
+   *
+   * @param wrap Receives the current factory, returns its replacement
+   * @return InvalidArgument if the type is not registered or the
+   *         wrapper returned a null factory (registration unchanged)
+   */
+  Result<void> wrapFactory(const std::string &type_name,
+                           const std::function<Factory(Factory)> &wrap) {
+    std::unique_lock lock(m_mutex);
+    auto it = m_factories.find(type_name);
+    if (it == m_factories.end()) {
+      return Result<void>::err(ErrorCode::InvalidArgument,
+                               "Unknown node type: " + type_name);
+    }
+    Factory wrapped = wrap(it->second);
+    if (!wrapped) {
+      return Result<void>::err(ErrorCode::InvalidArgument,
+                               "Factory wrapper returned a null factory");
+    }
+    it->second = std::move(wrapped);
+    return Result<void>::ok();
   }
 
 private:

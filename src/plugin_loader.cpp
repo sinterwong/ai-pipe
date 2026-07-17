@@ -32,6 +32,17 @@ namespace ai_pipe {
 struct PluginLoader::Impl {
   std::vector<LoadedPlugin> plugins;
   std::vector<void *> handles; // parallel to plugins
+  // Liveness token per plugin (parallel to plugins). Every node created
+  // through the plugin's wrapped factories co-owns the token, so
+  // use_count reveals live instances: use_count - 1 (loader's ref)
+  // - registered_types.size() (each wrapped factory's ref).
+  std::vector<std::shared_ptr<int>> tokens;
+
+  [[nodiscard]] long liveInstances(std::size_t index) const {
+    const auto baseline =
+        1 + static_cast<long>(plugins[index].registered_types.size());
+    return tokens[index].use_count() - baseline;
+  }
 };
 
 PluginLoader::PluginLoader() : m_impl(std::make_unique<Impl>()) {}
@@ -46,8 +57,22 @@ PluginLoader::~PluginLoader() {
   }
   // Reverse load order: later plugins may depend on earlier ones.
   for (std::size_t i = m_impl->plugins.size(); i-- > 0;) {
+    // Snapshot before unregistering: removing the wrapped factories
+    // drops their token references, which the baseline accounts for.
+    const auto live = m_impl->liveInstances(i);
     for (const auto &type : m_impl->plugins[i].registered_types) {
       NodeRegistry::instance().unregisterType(type);
+    }
+    // dlclose with live node instances would unmap their vtables and
+    // destructor code; any later virtual call or destruction becomes
+    // undefined behavior. A destructor cannot refuse, so leave the
+    // library mapped instead (leaked until process exit - safe) and
+    // let the instances live out their lifetime.
+    if (live > 0) {
+      LOG_WARNING_S << "PluginLoader: destroyed while " << live
+                    << " node instance(s) from '" << m_impl->plugins[i].name
+                    << "' are still alive; leaving the library mapped";
+      continue;
     }
     if (m_impl->handles[i]) {
       dlclose(m_impl->handles[i]);
@@ -169,12 +194,42 @@ Result<PluginLoader::LoadedPlugin> PluginLoader::load(const std::string &path) {
   loaded.ai_pipe_version = descriptor->ai_pipe_version;
   loaded.registered_types = std::move(delta);
 
+  // Instance tracking: wrap each factory the plugin registered so that
+  // every created node co-owns a liveness token. unload() and the
+  // destructor consult the token's use_count to refuse (or defer)
+  // dlclose while instances whose code lives in this library exist.
+  auto token = std::make_shared<int>(0);
+  for (const auto &type : loaded.registered_types) {
+    (void)NodeRegistry::instance().wrapFactory(
+        type,
+        [&token](NodeRegistry::Factory original) -> NodeRegistry::Factory {
+          return [original = std::move(original),
+                  token](const std::string &node_name, const PortData &config)
+                     -> Result<std::shared_ptr<ILogicNode>> {
+            auto result = original(node_name, config);
+            if (!result.isOk() || !result.value()) {
+              return result;
+            }
+            std::shared_ptr<ILogicNode> inner = std::move(result.value());
+            ILogicNode *raw = inner.get();
+            // Aliased handle: keeps the node AND the token alive; the
+            // node is destroyed first, while its code is still mapped.
+            return std::shared_ptr<ILogicNode>(
+                raw, [inner = std::move(inner), token](ILogicNode *) mutable {
+                  inner.reset();
+                  token.reset();
+                });
+          };
+        });
+  }
+
   LOG_INFO_S << "PluginLoader: Loaded plugin '" << loaded.name << "' from "
              << path << " (" << loaded.registered_types.size()
              << " node types)";
 
   m_impl->handles.push_back(handle);
   m_impl->plugins.push_back(loaded);
+  m_impl->tokens.push_back(std::move(token));
   return loaded;
 }
 
@@ -219,9 +274,21 @@ Result<void> PluginLoader::unload(const std::string &path) {
     if (m_impl->plugins[i].path != path) {
       continue;
     }
+    // Refuse while nodes created from this plugin are alive: dlclose
+    // would unmap their vtables and destructor code, making any later
+    // use undefined behavior. The plugin stays fully loaded.
+    if (const auto live = m_impl->liveInstances(i); live > 0) {
+      return Result<void>::err(
+          ErrorCode::PluginInUse,
+          "Cannot unload '" + path + "': " + std::to_string(live) +
+              " node instance(s) created from this plugin are still alive");
+    }
     for (const auto &type : m_impl->plugins[i].registered_types) {
       NodeRegistry::instance().unregisterType(type);
     }
+    // The wrapped factories (and their token refs) died with the
+    // unregistration; only the loader's own token reference remains.
+    m_impl->tokens[i].reset();
     if (m_impl->handles[i]) {
       ::dlclose(m_impl->handles[i]);
     }
@@ -229,6 +296,8 @@ Result<void> PluginLoader::unload(const std::string &path) {
                           static_cast<std::ptrdiff_t>(i));
     m_impl->handles.erase(m_impl->handles.begin() +
                           static_cast<std::ptrdiff_t>(i));
+    m_impl->tokens.erase(m_impl->tokens.begin() +
+                         static_cast<std::ptrdiff_t>(i));
     return Result<void>::ok();
   }
   return Result<void>::err(ErrorCode::InvalidArgument,
