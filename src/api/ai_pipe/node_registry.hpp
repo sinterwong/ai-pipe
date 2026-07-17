@@ -42,10 +42,20 @@ public:
   using Factory = std::function<Result<std::shared_ptr<ILogicNode>>(
       const std::string &node_name, const PortData &config)>;
 
-  static NodeRegistry &instance() {
-    static NodeRegistry registry;
-    return registry;
-  }
+  /**
+   * @brief The process-wide registry
+   *
+   * Defined in the library (node_registry.cpp), not inline: an inline
+   * definition is instantiated as a weak symbol in every module that
+   * includes this header, so a plugin built with hidden visibility (or
+   * statically linked against the ai_pipe archive) would silently get
+   * its own registry - node types it registers would never be visible
+   * to the host. Keeping the one definition inside libai_pipe makes
+   * every correctly linked module bind to the same instance; a plugin
+   * that still bundles its own copy of the library is a link error to
+   * fix, not a silent split registry.
+   */
+  static NodeRegistry &instance();
 
   NodeRegistry(const NodeRegistry &) = delete;
   NodeRegistry &operator=(const NodeRegistry &) = delete;
