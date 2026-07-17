@@ -25,6 +25,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -99,15 +100,27 @@ public:
 
   /**
    * @brief Execute the pipeline with initial inputs
+   *
+   * When `timeout` is set (and wait_for_completion is true), the wait is
+   * bounded: on expiry the engine requests cooperative cancellation on
+   * the context's CancellationToken, triggers the stop protocol, and
+   * returns ExecutionTimeout immediately. An in-flight node keeps
+   * running until its next cancellation point (or until it returns);
+   * the engine is left STOPPED with possible queue residue - call
+   * reset() before the next execution. `timeout` is ignored in
+   * streaming mode and when wait_for_completion is false.
+   *
    * @return Result<void> - success or Error with:
    *   - AlreadyRunning: engine already executing
    *   - NotInitialized: engine not initialized
    *   - ExecutionFailed: input distribution or execution failed
    *   - ExecutionStopped: execution was stopped externally
+   *   - ExecutionTimeout: bounded wait expired (see above)
    */
-  Result<void> execute(const PortDataMap &initial_inputs,
-                       bool wait_for_completion = true,
-                       std::shared_ptr<PipelineContext> context = nullptr);
+  Result<void>
+  execute(const PortDataMap &initial_inputs, bool wait_for_completion = true,
+          std::shared_ptr<PipelineContext> context = nullptr,
+          std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
   void stopExecutionAsync();
   void stopExecutionSync();

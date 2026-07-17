@@ -198,6 +198,22 @@ public:
    * failure
    */
   Result<ExecutionOutput> run(const PortDataMap &inputs);
+
+  /**
+   * @brief Run the pipeline synchronously with a bounded wait (R1.3)
+   *
+   * The timeout is real, not an after-the-fact check: when it expires
+   * the call returns ExecutionTimeout immediately, even if a node is
+   * hung. Contract on expiry:
+   * - the context's CancellationToken is cancelled (a cooperative node
+   *   can observe it and bail out mid-process) and the engine stop
+   *   protocol fires; an uncooperative node keeps running until its
+   *   process() returns, but nothing new is scheduled;
+   * - input queues may hold undelivered frames (no automatic drain);
+   * - the pipeline enters ERROR - call reset() before the next run,
+   *   which clears queue residue and returns the engine to IDLE.
+   * A timeout <= 0ms means unbounded (same as the overload above).
+   */
   Result<ExecutionOutput> run(const PortDataMap &inputs,
                               std::chrono::milliseconds timeout);
 

@@ -62,12 +62,21 @@
   提交 `fix: grade node errors per-frame vs pipeline-fatal in the
   facade`。
 
-- [ ] **R1.3 run(timeout) 是事后检查**：`Pipeline::Impl::run` 先同步等
+- [x] **R1.3 run(timeout) 是事后检查**：`Pipeline::Impl::run` 先同步等
   执行完、再看耗时是否超限——节点挂死时 timeout 完全不起作用，与 API
   签名暗示不符。无兼容包袱，直接实现真超时：内部改
   `wait_for` + 超时触发 `cancel()`，超时后引擎状态与队列残留要有明确
   契约（写入 pipeline.hpp 注释）。补测试：慢节点场景 timeout 生效。
   与 R3.1（取消令牌接线）联动设计。
+  ——已实现：`ExecutionEngine::execute` 增可选 timeout，
+  `waitForCompletion(timeout)` 用 `wait_for` 定界；到期取消 token
+  （协作通道，接 R3.1）+ 触发停机协议，立即返回 ExecutionTimeout，
+  不等挂死节点。契约（未排干队列残留、需 reset()、不合作节点跑到
+  process() 返回为止）写入 pipeline.hpp run(timeout) 注释与
+  execution_engine.hpp。测试
+  `PipelineTimeoutTest.TimeoutFiresWhileNodeHangs`（挂死节点 100ms 即
+  返回，修复前永久阻塞）/ `TimeoutCancelsCooperativeNode`。提交
+  `fix: make run(timeout) a real bounded wait (R1.3)`。
 
 - [ ] **R1.4 execute() 过早写 m_currentContext**：
   `ExecutionEngine::Impl::execute` 在校验 AlreadyRunning 之前

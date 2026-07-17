@@ -1509,6 +1509,61 @@ TEST(PipelineCancellationTest, DirectTokenCancelStopsScheduling) {
 }
 
 // =============================================================================
+// Real run(timeout) semantics (R1.3)
+// =============================================================================
+
+TEST(PipelineTimeoutTest, TimeoutFiresWhileNodeHangs) {
+  auto gate = std::make_shared<GatedPassNode>("gate");
+
+  Graph graph;
+  graph.addNode(gate);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["gate"] = makeDataPacket(1);
+
+  // Regression (R1.3): the timeout used to be checked only after the
+  // engine finished - with a hung node, run(timeout) never returned.
+  const auto start = std::chrono::steady_clock::now();
+  auto result = pipeline.run(inputs, 100ms);
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start);
+
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+  EXPECT_LT(elapsed.count(), 2000) << "timeout did not bound the wait";
+  EXPECT_TRUE(pipeline.hasError());
+
+  // Contract: reset() releases the residue and restores IDLE
+  gate->open();
+  pipeline.reset();
+  EXPECT_TRUE(pipeline.isReady());
+}
+
+TEST(PipelineTimeoutTest, TimeoutCancelsCooperativeNode) {
+  auto node = std::make_shared<CancellationAwareNode>("aware");
+
+  Graph graph;
+  graph.addNode(node);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["aware"] = makeDataPacket(1);
+
+  auto result = pipeline.run(inputs, 100ms);
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+
+  // The expiry must reach the node through the cooperative token (its
+  // own deadline is 5s, far beyond this wait)
+  EXPECT_TRUE(waitFor([&] { return node->sawCancellation(); }, 3000ms));
+}
+
+// =============================================================================
 // End-to-End Observer Error Notification + reset()
 // =============================================================================
 

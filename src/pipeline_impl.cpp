@@ -257,15 +257,19 @@ Pipeline::Impl::run(const PortDataMap &inputs,
   m_executionStart = std::chrono::steady_clock::now();
   notifyExecutionStarted();
 
-  // Execute synchronously
-  auto exec_result = m_engine->execute(inputs, true, m_context);
+  // Execute synchronously; a positive timeout bounds the wait inside
+  // the engine (R1.3) - on expiry the engine cancels cooperatively and
+  // returns ExecutionTimeout instead of blocking on a hung node.
+  std::optional<std::chrono::milliseconds> engine_timeout;
+  if (actual_timeout.count() > 0) {
+    engine_timeout = actual_timeout;
+  }
+  auto exec_result = m_engine->execute(inputs, true, m_context, engine_timeout);
 
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - m_executionStart);
 
-  // Handle timeout (if specified and exceeded)
-  if (actual_timeout.count() > 0 && elapsed > actual_timeout) {
-    cancel();
+  if (!exec_result && exec_result.errorCode() == ErrorCode::ExecutionTimeout) {
     transitionTo(PipelineState::ERROR);
     return Result<ExecutionOutput>::err(
         ErrorCode::ExecutionTimeout,

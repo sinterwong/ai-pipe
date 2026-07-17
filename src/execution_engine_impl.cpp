@@ -77,9 +77,10 @@ Result<void> ExecutionEngine::initialize(Graph *graph,
 Result<void>
 ExecutionEngine::execute(const PortDataMap &initial_inputs,
                          bool wait_for_completion,
-                         std::shared_ptr<PipelineContext> context) {
+                         std::shared_ptr<PipelineContext> context,
+                         std::optional<std::chrono::milliseconds> timeout) {
   return m_impl->execute(initial_inputs, wait_for_completion,
-                         std::move(context));
+                         std::move(context), timeout);
 }
 
 void ExecutionEngine::stopExecutionAsync() { m_impl->stopExecutionAsync(); }
@@ -381,10 +382,10 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   return Result<void>::ok();
 }
 
-Result<void>
-ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
-                               bool wait_for_completion,
-                               std::shared_ptr<PipelineContext> context) {
+Result<void> ExecutionEngine::Impl::execute(
+    const PortDataMap &initial_inputs, bool wait_for_completion,
+    std::shared_ptr<PipelineContext> context,
+    std::optional<std::chrono::milliseconds> timeout) {
   m_currentContext.store(std::move(context));
 
   // Handle streaming mode
@@ -458,7 +459,7 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
   }
 
   if (wait_for_completion) {
-    return waitForCompletion();
+    return waitForCompletion(timeout);
   }
 
   return Result<void>::ok();
@@ -2106,13 +2107,35 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   notifyCompletionWaiters();
 }
 
-Result<void> ExecutionEngine::Impl::waitForCompletion() {
+Result<void> ExecutionEngine::Impl::waitForCompletion(
+    std::optional<std::chrono::milliseconds> timeout) {
   std::unique_lock<std::mutex> lock(m_completionMutex);
 
-  m_completionCV.wait(lock, [this] {
+  const auto completion_reached = [this] {
     return m_activeTasks.load(std::memory_order_acquire) == 0 ||
            m_stopFlag.load(std::memory_order_acquire);
-  });
+  };
+
+  if (timeout.has_value()) {
+    if (!m_completionCV.wait_for(lock, *timeout, completion_reached)) {
+      lock.unlock();
+      // Bounded wait expired: cancel cooperatively (nodes can observe
+      // the token mid-process) and trigger the stop protocol, then
+      // return without waiting for the in-flight task to notice.
+      if (const auto context = m_currentContext.load()) {
+        context->requestCancellation();
+      }
+      stopExecutionAsync();
+      m_currentContext.store(nullptr);
+      LOG_ERROR_S << "ExecutionEngine: Execution timed out after "
+                  << timeout->count() << "ms.";
+      return Result<void>::err(ErrorCode::ExecutionTimeout,
+                               "Execution timed out after " +
+                                   std::to_string(timeout->count()) + "ms");
+    }
+  } else {
+    m_completionCV.wait(lock, completion_reached);
+  }
 
   const bool was_stopped = m_stopFlag.load(std::memory_order_acquire);
   const int active_tasks = m_activeTasks.load(std::memory_order_acquire);

@@ -120,9 +120,10 @@ public:
   void configureForMode(ExecutionMode mode);
 
   Result<void> initialize(Graph *graph, std::uint8_t num_workers);
-  Result<void> execute(const PortDataMap &initial_inputs,
-                       bool wait_for_completion,
-                       std::shared_ptr<PipelineContext> context);
+  Result<void>
+  execute(const PortDataMap &initial_inputs, bool wait_for_completion,
+          std::shared_ptr<PipelineContext> context,
+          std::optional<std::chrono::milliseconds> timeout = std::nullopt);
   void stopExecutionAsync();
   void stopExecutionSync();
   void reset();
@@ -326,7 +327,20 @@ private:
   void handleNodeFailure(NodeState &state, const Error &error);
 
   void checkCompletionAndNotify();
-  Result<void> waitForCompletion();
+
+  /**
+   * @brief Wait for the running batch execution to finish
+   *
+   * With a timeout (R1.3), the wait is bounded: on expiry the active
+   * context's CancellationToken is cancelled (cooperative channel) and
+   * the stop protocol triggered, then ExecutionTimeout returns
+   * immediately - an in-flight node may still be running until its next
+   * cancellation point. The engine stays STOPPED with possible queue
+   * residue until reset().
+   */
+  Result<void> waitForCompletion(
+      std::optional<std::chrono::milliseconds> timeout = std::nullopt);
+
   void resetInternalState();
 
   /**
