@@ -28,8 +28,10 @@
  * plugin protocol revision; it cannot detect toolchain ABI drift.
  *
  * Loaded libraries stay mapped until unload() or the PluginLoader is
- * destroyed; the caller must ensure no node instances from a plugin
- * outlive it.
+ * destroyed. Nodes created from a plugin's factories are tracked:
+ * unload() refuses with PluginInUse while any are alive, and the
+ * destructor leaves the library mapped (never unmapped for the rest of
+ * the process) rather than pull code out from under live instances.
  *
  * @copyright Copyright (c) 2026
  */
@@ -133,8 +135,10 @@ public:
   /**
    * @brief Unload a plugin: unregister its node types and dlclose
    *
-   * The caller must guarantee that no node instances created from this
-   * plugin's factories are still alive - their code is unmapped.
+   * Refused with PluginInUse while node instances created from this
+   * plugin's factories are still alive (dlclose would unmap their
+   * vtables and destructor code); the plugin stays fully loaded.
+   * Release all instances, then unload again.
    */
   Result<void> unload(const std::string &path);
 

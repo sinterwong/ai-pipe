@@ -92,6 +92,30 @@ TEST_F(PluginLoaderTest, DestructorUnregistersPluginTypes) {
   EXPECT_FALSE(NodeRegistry::instance().isRegistered("PluginEchoNode"));
 }
 
+TEST_F(PluginLoaderTest, UnloadRefusedWhileInstancesAlive) {
+  PluginLoader loader;
+  ASSERT_TRUE(loader.load(validPluginPath()).isOk());
+
+  auto node = NodeRegistry::instance().create("PluginEchoNode", "echo_live");
+  ASSERT_TRUE(node.isOk());
+
+  // dlclose would unmap the instance's vtable and destructor: refused.
+  auto refused = loader.unload(validPluginPath());
+  ASSERT_FALSE(refused.isOk());
+  EXPECT_EQ(refused.error().code(), ErrorCode::PluginInUse);
+
+  // The plugin must remain fully loaded and usable after the refusal.
+  ASSERT_EQ(loader.plugins().size(), 1u);
+  EXPECT_TRUE(NodeRegistry::instance().isRegistered("PluginEchoNode"));
+  EXPECT_EQ(node.value()->getExpectedInputPorts(),
+            (std::vector<std::string>{"input"}));
+
+  // Releasing the last instance makes the unload legal.
+  node.value().reset();
+  ASSERT_TRUE(loader.unload(validPluginPath()).isOk());
+  EXPECT_FALSE(NodeRegistry::instance().isRegistered("PluginEchoNode"));
+}
+
 TEST_F(PluginLoaderTest, RejectsForeignLibraryAndRollsBack) {
   PluginLoader loader;
 
@@ -137,6 +161,29 @@ TEST_F(PluginLoaderTest, LoadDirectoryScansAndRejectsDuplicates) {
 
   auto missing = loader.loadDirectory(pluginRoot() + "/does_not_exist");
   EXPECT_FALSE(missing.isOk());
+}
+
+// LAST in this suite by design: the leaked mapping below means a later
+// dlopen of the same plugin in this process would not re-run its static
+// registration, which would confuse the load/unload tests above.
+TEST_F(PluginLoaderTest, DestructorKeepsLibraryMappedWhileInstancesAlive) {
+  std::shared_ptr<ILogicNode> survivor;
+  {
+    PluginLoader loader;
+    ASSERT_TRUE(loader.load(validPluginPath()).isOk());
+    auto node =
+        NodeRegistry::instance().create("PluginEchoNode", "echo_survivor");
+    ASSERT_TRUE(node.isOk());
+    survivor = node.value();
+  }
+  // The loader is gone and the type unregistered, but the library must
+  // still be mapped: virtual calls and (below) the destructor run
+  // plugin code. Before instance tracking this was use-after-unmap.
+  EXPECT_FALSE(NodeRegistry::instance().isRegistered("PluginEchoNode"));
+  EXPECT_EQ(survivor->getName(), "echo_survivor");
+  EXPECT_EQ(survivor->getExpectedOutputPorts(),
+            (std::vector<std::string>{"output"}));
+  survivor.reset();
 }
 
 } // namespace ai_pipe_unit_test::plugin_loader

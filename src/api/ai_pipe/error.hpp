@@ -84,6 +84,7 @@ enum class ErrorCode : std::uint16_t {
   PluginLoadFailed = 500,
   PluginSymbolMissing = 501,
   PluginVersionMismatch = 502,
+  PluginInUse = 503,
 };
 
 /**
@@ -145,6 +146,8 @@ inline const char *errorCodeToString(ErrorCode code) {
     return "PluginSymbolMissing";
   case ErrorCode::PluginVersionMismatch:
     return "PluginVersionMismatch";
+  case ErrorCode::PluginInUse:
+    return "PluginInUse";
   }
   return "Unknown";
 }
