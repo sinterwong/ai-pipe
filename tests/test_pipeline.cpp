@@ -1054,6 +1054,44 @@ TEST_F(PipelineStreamingTest, StartPushDrainStopFullChain) {
   EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
 }
 
+TEST_F(PipelineStreamingTest, NodeExceptionIsPerFrameNotPipelineFatal) {
+  auto thrower = std::make_shared<ThrowingNode>("thrower");
+
+  Graph graph;
+  graph.addNode(thrower);
+
+  std::atomic<int> error_count{0};
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::STREAM)
+                      .withWorkers(1)
+                      .onError([&](const Error &) { error_count.fetch_add(1); })
+                      .build()
+                      .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  ASSERT_TRUE(pipeline.pushInput("thrower", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(waitFor([&] { return error_count.load() >= 1; }));
+
+  // Regression (R1.2): a per-frame node exception in streaming mode used
+  // to latch the facade into ERROR while the engine kept running -
+  // isRunning() went false and validateState() refused everything until
+  // reset(). The facade must stay RUNNING and keep accepting frames.
+  EXPECT_TRUE(pipeline.isStreaming());
+  EXPECT_TRUE(pipeline.isRunning());
+  EXPECT_EQ(pipeline.state(), PipelineState::RUNNING);
+  EXPECT_FALSE(pipeline.hasError());
+
+  thrower->disarm();
+  auto push = pipeline.pushInput("thrower", makeDataPacket(2));
+  ASSERT_TRUE(push.isOk()) << push.errorMessage();
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+
+  pipeline.stop(true);
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+  EXPECT_EQ(error_count.load(), 1);
+}
+
 TEST_F(PipelineStreamingTest, StartFailsInBatchMode) {
   auto source = std::make_shared<SourceNode>("source");
   auto sink = std::make_shared<SinkNode>("sink");

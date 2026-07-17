@@ -140,6 +140,13 @@ private:
   std::unique_ptr<ISchedulerStrategy> m_customScheduler;
   std::unique_ptr<ISyncStrategy> m_customSync;
 
+  // Deliberately self-maintained rather than derived from EngineState:
+  // run()/submit() claim RUNNING synchronously at submission, before the
+  // engine transitions, so a concurrent second submission fails
+  // AlreadyRunning instead of slipping through the engine's IDLE window.
+  // The cost of the duplicate is drift, handled at the callback boundary:
+  // per-frame streaming errors must not latch ERROR here (see
+  // setupEngineCallbacks).
   std::atomic<PipelineState> m_state{PipelineState::UNINITIALIZED};
   mutable std::mutex m_stateMutex;
 

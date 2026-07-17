@@ -510,6 +510,12 @@ public:
 
 可通过继承 `IPipelineObserver` 或使用内置的 `CallbackObserver` 链式注册回调。
 
+**错误分级契约（R1.2）**：节点异常按执行模式分级。批模式下节点异常是
+pipeline-fatal——执行中止，`PipelineState` 进入 `ERROR`，需 `reset()`
+恢复。流式模式下节点异常是 per-frame 事件——出错帧被消费丢弃，节点回到
+服务，管线保持 `RUNNING` 并继续接受 `pushInput`；错误通过
+`onExecutionFailed` 通知观察者（每个坏帧一次），不改变门面状态。
+
 ### 6.3 便捷工厂
 
 ```cpp

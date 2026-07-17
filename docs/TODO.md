@@ -44,7 +44,7 @@
   该测试挂起）。提交 `fix: runAsync one-shot callbacks + guarded engine
   callback invocation`。
 
-- [ ] **R1.2 门面/引擎状态机漂移——错误分级**：流式模式下节点异常是
+- [x] **R1.2 门面/引擎状态机漂移——错误分级**：流式模式下节点异常是
   per-frame 事件（`handleNodeFailure` 让节点回到服务），但
   `setupEngineCallbacks` 的 error 回调无条件把 `PipelineState` 打成
   ERROR。结果：一个坏帧后引擎照常 RUNNING、pushInput 照常工作，而门面
@@ -52,6 +52,15 @@
   修复方向：错误分级（per-frame vs pipeline-fatal），流式 per-frame
   错误只走 observer 通知不改门面状态；`PipelineState` 尽量从引擎状态
   派生而非自维护一份。
+  ——已修复：常驻 error 回调按 `isStreaming()` 分级——流式 per-frame
+  错误只记 m_lastError + observer 通知，不再置 ERROR；批模式维持
+  pipeline-fatal。「从引擎派生」评估后否决：门面 RUNNING 是提交时刻的
+  同步占位（AlreadyRunning 语义依赖它先于引擎转态），改派生会开出并发
+  二次提交窗口，理由记录在 pipeline_impl.hpp m_state 注释。契约写入
+  Framework_Design §6.2。回归测试
+  `PipelineStreamingTest.NodeExceptionIsPerFrameNotPipelineFatal`。
+  提交 `fix: grade node errors per-frame vs pipeline-fatal in the
+  facade`。
 
 - [ ] **R1.3 run(timeout) 是事后检查**：`Pipeline::Impl::run` 先同步等
   执行完、再看耗时是否超限——节点挂死时 timeout 完全不起作用，与 API

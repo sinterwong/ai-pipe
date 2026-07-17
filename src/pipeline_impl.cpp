@@ -213,12 +213,22 @@ void Pipeline::Impl::setupEngineCallbacks() {
 
   m_engine->setPipelineErrorCallback(
       [this](const std::string &error, const std::string &node_name) {
+        auto err = Error::nodeException(error, node_name);
         {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
-          m_lastError = Error::nodeException(error, node_name);
+          m_lastError = err;
         }
-        m_state.store(PipelineState::ERROR, std::memory_order_release);
-        notifyExecutionFailed(Error::nodeException(error, node_name));
+        // Error grading (R1.2): in streaming mode a node exception is a
+        // per-frame event - the engine returns the node to service and
+        // keeps accepting input - so the facade must not latch ERROR
+        // (that froze isRunning()/validateState() while the engine ran
+        // on). Per-frame failures reach observers and m_lastError only.
+        // In batch mode a node failure aborts the execution, so it is
+        // pipeline-fatal and ERROR is correct.
+        if (!isStreaming()) {
+          m_state.store(PipelineState::ERROR, std::memory_order_release);
+        }
+        notifyExecutionFailed(err);
       });
 
   m_engine->setDropCallback([this](const std::string &node_name,
