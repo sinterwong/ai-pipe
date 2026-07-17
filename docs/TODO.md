@@ -91,10 +91,14 @@
   提交 `fix: claim m_currentContext only after execute() validation
   (R1.4)`。
 
-- [ ] **R1.5 删除 Pipeline::Impl 的移动操作**：引擎回调捕获 Impl 的
+- [x] **R1.5 删除 Pipeline::Impl 的移动操作**：引擎回调捕获 Impl 的
   `this`，而 Pipeline 走 `unique_ptr<Impl>` 移动（Impl 地址稳定），
   Impl 自身的移动构造/赋值实际走不到——一旦被用上就是悬垂捕获。直接
   delete，与引擎 Impl 的做法（显式 delete + 注释理由）对齐。
+  ——已删除：移动构造/赋值定义整体移除，声明改显式 delete + 地址稳定性
+  注释（与 ExecutionEngine::Impl 同款）。Pipeline 门面的移动语义不变
+  （unique_ptr 搬移）。提交 `refactor: delete Pipeline::Impl move
+  operations (R1.5)`。
 
 - [ ] **R1.6 DropEvent 字段语义修复**：`LockFreeNodeQueue::notifyDrop`
   把 `capacity()` 赋给 `queue_size_before`，字段名与含义不符。改为真实

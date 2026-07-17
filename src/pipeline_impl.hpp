@@ -44,11 +44,15 @@ public:
   Impl();
   ~Impl();
 
+  // Neither copyable nor movable: the engine callbacks installed by
+  // setupEngineCallbacks() capture `this`, so the Impl address must stay
+  // stable for its lifetime. Pipeline's move semantics come from moving
+  // the unique_ptr<Impl>, which never relocates the Impl object itself
+  // (same rule as ExecutionEngine::Impl).
   Impl(const Impl &) = delete;
   Impl &operator=(const Impl &) = delete;
-
-  Impl(Impl &&other) noexcept;
-  Impl &operator=(Impl &&other) noexcept;
+  Impl(Impl &&) = delete;
+  Impl &operator=(Impl &&) = delete;
 
   // ---- Initialization ----
 

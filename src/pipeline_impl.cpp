@@ -46,52 +46,6 @@ Pipeline::Impl::~Impl() {
   LOG_INFO_S << "Pipeline::Impl: Destructed";
 }
 
-Pipeline::Impl::Impl(Impl &&other) noexcept {
-  std::scoped_lock lock(m_stateMutex, other.m_stateMutex, m_observersMutex,
-                        other.m_observersMutex);
-
-  m_graph = std::move(other.m_graph);
-  m_engine = std::move(other.m_engine);
-  m_context = std::move(other.m_context);
-  m_options = std::move(other.m_options);
-  m_customScheduler = std::move(other.m_customScheduler);
-  m_customSync = std::move(other.m_customSync);
-  m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
-  m_observers = std::move(other.m_observers);
-
-  LOG_INFO_S << "Pipeline::Impl: Move constructed";
-}
-
-Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
-  if (this == &other) {
-    return *this;
-  }
-
-  if (isRunning() || isStreaming()) {
-    if (isStreaming()) {
-      stop(false);
-    } else {
-      cancel();
-      wait();
-    }
-  }
-
-  std::scoped_lock lock(m_stateMutex, other.m_stateMutex, m_observersMutex,
-                        other.m_observersMutex);
-
-  m_graph = std::move(other.m_graph);
-  m_engine = std::move(other.m_engine);
-  m_context = std::move(other.m_context);
-  m_options = std::move(other.m_options);
-  m_customScheduler = std::move(other.m_customScheduler);
-  m_customSync = std::move(other.m_customSync);
-  m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
-  m_observers = std::move(other.m_observers);
-
-  LOG_INFO_S << "Pipeline::Impl: Move assigned";
-  return *this;
-}
-
 // -------------------------------------------------------------------------
 // Initialization
 // -------------------------------------------------------------------------
