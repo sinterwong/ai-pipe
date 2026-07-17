@@ -117,13 +117,21 @@
 对顶级框架而言，装饰性 API 比没有更糟——每一项都必须二选一：接线成
 真实语义，或从公共接口删除。
 
-- [ ] **R3.1 CancellationToken 无人消费**：全 src 无任何 `isCancelled()`
+- [x] **R3.1 CancellationToken 无人消费**：全 src 无任何 `isCancelled()`
   读取点（仅 context 自身 reset）；`Pipeline::cancel()` 走引擎
   stopFlag，不碰 token。裁决方向（倾向接线，与 R1.3 真超时共用机制）：
   cancel()/run 超时统一触发 token；引擎在调度点（tryScheduleNode /
   executeNodeTask 入口）检查 token 与 stopFlag 等效对待；节点内长任务
   的协作式检查写入 Node_Development_Guide。若裁决为删除，则 context
   中 token 及相关 API 一并移除。
+  ——已按裁决接线：引擎新增 `isStopRequested()`（stopFlag ∪ token，
+  token 取消经 stopExecutionAsync 一次性转换进停机协议），
+  tryScheduleNode / executeNodeTask 入口统一走它；execute/startStreaming
+  开始时复位 token（上次取消不污染本次）；`Pipeline::cancel()` 双通道
+  （token + 引擎停机）。协作式检查写入 Node_Development_Guide §6。测试
+  `PipelineCancellationTest.CancelReachesNodeThroughToken` /
+  `DirectTokenCancelStopsScheduling`。提交 `feat: wire CancellationToken
+  into the engine stop protocol (R3.1)`。
 
 - [ ] **R3.2 DeferToNextCycle 的 delay 是死数据**：`tryScheduleNode`
   只响应 `ScheduleNow`，没有定时器消费 defer——`min_execution_interval`

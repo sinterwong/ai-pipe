@@ -330,6 +330,19 @@ private:
   void resetInternalState();
 
   /**
+   * @brief Unified stop check for scheduling points (R3.1)
+   *
+   * True when m_stopFlag is set OR the active context's
+   * CancellationToken is cancelled. A cancelled token is converted into
+   * the engine's stop protocol (stopFlag + waiter wakeup) exactly once
+   * via stopExecutionAsync(), so completion waiters and the deeper
+   * stopFlag-only checks all observe a plain stop afterwards. The token
+   * is reset at execution/streaming start, so a token cancelled during
+   * one run cannot poison the next.
+   */
+  bool isStopRequested();
+
+  /**
    * @brief Wake completion/drain waiters without losing wakeups
    *
    * The empty lock/unlock of m_completionMutex orders state changes

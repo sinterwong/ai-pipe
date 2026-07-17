@@ -1365,6 +1365,150 @@ TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
 }
 
 // =============================================================================
+// CancellationToken wiring (R3.1)
+// =============================================================================
+
+namespace {
+
+// Pass-through node that blocks until released, recording entry
+class GatedPassNode : public ILogicNode {
+public:
+  explicit GatedPassNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &inputs, PortDataMap &outputs,
+               std::shared_ptr<PipelineContext>) override {
+    m_entered.store(true);
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this] { return m_open; });
+    for (const auto &[port, data] : inputs) {
+      outputs["output"] = data;
+    }
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {"output"};
+  }
+
+  void open() {
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_open = true;
+    }
+    m_cv.notify_all();
+  }
+
+  bool waitEntered(std::chrono::milliseconds timeout = 2000ms) const {
+    return waitFor([this] { return m_entered.load(); }, timeout);
+  }
+
+private:
+  mutable std::mutex m_mutex;
+  std::condition_variable m_cv;
+  bool m_open = false;
+  std::atomic<bool> m_entered{false};
+};
+
+// Node whose process() spins until the cooperative token fires
+class CancellationAwareNode : public ILogicNode {
+public:
+  explicit CancellationAwareNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext> ctx) override {
+    m_entered.store(true);
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (ctx && ctx->isCancellationRequested()) {
+        m_sawCancellation.store(true);
+        return;
+      }
+      std::this_thread::sleep_for(1ms);
+    }
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {};
+  }
+
+  bool waitEntered(std::chrono::milliseconds timeout = 2000ms) const {
+    return waitFor([this] { return m_entered.load(); }, timeout);
+  }
+  bool sawCancellation() const { return m_sawCancellation.load(); }
+
+private:
+  std::atomic<bool> m_entered{false};
+  std::atomic<bool> m_sawCancellation{false};
+};
+
+} // namespace
+
+TEST(PipelineCancellationTest, CancelReachesNodeThroughToken) {
+  auto node = std::make_shared<CancellationAwareNode>("aware");
+
+  Graph graph;
+  graph.addNode(node);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["aware"] = makeDataPacket(1);
+
+  auto future =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_TRUE(node->waitEntered());
+
+  // cancel() must reach the node mid-process via the cooperative token,
+  // not only stop future scheduling: the node exits its loop well before
+  // its 5s deadline.
+  pipeline.cancel();
+
+  ASSERT_EQ(future.wait_for(3s), std::future_status::ready);
+  EXPECT_FALSE(future.get().isOk());
+  // run() returns via the stop protocol as soon as cancel() lands; the
+  // node observes the token at its next loop iteration. Its deadline is
+  // 5s, so seeing the flag within 3s proves the token (not the deadline)
+  // ended the loop.
+  EXPECT_TRUE(waitFor([&] { return node->sawCancellation(); }, 3000ms));
+}
+
+TEST(PipelineCancellationTest, DirectTokenCancelStopsScheduling) {
+  auto gate = std::make_shared<GatedPassNode>("gate");
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(gate);
+  graph.addNode(sink);
+  graph.addEdge("gate", "output", "sink", "input");
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["gate"] = makeDataPacket(1);
+
+  auto future =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_TRUE(gate->waitEntered());
+
+  // Cancel through the shared context token alone - no facade cancel().
+  // The engine's scheduling points must treat the cancelled token as a
+  // stop request: the sink downstream of the gate never executes.
+  pipeline.context().requestCancellation();
+  gate->open();
+
+  ASSERT_EQ(future.wait_for(3s), std::future_status::ready);
+  EXPECT_FALSE(future.get().isOk());
+  EXPECT_EQ(sink->processCount(), 0);
+}
+
+// =============================================================================
 // End-to-End Observer Error Notification + reset()
 // =============================================================================
 

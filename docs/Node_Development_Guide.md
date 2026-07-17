@@ -122,7 +122,13 @@ auto node = ai_pipe::NodeRegistry::instance()
 ## 6. 上下文（PipelineContext）
 
 - 资源/服务：`ctx->setResource` / `ctx->getService<T>()`（线程安全）。
-- 取消：长任务内轮询 `ctx->cancellation().isCancelled()`。
+- 取消（R3.1 起为真实语义）：`Pipeline::cancel()` 与 `run(timeout)` 超时
+  都会触发 context 的 `CancellationToken`；引擎在调度点将其与 stopFlag
+  等效对待——已取消后不再调度新节点。**长任务节点应在内部循环里协作式
+  检查** `ctx->isCancellationRequested()`（或
+  `ctx->cancellation().isCancelled()`），发现取消后尽快返回（部分输出会
+  被丢弃，不必清理下游）。不检查也不会破坏正确性，只是取消要等到当前
+  `process()` 自然结束才生效。token 在每次执行/流启动时自动复位。
 - 日志：节点内用 `ctx->logInfo(getName(), ...)`；若希望框架日志也进入
   你的 logger，调用 `ctx->attachEngineLogs()`。
 - `ctx` 可能为 `nullptr`（直接驱动引擎且未传 context 时）——访问前判空。

@@ -492,6 +492,13 @@ void Pipeline::Impl::cancel() {
 
   LOG_INFO_S << "Pipeline::Impl: Cancelling execution";
 
+  // R3.1: cancellation is signalled through both channels - the
+  // cooperative token (visible to nodes mid-process) and the engine
+  // stop protocol (visible to scheduling points and waiters).
+  if (m_context) {
+    m_context->requestCancellation();
+  }
+
   if (m_engine) {
     if (isStreaming()) {
       m_engine->stopStreaming(false);

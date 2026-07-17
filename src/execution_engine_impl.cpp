@@ -437,6 +437,13 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
     }
 
     resetInternalState();
+
+    // A fresh execution starts with a clean cancellation state: a token
+    // cancelled by a previous run/timeout must not poison this one.
+    if (const auto ctx = m_currentContext.load()) {
+      ctx->cancellation().reset();
+    }
+
     m_engineState.store(EngineState::RUNNING, std::memory_order_release);
   }
 
@@ -455,6 +462,20 @@ ExecutionEngine::Impl::execute(const PortDataMap &initial_inputs,
   }
 
   return Result<void>::ok();
+}
+
+bool ExecutionEngine::Impl::isStopRequested() {
+  if (m_stopFlag.load(std::memory_order_acquire)) {
+    return true;
+  }
+  if (const auto context = m_currentContext.load();
+      context && context->isCancellationRequested()) {
+    // Convert cooperative cancellation into the stop protocol once, so
+    // completion waiters wake and stopFlag-only checks see the stop.
+    stopExecutionAsync();
+    return true;
+  }
+  return false;
 }
 
 void ExecutionEngine::Impl::stopExecutionAsync() {
@@ -663,6 +684,9 @@ Result<void> ExecutionEngine::Impl::startStreaming(
     return setup_result;
   }
 
+  if (context) {
+    context->cancellation().reset();
+  }
   m_currentContext.store(std::move(context));
   m_streamingMode.store(true, std::memory_order_release);
   m_stopFlag.store(false, std::memory_order_release);
@@ -1143,7 +1167,7 @@ void ExecutionEngine::Impl::tryScheduleNode(const NodePtr &node) {
 }
 
 void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
-  if (m_stopFlag.load(std::memory_order_acquire)) {
+  if (isStopRequested()) {
     return;
   }
 
@@ -1238,7 +1262,7 @@ void ExecutionEngine::Impl::executeNodeTask(
   }
   auto &state = *state_ptr;
 
-  if (m_stopFlag.load(std::memory_order_acquire)) {
+  if (isStopRequested()) {
     state.exec_state.store(NodeExecutionState::WAITING,
                            std::memory_order_release);
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
