@@ -8,7 +8,21 @@
 
 function(ai_pipe_add_test_plugin target source subdir)
     add_library(${target} MODULE ${source})
-    target_link_libraries(${target} PRIVATE ai_pipe::ai_pipe)
+    if(BUILD_SHARED_LIBS)
+        # Shared core: the plugin references the one libai_pipe.so, so it
+        # shares the host's NodeRegistry singleton automatically.
+        target_link_libraries(${target} PRIVATE ai_pipe::ai_pipe)
+    else()
+        # Static core: linking the archive would pull a *private* copy of
+        # the NodeRegistry singleton into the plugin, so AI_PIPE_REGISTER_NODE
+        # would populate an instance the host never sees ("0 node types").
+        # Compile against the headers only and leave the ai_pipe symbols
+        # undefined; RTLD_NOW resolves them against the host executable's
+        # exported symbols (ai_pipe_tests is built with ENABLE_EXPORTS),
+        # giving a single shared registry.
+        target_include_directories(${target} PRIVATE
+            $<TARGET_PROPERTY:ai_pipe::ai_pipe,INTERFACE_INCLUDE_DIRECTORIES>)
+    endif()
     set_target_properties(${target} PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
