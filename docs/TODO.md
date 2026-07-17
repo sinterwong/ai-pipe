@@ -25,7 +25,7 @@
 本次俯瞰的核心结论：引擎内核经两轮审计已扎实，但 Pipeline 门面层的打磨
 明显落后，存在真实缺陷（非风格问题）。
 
-- [ ] **R1.1 runAsync 回调重绑缺陷**：`Pipeline::Impl::runAsync`
+- [x] **R1.1 runAsync 回调重绑缺陷**：`Pipeline::Impl::runAsync`
   （pipeline_impl.cpp）把携带 shared promise 的 lambda 设进引擎
   result/error 回调后永不恢复。后续 `run()`/`submit()` 完成时触发陈旧
   回调 → 对已满足的 promise 二次 `set_value()` 抛 `std::future_error`
@@ -35,6 +35,14 @@
   ① runAsync 完成后恢复常驻回调（或改一次性回调语义）；
   ② 引擎调用用户回调处加异常防护，保证 notify 必达。补回归测试：
   runAsync 后接 run() 不挂起、不重复触发。
+  ——已修复：① runAsync 的 promise 回调改一次性（`done` 标志防重复
+  set_value），完成/出错/启动失败三条路径都先恢复常驻回调再兑现
+  promise；② 引擎三个用户回调注册加 `m_callbackMutex`，调用统一走
+  `invoke*Callback`（持锁取副本、锁外调用、catch-all 防护），
+  `notifyCompletionWaiters()` 必达且回调内重注册安全。回归测试
+  `PipelineAsyncTest.RunAfterRunAsyncCompletesWithoutRefire`（修复前
+  该测试挂起）。提交 `fix: runAsync one-shot callbacks + guarded engine
+  callback invocation`。
 
 - [ ] **R1.2 门面/引擎状态机漂移——错误分级**：流式模式下节点异常是
   per-frame 事件（`handleNodeFailure` 让节点回到服务），但

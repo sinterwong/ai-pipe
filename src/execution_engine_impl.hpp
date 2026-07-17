@@ -287,6 +287,22 @@ private:
                       FrameId frame_id, const char *reason);
 
   /**
+   * @brief Invoke the registered user callbacks safely
+   *
+   * Each helper copies the std::function under m_callbackMutex and invokes
+   * the copy: a callback may re-register callbacks from within its own
+   * invocation (runAsync restores the resident ones after fulfilling its
+   * promise), so the member must not be the object being executed. The
+   * copy is invoked under a catch-all guard - a throwing user callback
+   * must not skip completion notification or escape into the thread pool.
+   */
+  void invokeResultCallback(const PortDataMap &results);
+  void invokeErrorCallback(const std::string &message,
+                           const std::string &node_name);
+  void invokeDropCallback(const std::string &node_name, std::uint64_t frame_id,
+                          const std::string &reason);
+
+  /**
    * @brief Account a successful queue pop
    *
    * total_wait_time_us accumulates the frame's age at dequeue (time
@@ -435,6 +451,10 @@ private:
   std::mutex m_resultsMutex;
 
   PortDataMap m_accumulatedResults;
+
+  // Guards registration and lookup of the three user callbacks below.
+  // Never held while a callback runs (see invoke*Callback helpers).
+  mutable std::mutex m_callbackMutex;
 
   std::function<void(const PortDataMap &)> m_resultCallback;
   std::function<void(const std::string &, const std::string &)> m_errorCallback;

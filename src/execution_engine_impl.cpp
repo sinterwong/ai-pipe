@@ -561,18 +561,79 @@ ExecutionEngine::Impl::getNodeStates() const {
 
 void ExecutionEngine::Impl::setPipelineResultCallback(
     std::function<void(const PortDataMap &)> callback) {
+  std::lock_guard<std::mutex> lock(m_callbackMutex);
   m_resultCallback = std::move(callback);
 }
 
 void ExecutionEngine::Impl::setPipelineErrorCallback(
     std::function<void(const std::string &, const std::string &)> callback) {
+  std::lock_guard<std::mutex> lock(m_callbackMutex);
   m_errorCallback = std::move(callback);
 }
 
 void ExecutionEngine::Impl::setDropCallback(
     std::function<void(const std::string &, std::uint64_t, const std::string &)>
         callback) {
+  std::lock_guard<std::mutex> lock(m_callbackMutex);
   m_dropCallback = std::move(callback);
+}
+
+void ExecutionEngine::Impl::invokeResultCallback(const PortDataMap &results) {
+  std::function<void(const PortDataMap &)> callback;
+  {
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
+    callback = m_resultCallback;
+  }
+  if (!callback) {
+    return;
+  }
+  try {
+    callback(results);
+  } catch (const std::exception &e) {
+    LOG_ERROR_S << "ExecutionEngine: Result callback threw: " << e.what();
+  } catch (...) {
+    LOG_ERROR_S << "ExecutionEngine: Result callback threw unknown exception";
+  }
+}
+
+void ExecutionEngine::Impl::invokeErrorCallback(const std::string &message,
+                                                const std::string &node_name) {
+  std::function<void(const std::string &, const std::string &)> callback;
+  {
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
+    callback = m_errorCallback;
+  }
+  if (!callback) {
+    return;
+  }
+  try {
+    callback(message, node_name);
+  } catch (const std::exception &e) {
+    LOG_ERROR_S << "ExecutionEngine: Error callback threw: " << e.what();
+  } catch (...) {
+    LOG_ERROR_S << "ExecutionEngine: Error callback threw unknown exception";
+  }
+}
+
+void ExecutionEngine::Impl::invokeDropCallback(const std::string &node_name,
+                                               std::uint64_t frame_id,
+                                               const std::string &reason) {
+  std::function<void(const std::string &, std::uint64_t, const std::string &)>
+      callback;
+  {
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
+    callback = m_dropCallback;
+  }
+  if (!callback) {
+    return;
+  }
+  try {
+    callback(node_name, frame_id, reason);
+  } catch (const std::exception &e) {
+    LOG_ERROR_S << "ExecutionEngine: Drop callback threw: " << e.what();
+  } catch (...) {
+    LOG_ERROR_S << "ExecutionEngine: Drop callback threw unknown exception";
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -1011,9 +1072,7 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
                               << " - " << event.reason;
               }
 
-              if (m_dropCallback) {
-                m_dropCallback(event.node_name, event.frame_id, event.reason);
-              }
+              invokeDropCallback(event.node_name, event.frame_id, event.reason);
 
               if (m_syncStrategy && m_syncStrategy->isEnabled() &&
                   event.frame_id != frame_constants::k_invalid_frame_id) {
@@ -1837,9 +1896,7 @@ void ExecutionEngine::Impl::recordSyncDrop(const NodeState &state,
                 << state.name << ":" << port_name << " - " << reason;
   }
 
-  if (m_dropCallback) {
-    m_dropCallback(state.name, frame_id, reason);
-  }
+  invokeDropCallback(state.name, frame_id, reason);
 }
 
 Result<void> ExecutionEngine::Impl::processNode(
@@ -1855,9 +1912,7 @@ Result<void> ExecutionEngine::Impl::processNode(
     auto error = Error::nodeException(e.what(), node->getName());
 
     // Notify via callback (for backward compatibility with pipeline layer)
-    if (m_errorCallback) {
-      m_errorCallback(e.what(), node->getName());
-    }
+    invokeErrorCallback(e.what(), node->getName());
 
     return Result<void>(std::move(error));
   } catch (...) {
@@ -1867,9 +1922,7 @@ Result<void> ExecutionEngine::Impl::processNode(
     auto error = Error(ErrorCode::NodeUnknownException, "Unknown exception",
                        node->getName());
 
-    if (m_errorCallback) {
-      m_errorCallback("Unknown exception", node->getName());
-    }
+    invokeErrorCallback("Unknown exception", node->getName());
 
     return Result<void>(std::move(error));
   }
@@ -2016,14 +2069,14 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
     m_engineState.compare_exchange_strong(expected, EngineState::IDLE,
                                           std::memory_order_acq_rel);
 
-    if (m_resultCallback) {
-      PortDataMap results;
-      {
-        std::lock_guard<std::mutex> lock(m_resultsMutex);
-        results = m_accumulatedResults;
-      }
-      m_resultCallback(results);
+    PortDataMap results;
+    {
+      std::lock_guard<std::mutex> lock(m_resultsMutex);
+      results = m_accumulatedResults;
     }
+    // Guarded invocation: a throwing user callback must not skip the
+    // notifyCompletionWaiters() below, or waitForCompletion() hangs.
+    invokeResultCallback(results);
   }
 
   notifyCompletionWaiters();
@@ -2212,10 +2265,8 @@ void ExecutionEngine::Impl::recordQueueRejection(const std::string &node_name,
                   << port_name << " - DropTail queue full";
   }
 
-  if (m_dropCallback) {
-    m_dropCallback(node_name, frame_constants::k_invalid_frame_id,
-                   "DropTail queue full");
-  }
+  invokeDropCallback(node_name, frame_constants::k_invalid_frame_id,
+                     "DropTail queue full");
 }
 
 std::size_t

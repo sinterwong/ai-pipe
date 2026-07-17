@@ -296,9 +296,20 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
   m_executionStart = start_time;
   notifyExecutionStarted();
 
-  // Setup completion handlers that fulfill the promise
+  // Setup one-shot completion handlers that fulfill the promise. The
+  // `done` flag makes the pair single-fire (multiple failing nodes may
+  // trigger the error callback more than once), and each path restores
+  // the resident callbacks before fulfilling the promise - a later
+  // run()/submit() must never hit a handler bound to a satisfied
+  // promise. The engine invokes a copy of the registered callback, so
+  // re-registering from inside the handler is safe.
+  auto done = std::make_shared<std::atomic<bool>>(false);
+
   m_engine->setPipelineResultCallback(
-      [this, promise, start_time](const PortDataMap &results) {
+      [this, promise, start_time, done](const PortDataMap &results) {
+        if (done->exchange(true)) {
+          return;
+        }
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time);
 
@@ -308,6 +319,8 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
           m_lastResults = results;
         }
+
+        setupEngineCallbacks();
 
         ExecutionOutput output;
         output.outputs = results;
@@ -320,9 +333,19 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
       });
 
   m_engine->setPipelineErrorCallback(
-      [this, promise, start_time](const std::string &error,
-                                  const std::string &node_name) {
+      [this, promise, done](const std::string &error,
+                            const std::string &node_name) {
+        if (done->exchange(true)) {
+          return;
+        }
         transitionTo(PipelineState::ERROR);
+
+        {
+          std::lock_guard<std::mutex> lock(m_resultsMutex);
+          m_lastError = Error::nodeException(error, node_name);
+        }
+
+        setupEngineCallbacks();
 
         auto err = Error::nodeException(error, node_name);
         // Same ordering rule as the result callback: promise last
@@ -333,8 +356,9 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
   // Start async execution
   auto started = m_engine->execute(inputs, false, m_context);
 
-  if (!started) {
+  if (!started && !done->exchange(true)) {
     transitionTo(PipelineState::ERROR);
+    setupEngineCallbacks();
     promise->set_value(Result<ExecutionOutput>::err(
         ErrorCode::ExecutionFailed, "Failed to start async execution"));
   }

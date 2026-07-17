@@ -1293,6 +1293,39 @@ TEST_F(PipelineAsyncTest, RunAsyncPropagatesNodeFailure) {
   EXPECT_TRUE(pipeline.hasError());
 }
 
+TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
+  auto pipeline = buildWithResultFlag();
+
+  PortDataMap inputs;
+  inputs["source"] = makeDataPacket(1);
+
+  auto future = pipeline.runAsync(inputs);
+  ASSERT_EQ(future.wait_for(5s), std::future_status::ready);
+  ASSERT_TRUE(future.get().isOk());
+  ASSERT_TRUE(waitFor([&] { return m_results.load() >= 1; }));
+  const int results_after_async = m_results.load();
+
+  // Regression (R1.1): runAsync used to leave its one-shot promise
+  // callbacks registered on the engine. The next run() then re-fired
+  // them; the second set_value threw std::future_error out of
+  // checkCompletionAndNotify, skipping notifyCompletionWaiters, and
+  // the synchronous run() hung forever. Run it on a side thread so a
+  // regression fails the assertion instead of hanging the suite.
+  auto second =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_EQ(second.wait_for(5s), std::future_status::ready)
+      << "run() after runAsync() hung";
+  auto run_result = second.get();
+  ASSERT_TRUE(run_result.isOk()) << run_result.errorMessage();
+
+  // Exactly one additional observer notification: the resident result
+  // callback fired for run(), and the stale runAsync handler did not.
+  ASSERT_TRUE(
+      waitFor([&] { return m_results.load() >= results_after_async + 1; }));
+  EXPECT_EQ(m_results.load(), results_after_async + 1);
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+}
+
 // =============================================================================
 // End-to-End Observer Error Notification + reset()
 // =============================================================================
