@@ -14,10 +14,10 @@
  * @copyright Copyright (c) 2026
  */
 
-#include "ai_pipe/plugin.hpp"
-#include "ai_pipe/logger.hpp"
 #include "ai_pipe/node_registry.hpp"
+#include "ai_pipe/plugin.hpp"
 #include "ai_pipe/version.hpp"
+#include "logger.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -93,8 +93,7 @@ std::string versionToString(std::uint32_t version) {
 
 } // namespace
 
-Result<PluginLoader::LoadedPlugin>
-PluginLoader::load(const std::string &path) {
+Result<PluginLoader::LoadedPlugin> PluginLoader::load(const std::string &path) {
   for (const auto &loaded : m_impl->plugins) {
     if (loaded.path == path) {
       return Result<LoadedPlugin>::err(ErrorCode::InvalidArgument,
@@ -154,8 +153,7 @@ PluginLoader::load(const std::string &path) {
     return reject(ErrorCode::PluginVersionMismatch,
                   "'" + path + "' uses plugin ABI revision " +
                       std::to_string(descriptor->abi_version) +
-                      ", host expects " +
-                      std::to_string(k_plugin_abi_version));
+                      ", host expects " + std::to_string(k_plugin_abi_version));
   }
   if (!frameworkVersionCompatible(descriptor->ai_pipe_version)) {
     return reject(ErrorCode::PluginVersionMismatch,

@@ -1,5 +1,5 @@
 #include "ai_pipe/context.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>

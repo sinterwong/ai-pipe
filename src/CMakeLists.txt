@@ -1,7 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
-project(AIPipeSrc VERSION ${AI_PIPE_VERSION})
-
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Public headers (API)
@@ -47,18 +43,19 @@ set_target_properties(ai_pipe PROPERTIES
     SOVERSION ${AI_PIPE_VERSION_MAJOR}
 )
 
-# Configure include directories
+# Configure include directories. Only api/ is public: consumers must not
+# see the private headers in src/, so the build-tree interface matches the
+# install-tree interface (tests/benchmarks opt back in explicitly).
 target_include_directories(ai_pipe
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
-        ${DEPENDENCY_INCLUDES}
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 # Link dependencies (CMAKE_DL_LIBS: dlopen for the plugin loader)
-target_link_libraries(ai_pipe PRIVATE ${DEPENDENCY_LIBS} ${CMAKE_DL_LIBS})
+target_link_libraries(ai_pipe PRIVATE ${CMAKE_DL_LIBS})
 
 # Optional JSON graph loader: nlohmann/json is vendored, header-only, and
 # consumed PRIVATE-ly, so enabling it adds no link-time or install-time
@@ -68,17 +65,23 @@ if(AI_PIPE_WITH_JSON)
     target_include_directories(ai_pipe SYSTEM PRIVATE ${3RDPARTY_ROOT})
 endif()
 
-# Generate package configuration files
+# Generate package configuration files. The config/targets files go to
+# lib/cmake/ai_pipe, which find_package() searches by default (a flat
+# share/ needed a manual ai_pipe_DIR). configure_package_config_file is
+# required for @PACKAGE_INIT@ to expand; plain configure_file leaves it
+# empty.
+set(AI_PIPE_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/ai_pipe)
+
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY AnyNewerVersion
 )
 
-configure_file(
+configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
-    @ONLY
+    INSTALL_DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
 )
 
 # Install public headers
@@ -99,7 +102,7 @@ install(TARGETS ai_pipe
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
-    DESTINATION ${CMAKE_INSTALL_DATADIR}
+    DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
     COMPONENT dev
 )
 
@@ -107,7 +110,7 @@ install(FILES
 install(EXPORT ai_pipe_export_set
     FILE ai_pipe-targets.cmake
     NAMESPACE ai_pipe::
-    DESTINATION ${CMAKE_INSTALL_DATADIR}
+    DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
     COMPONENT dev
 )
 

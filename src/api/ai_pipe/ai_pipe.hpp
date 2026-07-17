@@ -31,7 +31,6 @@
 #include "ai_pipe/execution_types.hpp"
 
 // Strategy Interfaces (for custom implementations)
-#include "ai_pipe/i_drop_strategy.hpp"
 #include "ai_pipe/i_scheduler_strategy.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
 

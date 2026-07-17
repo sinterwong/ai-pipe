@@ -18,7 +18,7 @@
  */
 
 #include "pipeline_impl.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 #include <algorithm>
 #include <stdexcept>
 

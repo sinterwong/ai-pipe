@@ -29,6 +29,30 @@ if(UNIX)
     add_subdirectory(plugins)
 endif()
 
+# Public headers must be self-contained: compile one TU per header so a
+# header that includes a removed file or misses its own dependencies
+# fails the build instead of rotting unnoticed.
+file(GLOB PUBLIC_API_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ai_pipe/*.hpp"
+)
+set(HEADER_CHECK_SOURCES "")
+foreach(header ${PUBLIC_API_HEADERS})
+    get_filename_component(header_name ${header} NAME_WE)
+    set(check_src "${CMAKE_CURRENT_BINARY_DIR}/header_checks/check_${header_name}.cpp")
+    if(NOT EXISTS ${check_src})
+        file(WRITE ${check_src} "#include \"ai_pipe/${header_name}.hpp\"\n")
+    endif()
+    list(APPEND HEADER_CHECK_SOURCES ${check_src})
+endforeach()
+
+add_library(ai_pipe_header_checks OBJECT ${HEADER_CHECK_SOURCES})
+target_link_libraries(ai_pipe_header_checks PRIVATE ai_pipe::ai_pipe)
+set_target_properties(ai_pipe_header_checks PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
 # Build test executable
 add_executable(ai_pipe_tests ${TEST_SOURCES})
 

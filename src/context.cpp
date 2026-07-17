@@ -9,7 +9,7 @@
  */
 
 #include "ai_pipe/context.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 #include <iomanip>
 #include <iostream>
 #include <sstream>

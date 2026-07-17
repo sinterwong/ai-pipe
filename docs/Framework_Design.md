@@ -753,7 +753,7 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 
 - `lib/libai_pipe.so` — 共享库
 - `include/ai_pipe/` — 公共头文件（仅接口，无内部实现头）
-- `share/ai_pipe-config.cmake` — CMake 包配置
+- `lib/cmake/ai_pipe/ai_pipe-config.cmake` — CMake 包配置（find_package 默认搜索路径）
 
 ### 11.2 公共头文件 vs 内部头文件
 
@@ -764,7 +764,6 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 | `enum.hpp` |
 | `edge.hpp` |
 | `graph.hpp` |
-| `logger.hpp` |
 | `data_packet.hpp` 
 | `data_types.hpp` 
 | `i_logic_node.hpp` 

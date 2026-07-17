@@ -13,7 +13,7 @@
 #define AI_PIPE_UNIT_TEST_HELPER_NODES
 
 #include "ai_pipe/i_logic_node.hpp"
-#include "ai_pipe/logger.hpp"
+#include "logger.hpp"
 
 using namespace ai_pipe;
 using namespace std::chrono_literals;
