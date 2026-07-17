@@ -386,9 +386,9 @@ Result<void> ExecutionEngine::Impl::execute(
     const PortDataMap &initial_inputs, bool wait_for_completion,
     std::shared_ptr<PipelineContext> context,
     std::optional<std::chrono::milliseconds> timeout) {
-  m_currentContext.store(std::move(context));
-
-  // Handle streaming mode
+  // Handle streaming mode: inputs route through pushInput and execute
+  // with the streaming context installed by startStreaming(), which
+  // stays authoritative - the context argument is not consulted here.
   if (m_streamingMode.load(std::memory_order_acquire)) {
     for (const auto &[node_name, data] : initial_inputs) {
       auto result = pushInput(node_name, data);
@@ -415,20 +415,24 @@ Result<void> ExecutionEngine::Impl::execute(
 
     if (m_engineState.load(std::memory_order_acquire) == EngineState::RUNNING) {
       LOG_ERROR_S << "ExecutionEngine: Already running.";
-      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::AlreadyRunning,
                                "Engine is already running");
     }
 
     if (!m_graph || !m_threadPool) {
       LOG_ERROR_S << "ExecutionEngine: Not initialized.";
-      m_currentContext.store(nullptr);
       return Result<void>::err(ErrorCode::NotInitialized,
                                "Engine not initialized (missing graph or "
                                "thread pool)");
     }
 
     LOG_TRACE_S << "ExecutionEngine: Starting execution.";
+
+    // R1.4: claim the context only after validation passed. Storing it
+    // at entry let a rejected concurrent execute() null out the running
+    // execution's context on its error path, handing later-scheduled
+    // tasks a null context.
+    m_currentContext.store(std::move(context));
 
     auto setup_result = setupNodes(m_currentContext.load());
     if (!setup_result) {

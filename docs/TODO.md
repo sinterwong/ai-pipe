@@ -78,11 +78,18 @@
   返回，修复前永久阻塞）/ `TimeoutCancelsCooperativeNode`。提交
   `fix: make run(timeout) a real bounded wait (R1.3)`。
 
-- [ ] **R1.4 execute() 过早写 m_currentContext**：
+- [x] **R1.4 execute() 过早写 m_currentContext**：
   `ExecutionEngine::Impl::execute` 在校验 AlreadyRunning 之前
   `m_currentContext.store()`，错误路径又置 null——并发误调用第二个
   execute 会清掉在跑执行的 context，之后新调度的任务拿到 null context。
   把 store 挪到状态校验通过之后。
+  ——已修复：store 移入 engineMutex 临界区、校验全部通过之后；
+  AlreadyRunning/NotInitialized 错误路径不再碰 context。顺带：流式路径
+  不再覆盖 startStreaming 装入的 context（同族缺陷，execute 的 context
+  实参在流式下本就无消费者）。回归测试
+  `ExecutionEngineTest.RejectedConcurrentExecuteKeepsRunningContext`。
+  提交 `fix: claim m_currentContext only after execute() validation
+  (R1.4)`。
 
 - [ ] **R1.5 删除 Pipeline::Impl 的移动操作**：引擎回调捕获 Impl 的
   `this`，而 Pipeline 走 `unique_ptr<Impl>` 移动（Impl 地址稳定），

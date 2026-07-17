@@ -318,6 +318,62 @@ TEST_F(ExecutionEngineTest, DoubleExecuteRejectsSecond) {
   std::this_thread::sleep_for(300ms);
 }
 
+TEST_F(ExecutionEngineTest, RejectedConcurrentExecuteKeepsRunningContext) {
+  // Records whether process() received a null context
+  class ContextProbeNode : public ILogicNode {
+  public:
+    explicit ContextProbeNode(const std::string &name) : ILogicNode(name) {}
+
+    void process(const PortDataMap &, PortDataMap &,
+                 std::shared_ptr<PipelineContext> ctx) override {
+      m_sawNullContext.store(ctx == nullptr);
+      m_executed.store(true);
+    }
+    std::vector<std::string> getExpectedInputPorts() const override {
+      return {"input"};
+    }
+    std::vector<std::string> getExpectedOutputPorts() const override {
+      return {};
+    }
+
+    std::atomic<bool> m_sawNullContext{false};
+    std::atomic<bool> m_executed{false};
+  };
+
+  auto source = std::make_shared<SlowNode>("source", 200ms);
+  auto probe = std::make_shared<ContextProbeNode>("probe");
+
+  m_graph->addNode(source);
+  m_graph->addNode(probe);
+  m_graph->addEdge("source", "output", "probe", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  ASSERT_TRUE(
+      engine->execute(inputs, false, std::make_shared<PipelineContext>())
+          .isOk());
+
+  // Regression (R1.4): execute() used to store the new context at entry
+  // and null it on the AlreadyRunning path, so nodes scheduled after
+  // this rejection (probe, once the slow source finishes) received a
+  // null context.
+  ASSERT_FALSE(
+      engine->execute(inputs, false, std::make_shared<PipelineContext>())
+          .isOk());
+
+  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  while (!probe->m_executed.load() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+  ASSERT_TRUE(probe->m_executed.load());
+  EXPECT_FALSE(probe->m_sawNullContext.load());
+}
+
 // =============================================================================
 // Result and Error Callback Tests
 // =============================================================================
