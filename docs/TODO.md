@@ -100,10 +100,15 @@
   （unique_ptr 搬移）。提交 `refactor: delete Pipeline::Impl move
   operations (R1.5)`。
 
-- [ ] **R1.6 DropEvent 字段语义修复**：`LockFreeNodeQueue::notifyDrop`
+- [x] **R1.6 DropEvent 字段语义修复**：`LockFreeNodeQueue::notifyDrop`
   把 `capacity()` 赋给 `queue_size_before`，字段名与含义不符。改为真实
   的 drop 前队列长度（或删掉该字段改为 capacity 字段，取其一，语义与
   命名必须一致）。
+  ——已按裁决修复：保留字段名，五个驱逐点在 evictOne 前采样队列长度传入
+  notifyDrop；并发下为瞬时快照（DropEvent 字段注释注明）。测试
+  `LockFreeDropStrategyTest.DropEvent_QueueSizeBeforeIsRealSize`
+  （KeepLatest 窗口 3/容量 8 场景区分新旧语义）。提交 `fix: report the
+  real pre-drop queue length in DropEvent (R1.6)`。
 
 ## R2. 命名与 API 边界清算（无兼容包袱，现在做而不是拖到 1.0）
 

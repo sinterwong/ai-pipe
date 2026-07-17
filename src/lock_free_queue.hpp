@@ -53,6 +53,8 @@ struct DropEvent {
   std::string node_name;
   std::string port_name;
   std::string reason;
+  // Instantaneous snapshots taken around the eviction; concurrent
+  // pushes/pops may shift the queue by the time the callback runs.
   std::size_t queue_size_before{0};
   std::size_t queue_size_after{0};
   std::size_t total_drops{0};
@@ -757,11 +759,12 @@ private:
 
     for (int round = 0; round < k_max_evictions; ++round) {
       T evicted;
+      const auto size_before = m_queue.size();
       if (evictOne(evicted)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
-        notifyDrop(evicted, "DropHead overflow");
+        notifyDrop(evicted, "DropHead overflow", size_before);
       }
       for (int spin = 0; spin < k_spin_per_eviction; ++spin) {
         if (m_queue.tryPush(std::move(item))) {
@@ -779,11 +782,12 @@ private:
     // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
       T discard;
+      const auto size_before = m_queue.size();
       if (evictOne(discard)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
-        notifyDrop(discard, "DropHead overflow (fallback)");
+        notifyDrop(discard, "DropHead overflow (fallback)", size_before);
       }
       std::this_thread::yield();
     }
@@ -833,7 +837,7 @@ private:
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
-        notifyDrop(evicted, "KeepLatest overflow");
+        notifyDrop(evicted, "KeepLatest overflow", current_size);
         current_size = m_queue.size();
       } else {
         break;
@@ -850,11 +854,12 @@ private:
 
     constexpr int k_spin_limit = 128;
     T evicted;
+    const auto force_size_before = m_queue.size();
     if (evictOne(evicted)) {
       if (m_config.track_statistics) {
         m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
       }
-      notifyDrop(evicted, "KeepLatest force overflow");
+      notifyDrop(evicted, "KeepLatest force overflow", force_size_before);
     }
     for (int spin = 0; spin < k_spin_limit; ++spin) {
       if (m_queue.tryPush(std::move(item))) {
@@ -871,11 +876,12 @@ private:
     // Eviction-assisted final fallback to prevent livelock
     while (!m_queue.tryPush(std::move(item))) {
       T discard;
+      const auto size_before = m_queue.size();
       if (evictOne(discard)) {
         if (m_config.track_statistics) {
           m_stats.total_dropped.fetch_add(1, std::memory_order_relaxed);
         }
-        notifyDrop(discard, "KeepLatest overflow (fallback)");
+        notifyDrop(discard, "KeepLatest overflow (fallback)", size_before);
       }
       std::this_thread::yield();
     }
@@ -918,7 +924,8 @@ private:
     }
   }
 
-  void notifyDrop(const T &dropped_item, const std::string &reason) {
+  void notifyDrop(const T &dropped_item, const std::string &reason,
+                  std::size_t size_before) {
     if (!m_dropCallback)
       return;
 
@@ -936,7 +943,7 @@ private:
         .node_name = m_config.node_name,
         .port_name = m_config.port_name,
         .reason = reason,
-        .queue_size_before = m_queue.capacity(),
+        .queue_size_before = size_before,
         .queue_size_after = m_queue.size(),
         .total_drops = m_stats.total_dropped.load(std::memory_order_relaxed),
     };
