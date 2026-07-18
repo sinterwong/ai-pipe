@@ -29,8 +29,7 @@ class ConfiguredNode : public ILogicNode {
 public:
   ConfiguredNode(const std::string &name, const PortData &config)
       : ILogicNode(name),
-        m_threshold(
-            config.getOptionalParam<double>("threshold").value_or(0.5)) {}
+        m_threshold(config.param<double>("threshold").valueOr(0.5)) {}
   void process(const PortDataMap &, PortDataMap &,
                std::shared_ptr<PipelineContext>) override {}
   [[nodiscard]] double threshold() const { return m_threshold; }

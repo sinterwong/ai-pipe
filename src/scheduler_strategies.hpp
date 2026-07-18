@@ -12,7 +12,6 @@
  * Strategies provided:
  * - BatchSchedulerStrategy: Traditional batch processing
  * - StreamSchedulerStrategy: Continuous streaming with backpressure
- * - HybridSchedulerStrategy: Mixed batch/stream behavior
  *
  * @copyright Copyright (c) 2025
  */
@@ -69,15 +68,15 @@ public:
   [[nodiscard]] CompletionStatus
   checkCompletion(std::size_t active_node_count,
                   std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      &sink_execution_counts) const override {
+                  const std::vector<SinkExecutionCount> &sink_execution_counts)
+      const override {
     if (active_node_count > 0) {
       return {false, "active tasks remaining", std::nullopt};
     }
 
-    for (const auto &[sink_name, count] : sink_execution_counts) {
-      if (count == 0) {
-        return {false, "sink '" + sink_name + "' has not executed",
+    for (const auto &sink : sink_execution_counts) {
+      if (sink.executions == 0) {
+        return {false, "sink '" + std::string(sink.name) + "' has not executed",
                 std::nullopt};
       }
     }
@@ -108,9 +107,19 @@ public:
  * @brief Configuration for stream scheduling
  */
 struct StreamSchedulerConfig {
-  bool allow_partial_inputs = false; ///< Allow scheduling with partial inputs
-  double min_input_ratio = 1.0;      ///< Minimum input readiness ratio
-  bool auto_reschedule = true;       ///< Automatically reschedule on completion
+  /**
+   * Allow a multi-input node to schedule before every port has data.
+   * min_input_ratio is consulted only when this is true: a node
+   * schedules once ready_inputs/expected_inputs >= min_input_ratio and
+   * at least one input is ready. The default of 0.0 means "any ready
+   * input schedules" - raising the ratio raises the bar. (R3.4: the
+   * previous default of 1.0 made enabling partial inputs a no-op
+   * unless the ratio was also lowered.)
+   */
+  bool allow_partial_inputs = false;
+  double min_input_ratio = 0.0;
+
+  bool auto_reschedule = true; ///< Automatically reschedule on completion
   std::chrono::milliseconds min_interval{
       0}; ///< Minimum interval between executions
 };
@@ -131,6 +140,25 @@ public:
 
   [[nodiscard]] ScheduleResult
   shouldSchedule(const SchedulingContext &context) const override {
+    // Rate limiting gates every data-ready path below (R3.2): a node
+    // that executed too recently defers instead of scheduling, and the
+    // engine's defer timer re-evaluates it once the interval elapses.
+    // (This check previously sat below the ready-input returns, where
+    // it was unreachable exactly when inputs were ready - min_interval
+    // never limited anything.)
+    if (m_config.min_interval.count() > 0 && context.execution_count > 0 &&
+        hasReadyWork(context)) {
+      const auto elapsed =
+          std::chrono::steady_clock::now() - context.last_execution_time;
+      if (elapsed < m_config.min_interval) {
+        const auto remaining =
+            m_config.min_interval -
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
+        return ScheduleResult::defer(
+            std::max(remaining, std::chrono::milliseconds{1}), "rate limited");
+      }
+    }
+
     // Source nodes with initial input can be scheduled
     if (context.is_source_node && context.has_initial_input) {
       return ScheduleResult::scheduleNow("source node with input ready");
@@ -147,18 +175,6 @@ public:
       }
     }
 
-    // Rate limiting check
-    if (m_config.min_interval.count() > 0 && context.execution_count > 0) {
-      auto elapsed =
-          std::chrono::steady_clock::now() - context.last_execution_time;
-      if (elapsed < m_config.min_interval) {
-        auto remaining =
-            m_config.min_interval -
-            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
-        return ScheduleResult::defer(remaining, "rate limited");
-      }
-    }
-
     return ScheduleResult::waitForInputs("waiting for inputs in stream mode");
   }
 
@@ -168,11 +184,10 @@ public:
     return success && m_config.auto_reschedule;
   }
 
-  [[nodiscard]] CompletionStatus
-  checkCompletion(std::size_t /*active_node_count*/,
-                  std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      & /*sink_execution_counts*/) const override {
+  [[nodiscard]] CompletionStatus checkCompletion(
+      std::size_t /*active_node_count*/, std::size_t /*pending_node_count*/,
+      const std::vector<SinkExecutionCount> & /*sink_execution_counts*/)
+      const override {
     return {false, "streaming mode - continuous execution", std::nullopt};
   }
 
@@ -195,61 +210,19 @@ public:
   [[nodiscard]] const StreamSchedulerConfig &config() const { return m_config; }
 
 private:
-  StreamSchedulerConfig m_config;
-};
-
-// =============================================================================
-// Hybrid Scheduler Strategy
-// =============================================================================
-
-/**
- * @brief Hybrid scheduler combining batch and stream behaviors
- *
- * Allows per-node configuration of scheduling behavior.
- */
-class HybridSchedulerStrategy final : public ISchedulerStrategy {
-public:
-  [[nodiscard]] ScheduleResult
-  shouldSchedule(const SchedulingContext &context) const override {
-    // Default to stream-like behavior
+  /** @brief Would the ready-input paths schedule this node right now? */
+  [[nodiscard]] bool hasReadyWork(const SchedulingContext &context) const {
     if (context.is_source_node && context.has_initial_input) {
-      return ScheduleResult::scheduleNow("source node with input ready");
+      return true;
     }
-
-    if (context.allInputsReady()) {
-      return ScheduleResult::scheduleNow("all inputs ready");
+    if (m_config.allow_partial_inputs) {
+      return context.hasReadyInput() &&
+             context.inputReadinessRatio() >= m_config.min_input_ratio;
     }
-
-    return ScheduleResult::waitForInputs("waiting for inputs");
+    return context.allInputsReady();
   }
 
-  [[nodiscard]] bool
-  onNodeComplete(const std::shared_ptr<ILogicNode> & /*node*/, bool success,
-                 const PortDataMap & /*outputs*/) override {
-    return success; // Reschedule on success
-  }
-
-  [[nodiscard]] CompletionStatus
-  checkCompletion(std::size_t /*active_node_count*/,
-                  std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      & /*sink_execution_counts*/) const override {
-    return {false, "hybrid mode - continuous execution", std::nullopt};
-  }
-
-  [[nodiscard]] CompletionSemantics completionSemantics() const override {
-    return CompletionSemantics::Continuous;
-  }
-
-  [[nodiscard]] bool supportsStreaming() const override { return true; }
-
-  [[nodiscard]] std::string name() const override {
-    return "HybridSchedulerStrategy";
-  }
-
-  [[nodiscard]] std::unique_ptr<ISchedulerStrategy> clone() const override {
-    return std::make_unique<HybridSchedulerStrategy>(*this);
-  }
+  StreamSchedulerConfig m_config;
 };
 
 // =============================================================================
@@ -267,8 +240,6 @@ createSchedulerStrategy(ExecutionMode mode,
     return std::make_unique<BatchSchedulerStrategy>();
   case ExecutionMode::STREAM:
     return std::make_unique<StreamSchedulerStrategy>(stream_config);
-  case ExecutionMode::HYBRID:
-    return std::make_unique<HybridSchedulerStrategy>();
   }
   return std::make_unique<BatchSchedulerStrategy>();
 }

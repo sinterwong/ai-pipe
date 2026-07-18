@@ -17,16 +17,17 @@
 #include "ai_pipe/data_types.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
+#include <string_view>
 #include <vector>
 
 namespace ai_pipe {
 
-// Forward declaration
-class Graph;
+// Forward declaration; full definition in ai_pipe/compiled_graph.hpp
+class CompiledGraph;
 
 // =============================================================================
 // Scheduling Types
@@ -36,10 +37,16 @@ class Graph;
  * @brief Result of a scheduling decision
  */
 enum class ScheduleDecision {
-  ScheduleNow,     ///< Node should be scheduled immediately
-  WaitForInputs,   ///< Wait for more inputs before scheduling
-  SkipExecution,   ///< Skip this execution cycle
-  DeferToNextCycle ///< Defer to the next scheduling cycle
+  ScheduleNow,   ///< Node should be scheduled immediately
+  WaitForInputs, ///< Wait for more inputs before scheduling
+  SkipExecution, ///< Skip this execution cycle
+  /**
+   * Defer scheduling by ScheduleResult::retry_delay (R3.2): the engine
+   * arms its defer timer and re-runs the scheduling decision when the
+   * delay expires, so a deferred node is re-evaluated even if no
+   * further data event arrives.
+   */
+  DeferToNextCycle
 };
 
 /**
@@ -126,6 +133,18 @@ struct CompletionStatus {
   std::optional<std::chrono::milliseconds> time_to_completion;
 };
 
+/**
+ * @brief One sink node's execution count for completion checks (R4.5)
+ *
+ * The name view aliases engine-owned storage and is only valid for the
+ * duration of the checkCompletion() call - copy it if a strategy needs
+ * to keep it (none of the built-ins do).
+ */
+struct SinkExecutionCount {
+  std::string_view name;
+  std::uint64_t executions{0};
+};
+
 // =============================================================================
 // Scheduler Strategy Interface
 // =============================================================================
@@ -168,13 +187,15 @@ public:
    * @brief Check if execution is complete
    * @param active_node_count Number of currently active nodes
    * @param pending_node_count Number of pending nodes
-   * @param sink_execution_counts Execution counts for sink nodes
+   * @param sink_execution_counts Execution counts for sink nodes (R4.5:
+   *        a reused snapshot vector - the engine calls this on every
+   *        task completion in batch mode, so the parameter type avoids
+   *        per-call map/string allocations)
    * @return Completion status
    */
-  [[nodiscard]] virtual CompletionStatus
-  checkCompletion(std::size_t active_node_count, std::size_t pending_node_count,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      &sink_execution_counts) const = 0;
+  [[nodiscard]] virtual CompletionStatus checkCompletion(
+      std::size_t active_node_count, std::size_t pending_node_count,
+      const std::vector<SinkExecutionCount> &sink_execution_counts) const = 0;
 
   /**
    * @brief Get completion semantics for this strategy
@@ -192,9 +213,14 @@ public:
   [[nodiscard]] virtual std::string name() const = 0;
 
   /**
-   * @brief Initialize with graph (optional)
+   * @brief Initialize from the compiled topology snapshot (optional)
+   *
+   * R4.2: strategies initialize from the engine-owned CompiledGraph
+   * (an immutable indexed snapshot holding node ownership) instead of
+   * a raw Graph pointer, so no strategy depends on the caller keeping
+   * the mutable Graph alive after engine initialization.
    */
-  virtual void initialize(const Graph *graph) { (void)graph; }
+  virtual void initialize(const CompiledGraph &graph) { (void)graph; }
 
   /**
    * @brief Reset strategy state

@@ -26,7 +26,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 - **DAG-Based Execution**: Model complex processing pipelines as directed acyclic graphs with automatic topological scheduling and parallel execution of independent branches.
 - **Dual Execution Modes**: Batch mode for one-shot processing and Streaming mode for continuous data flow with configurable backpressure and frame dropping.
 - **Strategy Pattern Architecture**: Pluggable `ISchedulerStrategy` and `ISyncStrategy` interfaces for custom scheduling and multi-stream synchronization.
-- **Lock-Free Data Structures**: High-performance MPMC queue based on Vyukov's algorithm with cache-line aligned slots and integrated drop policies, targeting <100ns per operation.
+- **Lock-Free Core Queue Paths**: High-performance MPMC queue based on Vyukov's algorithm with cache-line aligned slots and integrated drop policies, targeting <100ns per operation. The core push/pop paths are lock-free; `tryPeek` and producer-side evictions (DropHead/KeepLatest) are serialized by a small head mutex to keep peek-vs-evict race-free.
 - **Work-Stealing Thread Pool**: Per-worker local queues with LIFO execution for cache locality and FIFO stealing for fairness.
 - **Unified Error Handling**: `Result<T>` monadic type replaces mixed bool/exception patterns with zero-overhead success path and rich error context (code + message + node name).
 - **Zero Third-Party Dependencies**: Built entirely on C++20 standard library (requires compiler support for `<atomic>`, `<shared_mutex>`, `<any>`, `<optional>`, etc.).
@@ -70,7 +70,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 | Component | Header | Description |
 |-----------|--------|-------------|
 | `Pipeline` / `PipelineBuilder` | `pipeline.hpp` | High-level fluent API for building and running pipelines |
-| `ExecutionEngine` | `execution_engine.hpp` | Core engine supporting batch, stream, and hybrid modes |
+| `ExecutionEngine` | `execution_engine.hpp` | Core engine supporting batch and stream modes |
 | `Graph` / `Edge` | `graph.hpp`, `edge.hpp` | DAG topology with cycle detection, adjacency tracking |
 | `ILogicNode` | `i_logic_node.hpp` | Abstract processing node interface |
 | `PipelineContext` | `context.hpp` | Thread-safe shared context: resources, metrics, cancellation |
@@ -111,9 +111,9 @@ public:
     void process(const ai_pipe::PortDataMap& inputs,
                  ai_pipe::PortDataMap& outputs,
                  std::shared_ptr<ai_pipe::PipelineContext> context) override {
-        // Read input
+        // Read input (Result-based access: no exceptions)
         auto input = inputs.at("image");
-        auto raw = input->getParam<std::vector<uint8_t>>("raw_data");
+        auto raw = input->param<std::vector<uint8_t>>("raw_data").value();
 
         // Process...
         auto result = std::make_shared<ai_pipe::PortData>();
@@ -274,7 +274,7 @@ if (result.errorCode() == ai_pipe::ErrorCode::ExecutionTimeout) {
 - **Service Registry**: Type-indexed service locator via `setService<Interface>()` / `getService<Interface>()`.
 - **Configuration Store**: Thread-safe key-value configuration with `setConfig<T>()` / `getConfig<T>()`.
 - **Execution Metrics**: Automatic per-node timing, success rate tracking, and aggregated `ExecutionMetrics`.
-- **Cooperative Cancellation**: `CancellationToken` with `throwIfCancelled()` support for clean shutdown.
+- **Cooperative Cancellation**: `CancellationToken` polled at engine scheduling points; long-running nodes check `isCancellationRequested()` for clean shutdown.
 - **Logger Adapter**: Bridge to external logging systems (glog, spdlog) via `ILoggerAdapter` interface.
 - **Progress Reporting**: Per-node `ProgressReporter` with callback support.
 
@@ -308,7 +308,6 @@ The `ISchedulerStrategy` interface controls when nodes execute and what "complet
 |----------|------|----------|
 | `BatchSchedulerStrategy` | Batch | Execute when all inputs ready; complete when all sinks finish once |
 | `StreamSchedulerStrategy` | Stream | Continuous execution; reschedule nodes after completion |
-| `HybridSchedulerStrategy` | Hybrid | Batch-like with streaming support and partial input tolerance |
 
 Custom strategies can be injected:
 
@@ -414,7 +413,7 @@ auto stream_opts = ai_pipe::PipelineOptions::stream(4, 16);  // 4 workers, queue
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `mode` | `ExecutionMode` | `BATCH` | `BATCH`, `STREAM`, or `HYBRID` |
+| `mode` | `ExecutionMode` | `BATCH` | `BATCH` or `STREAM` |
 | `num_workers` | `uint8_t` | `4` | Thread pool worker count |
 | `execution_timeout` | `milliseconds` | `0` (none) | Per-execution timeout |
 | `queue_capacity` | `size_t` | `0` (unbounded) | Per-node input queue capacity |

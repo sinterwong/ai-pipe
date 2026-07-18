@@ -29,11 +29,14 @@ namespace ai_pipe {
 
 /**
  * @brief Execution mode for the pipeline
+ *
+ * Two modes only (R3.3): the former HYBRID mode was removed - its
+ * strategy advertised per-node scheduling configuration but implemented
+ * none, and its actual behavior was STREAM without partial inputs.
  */
 enum class ExecutionMode {
   BATCH,  ///< Traditional batch processing
   STREAM, ///< Continuous streaming with backpressure
-  HYBRID  ///< Mixed batch/stream behavior
 };
 
 /**
@@ -45,8 +48,6 @@ inline std::string executionModeToString(ExecutionMode mode) {
     return "BATCH";
   case ExecutionMode::STREAM:
     return "STREAM";
-  case ExecutionMode::HYBRID:
-    return "HYBRID";
   }
   return "UNKNOWN";
 }
@@ -186,7 +187,16 @@ struct EngineConfig {
   std::size_t default_queue_capacity = 0;
   std::string default_drop_strategy = "DropHead";
 
+  /**
+   * Streaming only: install the JoinAwareSyncStrategy (cross-branch
+   * coordinated drops and frame-aligned gathering at joins). When
+   * false, streaming runs without a sync strategy - suitable for
+   * linear/fan-out-only graphs that never rejoin. Ignored in batch
+   * mode (always NoSync). Overridden entirely by an explicit
+   * setSyncStrategy().
+   */
   bool enable_sync_coordination = false;
+
   bool allow_partial_inputs = false;
   std::chrono::milliseconds min_execution_interval{0};
 
@@ -232,16 +242,6 @@ struct EngineConfig {
                              std::size_t queue_capacity = 16) {
     EngineConfig config;
     config.mode = ExecutionMode::STREAM;
-    config.num_workers = workers;
-    config.default_queue_capacity = queue_capacity;
-    config.enable_sync_coordination = true;
-    return config;
-  }
-
-  static EngineConfig hybrid(std::uint8_t workers = 4,
-                             std::size_t queue_capacity = 16) {
-    EngineConfig config;
-    config.mode = ExecutionMode::HYBRID;
     config.num_workers = workers;
     config.default_queue_capacity = queue_capacity;
     config.enable_sync_coordination = true;
@@ -435,7 +435,7 @@ struct AtomicNodeStatistics {
 
 struct EngineStatistics {
   // Execution counts. Unit: one NODE execution attempt (unified across
-  // batch/stream/hybrid since P5.3; previously batch counted pipeline
+  // batch/stream since P5.3; previously batch counted pipeline
   // runs while stream counted node schedules, which broke successRate).
   // total_executions ~= successful_executions + failed_executions,
   // modulo attempts still in flight at snapshot time.

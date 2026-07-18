@@ -118,15 +118,13 @@ TEST(CancellationTokenTest, Reset) {
   EXPECT_FALSE(token.isCancelled());
 }
 
-TEST(CancellationTokenTest, ThrowIfCancelledWhenNotCancelled) {
+TEST(CancellationTokenTest, CancelIsObservable) {
+  // R2.2: throwIfCancelled was removed; polling isCancelled() is the
+  // only (cooperative) checkpoint style.
   CancellationToken token;
-  EXPECT_NO_THROW(token.throwIfCancelled());
-}
-
-TEST(CancellationTokenTest, ThrowIfCancelledWhenCancelled) {
-  CancellationToken token;
+  EXPECT_FALSE(token.isCancelled());
   token.cancel();
-  EXPECT_THROW(token.throwIfCancelled(), std::runtime_error);
+  EXPECT_TRUE(token.isCancelled());
 }
 
 TEST(CancellationTokenTest, ThreadSafety) {
@@ -619,14 +617,14 @@ TEST_F(ScopedNodeExecutionTest, SetFailed) {
   EXPECT_EQ(metrics.nodes_failed, 1);
 }
 
-TEST_F(ScopedNodeExecutionTest, CheckCancellation) {
+TEST_F(ScopedNodeExecutionTest, CancellationRequested) {
   ScopedNodeExecution exec(m_context, "test_node");
 
-  EXPECT_NO_THROW(exec.checkCancellation());
+  EXPECT_FALSE(exec.cancellationRequested());
 
   m_context->requestCancellation();
 
-  EXPECT_THROW(exec.checkCancellation(), std::runtime_error);
+  EXPECT_TRUE(exec.cancellationRequested());
 }
 
 TEST_F(ScopedNodeExecutionTest, ReportProgress) {
@@ -659,7 +657,7 @@ TEST_F(ScopedNodeExecutionTest, Logging) {
 
 TEST_F(ScopedNodeExecutionTest, NullContext) {
   ScopedNodeExecution exec(nullptr, "test_node");
-  EXPECT_NO_THROW(exec.checkCancellation());
+  EXPECT_FALSE(exec.cancellationRequested());
   EXPECT_NO_THROW(exec.reportProgress(0.5, "test"));
   EXPECT_NO_THROW(exec.logInfo("message"));
 }

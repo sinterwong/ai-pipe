@@ -46,52 +46,6 @@ Pipeline::Impl::~Impl() {
   LOG_INFO_S << "Pipeline::Impl: Destructed";
 }
 
-Pipeline::Impl::Impl(Impl &&other) noexcept {
-  std::scoped_lock lock(m_stateMutex, other.m_stateMutex, m_observersMutex,
-                        other.m_observersMutex);
-
-  m_graph = std::move(other.m_graph);
-  m_engine = std::move(other.m_engine);
-  m_context = std::move(other.m_context);
-  m_options = std::move(other.m_options);
-  m_customScheduler = std::move(other.m_customScheduler);
-  m_customSync = std::move(other.m_customSync);
-  m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
-  m_observers = std::move(other.m_observers);
-
-  LOG_INFO_S << "Pipeline::Impl: Move constructed";
-}
-
-Pipeline::Impl &Pipeline::Impl::operator=(Impl &&other) noexcept {
-  if (this == &other) {
-    return *this;
-  }
-
-  if (isRunning() || isStreaming()) {
-    if (isStreaming()) {
-      stop(false);
-    } else {
-      cancel();
-      wait();
-    }
-  }
-
-  std::scoped_lock lock(m_stateMutex, other.m_stateMutex, m_observersMutex,
-                        other.m_observersMutex);
-
-  m_graph = std::move(other.m_graph);
-  m_engine = std::move(other.m_engine);
-  m_context = std::move(other.m_context);
-  m_options = std::move(other.m_options);
-  m_customScheduler = std::move(other.m_customScheduler);
-  m_customSync = std::move(other.m_customSync);
-  m_state.store(other.m_state.exchange(PipelineState::UNINITIALIZED));
-  m_observers = std::move(other.m_observers);
-
-  LOG_INFO_S << "Pipeline::Impl: Move assigned";
-  return *this;
-}
-
 // -------------------------------------------------------------------------
 // Initialization
 // -------------------------------------------------------------------------
@@ -213,12 +167,22 @@ void Pipeline::Impl::setupEngineCallbacks() {
 
   m_engine->setPipelineErrorCallback(
       [this](const std::string &error, const std::string &node_name) {
+        auto err = Error::nodeException(error, node_name);
         {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
-          m_lastError = Error::nodeException(error, node_name);
+          m_lastError = err;
         }
-        m_state.store(PipelineState::ERROR, std::memory_order_release);
-        notifyExecutionFailed(Error::nodeException(error, node_name));
+        // Error grading (R1.2): in streaming mode a node exception is a
+        // per-frame event - the engine returns the node to service and
+        // keeps accepting input - so the facade must not latch ERROR
+        // (that froze isRunning()/validateState() while the engine ran
+        // on). Per-frame failures reach observers and m_lastError only.
+        // In batch mode a node failure aborts the execution, so it is
+        // pipeline-fatal and ERROR is correct.
+        if (!isStreaming()) {
+          m_state.store(PipelineState::ERROR, std::memory_order_release);
+        }
+        notifyExecutionFailed(err);
       });
 
   m_engine->setDropCallback([this](const std::string &node_name,
@@ -247,15 +211,19 @@ Pipeline::Impl::run(const PortDataMap &inputs,
   m_executionStart = std::chrono::steady_clock::now();
   notifyExecutionStarted();
 
-  // Execute synchronously
-  auto exec_result = m_engine->execute(inputs, true, m_context);
+  // Execute synchronously; a positive timeout bounds the wait inside
+  // the engine (R1.3) - on expiry the engine cancels cooperatively and
+  // returns ExecutionTimeout instead of blocking on a hung node.
+  std::optional<std::chrono::milliseconds> engine_timeout;
+  if (actual_timeout.count() > 0) {
+    engine_timeout = actual_timeout;
+  }
+  auto exec_result = m_engine->execute(inputs, true, m_context, engine_timeout);
 
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - m_executionStart);
 
-  // Handle timeout (if specified and exceeded)
-  if (actual_timeout.count() > 0 && elapsed > actual_timeout) {
-    cancel();
+  if (!exec_result && exec_result.errorCode() == ErrorCode::ExecutionTimeout) {
     transitionTo(PipelineState::ERROR);
     return Result<ExecutionOutput>::err(
         ErrorCode::ExecutionTimeout,
@@ -296,9 +264,20 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
   m_executionStart = start_time;
   notifyExecutionStarted();
 
-  // Setup completion handlers that fulfill the promise
+  // Setup one-shot completion handlers that fulfill the promise. The
+  // `done` flag makes the pair single-fire (multiple failing nodes may
+  // trigger the error callback more than once), and each path restores
+  // the resident callbacks before fulfilling the promise - a later
+  // run()/submit() must never hit a handler bound to a satisfied
+  // promise. The engine invokes a copy of the registered callback, so
+  // re-registering from inside the handler is safe.
+  auto done = std::make_shared<std::atomic<bool>>(false);
+
   m_engine->setPipelineResultCallback(
-      [this, promise, start_time](const PortDataMap &results) {
+      [this, promise, start_time, done](const PortDataMap &results) {
+        if (done->exchange(true)) {
+          return;
+        }
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time);
 
@@ -308,6 +287,8 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
           m_lastResults = results;
         }
+
+        setupEngineCallbacks();
 
         ExecutionOutput output;
         output.outputs = results;
@@ -320,9 +301,19 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
       });
 
   m_engine->setPipelineErrorCallback(
-      [this, promise, start_time](const std::string &error,
-                                  const std::string &node_name) {
+      [this, promise, done](const std::string &error,
+                            const std::string &node_name) {
+        if (done->exchange(true)) {
+          return;
+        }
         transitionTo(PipelineState::ERROR);
+
+        {
+          std::lock_guard<std::mutex> lock(m_resultsMutex);
+          m_lastError = Error::nodeException(error, node_name);
+        }
+
+        setupEngineCallbacks();
 
         auto err = Error::nodeException(error, node_name);
         // Same ordering rule as the result callback: promise last
@@ -333,8 +324,9 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
   // Start async execution
   auto started = m_engine->execute(inputs, false, m_context);
 
-  if (!started) {
+  if (!started && !done->exchange(true)) {
     transitionTo(PipelineState::ERROR);
+    setupEngineCallbacks();
     promise->set_value(Result<ExecutionOutput>::err(
         ErrorCode::ExecutionFailed, "Failed to start async execution"));
   }
@@ -374,13 +366,12 @@ Result<void> Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
     return validation;
   }
 
-  if (m_options.mode != ExecutionMode::STREAM &&
-      m_options.mode != ExecutionMode::HYBRID) {
+  if (m_options.mode != ExecutionMode::STREAM) {
     LOG_ERROR_S << "Pipeline::Impl: Cannot start streaming in batch mode";
     return Result<void>::err(ErrorCode::InvalidState,
                              "Cannot start streaming in batch mode. "
-                             "Pipeline must be configured with STREAM or "
-                             "HYBRID execution mode");
+                             "Pipeline must be configured with STREAM "
+                             "execution mode");
   }
 
   if (context) {
@@ -458,6 +449,13 @@ void Pipeline::Impl::cancel() {
 
   LOG_INFO_S << "Pipeline::Impl: Cancelling execution";
 
+  // R3.1: cancellation is signalled through both channels - the
+  // cooperative token (visible to nodes mid-process) and the engine
+  // stop protocol (visible to scheduling points and waiters).
+  if (m_context) {
+    m_context->requestCancellation();
+  }
+
   if (m_engine) {
     if (isStreaming()) {
       m_engine->stopStreaming(false);
@@ -477,10 +475,9 @@ void Pipeline::Impl::wait() {
   auto current_state = m_state.load(std::memory_order_acquire);
   if (current_state == PipelineState::RUNNING ||
       current_state == PipelineState::STOPPING) {
-    // Wait for engine to complete
-    while (m_engine->getState() == EngineState::RUNNING) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    }
+    // Blocking wait on the engine's completion signal (R4.4): the
+    // former 10ms sleep poll is gone.
+    m_engine->waitForIdle();
   }
 }
 
@@ -884,7 +881,7 @@ PipelineBuilder::withContext(std::shared_ptr<PipelineContext> context) {
 PipelineBuilder &PipelineBuilder::withMode(ExecutionMode mode) {
   m_state->options.mode = mode;
   // Auto-enable sync coordination for stream mode
-  if (mode == ExecutionMode::STREAM || mode == ExecutionMode::HYBRID) {
+  if (mode == ExecutionMode::STREAM) {
     m_state->options.enable_sync_coordination = true;
   }
   return *this;

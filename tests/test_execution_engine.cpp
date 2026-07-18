@@ -104,7 +104,6 @@ TEST_F(ExecutionEngineTest, FactoryCreate) {
 TEST_F(ExecutionEngineTest, ConvenienceFactoryFunctions) {
   auto batch = createBatchEngine(2);
   auto stream = createStreamEngine(4, 16);
-  auto hybrid = createHybridEngine(6, 32);
 
   EXPECT_EQ(batch->config().mode, ExecutionMode::BATCH);
   EXPECT_EQ(batch->config().num_workers, 2);
@@ -112,9 +111,6 @@ TEST_F(ExecutionEngineTest, ConvenienceFactoryFunctions) {
   EXPECT_EQ(stream->config().mode, ExecutionMode::STREAM);
   EXPECT_EQ(stream->config().num_workers, 4);
   EXPECT_EQ(stream->config().default_queue_capacity, 16);
-
-  EXPECT_EQ(hybrid->config().mode, ExecutionMode::HYBRID);
-  EXPECT_EQ(hybrid->config().num_workers, 6);
 }
 
 TEST_F(ExecutionEngineTest, MoveConstruction) {
@@ -190,12 +186,19 @@ TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
               std::string::npos);
 }
 
-TEST_F(ExecutionEngineTest, ConfigureForHybridMode) {
-  auto engine = ExecutionEngine::create();
-  engine->configureForMode(ExecutionMode::HYBRID);
+TEST_F(ExecutionEngineTest, SyncCoordinationKnobSelectsSyncStrategy) {
+  // Regression (R3.4): enable_sync_coordination was parsed and copied
+  // everywhere but never read - STREAM always installed the JoinAware
+  // strategy regardless of the knob.
+  auto with_sync = ExecutionEngine::create(EngineConfig::stream());
+  EXPECT_NE(with_sync->strategyInfo().find("JoinAwareSyncStrategy"),
+            std::string::npos);
 
-  EXPECT_TRUE(engine->strategyInfo().find("HybridSchedulerStrategy") !=
-              std::string::npos);
+  auto config = EngineConfig::stream();
+  config.enable_sync_coordination = false;
+  auto without_sync = ExecutionEngine::create(config);
+  EXPECT_NE(without_sync->strategyInfo().find("NoSyncStrategy"),
+            std::string::npos);
 }
 
 TEST_F(ExecutionEngineTest, CannotChangeStrategyWhileRunning) {
@@ -316,6 +319,62 @@ TEST_F(ExecutionEngineTest, DoubleExecuteRejectsSecond) {
 
   // Wait for completion
   std::this_thread::sleep_for(300ms);
+}
+
+TEST_F(ExecutionEngineTest, RejectedConcurrentExecuteKeepsRunningContext) {
+  // Records whether process() received a null context
+  class ContextProbeNode : public ILogicNode {
+  public:
+    explicit ContextProbeNode(const std::string &name) : ILogicNode(name) {}
+
+    void process(const PortDataMap &, PortDataMap &,
+                 std::shared_ptr<PipelineContext> ctx) override {
+      m_sawNullContext.store(ctx == nullptr);
+      m_executed.store(true);
+    }
+    std::vector<std::string> getExpectedInputPorts() const override {
+      return {"input"};
+    }
+    std::vector<std::string> getExpectedOutputPorts() const override {
+      return {};
+    }
+
+    std::atomic<bool> m_sawNullContext{false};
+    std::atomic<bool> m_executed{false};
+  };
+
+  auto source = std::make_shared<SlowNode>("source", 200ms);
+  auto probe = std::make_shared<ContextProbeNode>("probe");
+
+  m_graph->addNode(source);
+  m_graph->addNode(probe);
+  m_graph->addEdge("source", "output", "probe", "input");
+
+  auto engine = createBatchEngine();
+  engine->initialize(m_graph.get());
+
+  PortDataMap inputs;
+  inputs["source"] = createData();
+
+  ASSERT_TRUE(
+      engine->execute(inputs, false, std::make_shared<PipelineContext>())
+          .isOk());
+
+  // Regression (R1.4): execute() used to store the new context at entry
+  // and null it on the AlreadyRunning path, so nodes scheduled after
+  // this rejection (probe, once the slow source finishes) received a
+  // null context.
+  ASSERT_FALSE(
+      engine->execute(inputs, false, std::make_shared<PipelineContext>())
+          .isOk());
+
+  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  while (!probe->m_executed.load() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+  ASSERT_TRUE(probe->m_executed.load());
+  EXPECT_FALSE(probe->m_sawNullContext.load());
 }
 
 // =============================================================================
@@ -1331,35 +1390,6 @@ TEST_F(ExecutionEngineTest, EngineConfigStream) {
   EXPECT_EQ(config.num_workers, 4);
   EXPECT_EQ(config.default_queue_capacity, 32);
   EXPECT_TRUE(config.enable_sync_coordination);
-}
-
-TEST_F(ExecutionEngineTest, EngineConfigHybrid) {
-  auto config = EngineConfig::hybrid(8, 64);
-
-  EXPECT_EQ(config.mode, ExecutionMode::HYBRID);
-  EXPECT_EQ(config.num_workers, 8);
-  EXPECT_EQ(config.default_queue_capacity, 64);
-  EXPECT_TRUE(config.enable_sync_coordination);
-}
-
-// =============================================================================
-// Hybrid Mode Tests
-// =============================================================================
-
-TEST_F(ExecutionEngineTest, HybridModeExecution) {
-  auto engine = createHybridEngine();
-  createLinearPipeline();
-  engine->initialize(m_graph.get());
-
-  // Hybrid mode supports both batch and streaming
-  EXPECT_TRUE(engine->startStreaming().isOk());
-
-  (void)engine->pushInput("source", createData(1));
-  std::this_thread::sleep_for(100ms);
-
-  engine->stopStreaming();
-
-  EXPECT_GE(m_sink->processCount(), 1);
 }
 
 TEST_F(ExecutionEngineTest, PartialInputHandlingInStreaming) {

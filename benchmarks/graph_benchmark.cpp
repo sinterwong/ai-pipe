@@ -12,8 +12,8 @@
  * @copyright Copyright (c) 2026
  */
 
+#include "ai_pipe/compiled_graph.hpp"
 #include "benchmark_nodes.hpp"
-#include "compiled_graph.hpp"
 #include <benchmark/benchmark.h>
 
 using namespace ai_pipe;

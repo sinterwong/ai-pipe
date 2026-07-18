@@ -17,16 +17,17 @@
 #ifndef AI_PIPE_INTERNAL_EXECUTION_ENGINE_IMPL_HPP
 #define AI_PIPE_INTERNAL_EXECUTION_ENGINE_IMPL_HPP
 
+#include "ai_pipe/compiled_graph.hpp"
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/trace.hpp"
-#include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <thread>
 #include <vector>
 
@@ -86,6 +87,10 @@ public:
     std::atomic<std::chrono::steady_clock::rep> join_wait_since_ticks{0};
     std::atomic<bool> degrade_pending{false};
 
+    // True while a deferred reschedule entry for this node is armed in
+    // the engine defer timer (R3.2); deduplicates timer entries.
+    std::atomic<bool> defer_pending{false};
+
     [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
       return std::chrono::steady_clock::time_point{
           std::chrono::steady_clock::duration{
@@ -120,9 +125,10 @@ public:
   void configureForMode(ExecutionMode mode);
 
   Result<void> initialize(Graph *graph, std::uint8_t num_workers);
-  Result<void> execute(const PortDataMap &initial_inputs,
-                       bool wait_for_completion,
-                       std::shared_ptr<PipelineContext> context);
+  Result<void>
+  execute(const PortDataMap &initial_inputs, bool wait_for_completion,
+          std::shared_ptr<PipelineContext> context,
+          std::optional<std::chrono::milliseconds> timeout = std::nullopt);
   void stopExecutionAsync();
   void stopExecutionSync();
   void reset();
@@ -142,6 +148,15 @@ public:
   Result<void> startStreaming(std::shared_ptr<PipelineContext> context);
   void stopStreaming(bool wait_for_drain);
   [[nodiscard]] bool isStreaming() const;
+
+  /**
+   * @brief Block until the engine leaves RUNNING (R4.4)
+   *
+   * Rides the completion CV: every final-state transition
+   * (completion, stop, error, streaming shutdown) notifies it, so no
+   * polling is involved. Returns immediately when not RUNNING.
+   */
+  void waitForIdle();
 
   Result<PushStatus> pushInput(const std::string &source_node,
                                const std::string &port_name, PortDataPtr data);
@@ -180,6 +195,23 @@ private:
   void initializeQueues();
   void setupDropCallbacks();
 
+  // Node-state lookup (R4.1): index is the primary key; name and
+  // pointer resolve through the CompiledGraph. All return nullptr for
+  // unknown keys (indexOf/indexOfPtr yield k_invalid_index, which the
+  // range check rejects).
+  [[nodiscard]] NodeState *stateByIndex(CompiledGraph::NodeIndex index) const {
+    return index < m_statesByIndex.size() ? m_statesByIndex[index].get()
+                                          : nullptr;
+  }
+  [[nodiscard]] NodeState *stateByName(const std::string &name) const {
+    return m_compiledGraph ? stateByIndex(m_compiledGraph->indexOf(name))
+                           : nullptr;
+  }
+  [[nodiscard]] NodeState *stateByPtr(const ILogicNode *node) const {
+    return m_compiledGraph ? stateByIndex(m_compiledGraph->indexOfPtr(node))
+                           : nullptr;
+  }
+
   bool distributeInitialInputs(const PortDataMap &initial_inputs);
 
   /** @brief Boundary wrapper: resolves the index once, then dispatches */
@@ -195,41 +227,18 @@ private:
   bool gatherNodeInputs(NodeState &state, PortDataMap &inputs);
 
   /**
-   * @brief Gather inputs for a multi-input node with frame alignment
+   * @brief Aligned gather for multi-input nodes (R4.3)
    *
-   * Peeks every port head, discards frames that lag behind the newest
-   * head (they can never be paired - their partner was dropped on a
-   * sibling branch), and pops only when all heads carry the same frame
-   * id. Unassigned ids (0) act as wildcards. Returns false when any
-   * port has no poppable data yet (transient; caller reschedules).
+   * Binds the engine environment (coordinated-drop-consuming peek,
+   * pop-and-deliver, stale-drop accounting) to the unified skeleton in
+   * frame_alignment.hpp. The per-policy pairing/discard rules live in
+   * the policy structs there (FrameIdPolicy / StreamFrameIdPolicy /
+   * TimestampPolicy). Returns false when any port has no poppable data
+   * yet (transient; caller reschedules).
    */
-  bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
-
-  /**
-   * @brief (stream, frame) aligned gather for AlignmentPolicy::StreamFrameId
-   *
-   * Heads pair only when every port head carries the same
-   * (stream_id, frame_id). When heads disagree, the head(s) that can
-   * never be paired are discarded: any head strictly older (by entry
-   * timestamp) than the newest head - a FIFO port never rewinds in
-   * time, so its partner can no longer arrive. If no head is strictly
-   * older (identical timestamps), the smallest (stream, frame) heads
-   * are dropped as a deterministic tie-break. Unassigned ids (0) act
-   * as wildcards, matching the FrameId policy.
-   */
-  bool gatherStreamAlignedInputs(NodeState &state, PortDataMap &inputs);
-
-  /**
-   * @brief Timestamp-tolerance gather for AlignmentPolicy::Timestamp
-   *
-   * Heads pair when (max_ts - min_ts) <= alignment_tolerance across
-   * all port heads. Otherwise every head with
-   * ts < max_ts - tolerance is discarded: per-port timestamps are
-   * non-decreasing (stamped at ingress in arrival order), so such a
-   * head can never fall within tolerance of the newest port's future
-   * frames. Frame ids are ignored by this policy.
-   */
-  bool gatherTimestampAlignedInputs(NodeState &state, PortDataMap &inputs);
+  template <typename Policy>
+  bool runAlignedGather(NodeState &state, PortDataMap &inputs,
+                        const Policy &policy);
 
   /**
    * @brief Peek a port head, consuming pending coordinated sync drops
@@ -271,6 +280,21 @@ private:
   void joinTimeoutWatchdogLoop();
 
   /**
+   * @brief Engine-level deferred reschedule (R3.2)
+   *
+   * Generalizes the watchdog idea into a timer honoring the
+   * scheduler's DeferToNextCycle decisions: a deferred node (e.g.
+   * min_interval rate limiting) arms a timer entry, and a lazily
+   * started timer thread re-runs tryScheduleNode() when the delay
+   * expires. Without this, a rate-limited tail frame was stranded
+   * until the next data event happened to re-evaluate the node -
+   * possibly forever.
+   */
+  void scheduleDeferredRetry(NodeState &state, std::chrono::milliseconds delay);
+  void stopDeferTimer();
+  void deferTimerLoop();
+
+  /**
    * @brief Emit a trace event if a sink is installed (F7)
    *
    * Frame identity is taken from `packet` when non-null. Costs one
@@ -285,6 +309,22 @@ private:
 
   void recordSyncDrop(const NodeState &state, const std::string &port_name,
                       FrameId frame_id, const char *reason);
+
+  /**
+   * @brief Invoke the registered user callbacks safely
+   *
+   * Each helper copies the std::function under m_callbackMutex and invokes
+   * the copy: a callback may re-register callbacks from within its own
+   * invocation (runAsync restores the resident ones after fulfilling its
+   * promise), so the member must not be the object being executed. The
+   * copy is invoked under a catch-all guard - a throwing user callback
+   * must not skip completion notification or escape into the thread pool.
+   */
+  void invokeResultCallback(const PortDataMap &results);
+  void invokeErrorCallback(const std::string &message,
+                           const std::string &node_name);
+  void invokeDropCallback(const std::string &node_name, std::uint64_t frame_id,
+                          const std::string &reason);
 
   /**
    * @brief Account a successful queue pop
@@ -310,8 +350,34 @@ private:
   void handleNodeFailure(NodeState &state, const Error &error);
 
   void checkCompletionAndNotify();
-  Result<void> waitForCompletion();
+
+  /**
+   * @brief Wait for the running batch execution to finish
+   *
+   * With a timeout (R1.3), the wait is bounded: on expiry the active
+   * context's CancellationToken is cancelled (cooperative channel) and
+   * the stop protocol triggered, then ExecutionTimeout returns
+   * immediately - an in-flight node may still be running until its next
+   * cancellation point. The engine stays STOPPED with possible queue
+   * residue until reset().
+   */
+  Result<void> waitForCompletion(
+      std::optional<std::chrono::milliseconds> timeout = std::nullopt);
+
   void resetInternalState();
+
+  /**
+   * @brief Unified stop check for scheduling points (R3.1)
+   *
+   * True when m_stopFlag is set OR the active context's
+   * CancellationToken is cancelled. A cancelled token is converted into
+   * the engine's stop protocol (stopFlag + waiter wakeup) exactly once
+   * via stopExecutionAsync(), so completion waiters and the deeper
+   * stopFlag-only checks all observe a plain stop afterwards. The token
+   * is reset at execution/streaming start, so a token cancelled during
+   * one run cannot poison the next.
+   */
+  bool isStopRequested();
 
   /**
    * @brief Wake completion/drain waiters without losing wakeups
@@ -330,8 +396,7 @@ private:
    *         false if it was rejected (DropTail policy on a full queue) or the
    *         target queue does not exist
    */
-  [[nodiscard]] bool pushToQueue(const NodePtr &node,
-                                 const std::string &port_name,
+  [[nodiscard]] bool pushToQueue(NodeState &state, const std::string &port_name,
                                  PortDataPtr data);
 
   void recordQueueRejection(const std::string &node_name,
@@ -351,8 +416,8 @@ private:
    */
   static void inheritFrameIdentity(const PortDataMap &inputs,
                                    PortDataMap &outputs);
-  std::size_t getQueueSize(const NodePtr &node,
-                           const std::string &port_name) const;
+  static std::size_t getQueueSize(const NodeState &state,
+                                  const std::string &port_name);
 
   void collectResults(const NodePtr &node, const PortDataMap &outputs);
   [[nodiscard]] QueueConfig
@@ -394,12 +459,12 @@ private:
   // shared_ptr keeps those accesses race-free.
   std::atomic<std::shared_ptr<PipelineContext>> m_currentContext;
 
-  std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
-  std::unordered_map<std::string, NodePtr> m_nodeNameMap;
-
-  // Dense index -> state lookup aligned with CompiledGraph::NodeIndex;
-  // the raw pointers are owned by m_nodeStates.
-  std::vector<NodeState *> m_statesByIndex;
+  // Owning per-node states, indexed by CompiledGraph::NodeIndex (R4.1).
+  // The single node-state container: name/pointer resolution goes
+  // through CompiledGraph (indexOf / indexOfPtr) via the stateBy*
+  // helpers, and cold paths (statistics, reset, drain checks) are
+  // plain sequential scans.
+  std::vector<std::unique_ptr<NodeState>> m_statesByIndex;
 
   // Multi-input node indices, precomputed at initialize; the join
   // timeout watchdog scans only these.
@@ -410,6 +475,21 @@ private:
   std::mutex m_watchdogMutex;
   std::condition_variable m_watchdogCV;
   bool m_watchdogStop{false};
+
+  // Deferred reschedule timer (see scheduleDeferredRetry); the thread
+  // starts lazily on the first deferred decision.
+  struct DeferEntry {
+    std::chrono::steady_clock::time_point due;
+    CompiledGraph::NodeIndex index{CompiledGraph::k_invalid_index};
+    bool operator>(const DeferEntry &other) const { return due > other.due; }
+  };
+  std::thread m_deferTimer;
+  std::mutex m_deferMutex;
+  std::condition_variable m_deferCV;
+  bool m_deferStop{false};
+  bool m_deferRunning{false};
+  std::priority_queue<DeferEntry, std::vector<DeferEntry>, std::greater<>>
+      m_deferQueue;
 
   // Nodes that completed setup(), in setup order; drives teardown.
   std::vector<NodePtr> m_setUpNodes;
@@ -435,6 +515,10 @@ private:
   std::mutex m_resultsMutex;
 
   PortDataMap m_accumulatedResults;
+
+  // Guards registration and lookup of the three user callbacks below.
+  // Never held while a callback runs (see invoke*Callback helpers).
+  mutable std::mutex m_callbackMutex;
 
   std::function<void(const PortDataMap &)> m_resultCallback;
   std::function<void(const std::string &, const std::string &)> m_errorCallback;

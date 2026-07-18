@@ -19,7 +19,11 @@
  * - Create a SyncGroup for each (Fork, Join) pair
  * - Map all nodes on the paths between Fork and Join to their logical branches
  *
- * @version 0.1
+ * R4.2: topology analysis runs on the engine's CompiledGraph snapshot
+ * (dense indices, precomputed adjacency); the strategy retains no
+ * reference to any graph after initialize() returns.
+ *
+ * @version 0.2
  * @date 2026-01-23
  *
  * @copyright Copyright (c) 2026
@@ -28,7 +32,7 @@
 #ifndef AI_PIPE_INTERNAL_JOIN_AWARE_SYNC_STRATEGY_HPP
 #define AI_PIPE_INTERNAL_JOIN_AWARE_SYNC_STRATEGY_HPP
 
-#include "ai_pipe/graph.hpp"
+#include "ai_pipe/compiled_graph.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
 #include "sync_coordinator.hpp"
 #include <algorithm>
@@ -54,52 +58,59 @@ namespace ai_pipe {
  */
 class JoinAwareSyncStrategy final : public ISyncStrategy {
 public:
+  using NodeIndex = CompiledGraph::NodeIndex;
+
   JoinAwareSyncStrategy()
       : m_coordinator(std::make_shared<SyncCoordinator>()) {}
 
   /**
-   * @brief Initialize strategy with graph topology
+   * @brief Initialize strategy with the compiled topology snapshot
    *
    * Performs intelligent topology analysis:
    * 1. Identify all join nodes (in-degree > 1)
    * 2. For each join node, find the Lowest Common Fork (LCF)
    * 3. Extract all paths between LCF and join
    * 4. Create sync groups and map all path nodes
+   *
+   * Only node *names* are retained (in the group mappings); no graph
+   * reference survives this call.
    */
-  void initialize(const Graph *graph) override {
+  void initialize(const CompiledGraph &graph) override {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_coordinator->reset();
     m_nodeMapping.clear();
     m_nodeMultiMapping.clear();
     m_debugInfo.clear();
 
-    if (!graph)
-      return;
-
-    m_graph = graph;
+    const auto node_count = static_cast<NodeIndex>(graph.nodeCount());
 
     // Step 1: Find all join points (nodes with in-degree > 1)
-    std::vector<std::string> join_points;
-
-    for (const auto &node : graph->getNodes()) {
-      int in_degree = graph->getInDegree(node);
-      if (in_degree > 1) {
-        join_points.push_back(node->getName());
+    std::vector<NodeIndex> join_points;
+    for (NodeIndex i = 0; i < node_count; ++i) {
+      if (graph.inDegree(i) > 1) {
+        join_points.push_back(i);
       }
     }
 
     // Step 2: For each join point, find fork-join pairs and create sync groups
     int group_counter = 0;
-    for (const auto &join_node_name : join_points) {
-      auto result = findLowestCommonFork(graph, join_node_name);
+    for (const auto join_index : join_points) {
+      auto result = findLowestCommonFork(graph, join_index);
 
       if (!result.valid) {
         continue; // No common fork found, skip
       }
 
+      const std::string &fork_name = graph.node(result.fork_node)->getName();
+      const std::string &join_name = graph.node(join_index)->getName();
+
       // Create a sync group for this fork-join pair
-      std::string group_id = "sync_group_" + std::to_string(group_counter++) +
-                             "_" + result.fork_node + "_to_" + join_node_name;
+      std::string group_id = "sync_group_";
+      group_id += std::to_string(group_counter++);
+      group_id += "_";
+      group_id += fork_name;
+      group_id += "_to_";
+      group_id += join_name;
 
       std::vector<BranchId> branch_ids;
       branch_ids.reserve(result.paths.size());
@@ -114,8 +125,9 @@ public:
 
         // Map ALL nodes on this path to the same (group_id, branch_id)
         // This includes all intermediate nodes between fork and join
-        for (const auto &node_name : path) {
-          addNodeMapping(node_name, group_id, branch_id);
+        for (const auto node_index : path) {
+          addNodeMapping(graph.node(node_index)->getName(), group_id,
+                         branch_id);
         }
       }
 
@@ -125,15 +137,15 @@ public:
 
         // Store debug info
         std::stringstream ss;
-        ss << "Group[" << group_id << "]: Fork=" << result.fork_node
-           << ", Join=" << join_node_name << ", Branches=" << branch_ids.size()
+        ss << "Group[" << group_id << "]: Fork=" << fork_name
+           << ", Join=" << join_name << ", Branches=" << branch_ids.size()
            << " {";
         for (size_t i = 0; i < result.paths.size(); ++i) {
           ss << "[";
           for (size_t j = 0; j < result.paths[i].size(); ++j) {
             if (j > 0)
               ss << "->";
-            ss << result.paths[i][j];
+            ss << graph.node(result.paths[i][j])->getName();
           }
           ss << "]";
           if (i < result.paths.size() - 1)
@@ -303,8 +315,8 @@ private:
    */
   struct ForkSearchResult {
     bool valid = false;
-    std::string fork_node;
-    std::vector<std::vector<std::string>>
+    NodeIndex fork_node{CompiledGraph::k_invalid_index};
+    std::vector<std::vector<NodeIndex>>
         paths; // Paths from fork to join (excluding fork and join)
   };
 
@@ -321,57 +333,48 @@ private:
    * 4. The first such node found with out_degree > 1 is the Lowest Common Fork
    * 5. Extract all paths from fork to join
    */
-  ForkSearchResult findLowestCommonFork(const Graph *graph,
-                                        const std::string &join_node_name) {
+  static ForkSearchResult findLowestCommonFork(const CompiledGraph &graph,
+                                               NodeIndex join_index) {
     ForkSearchResult result;
 
-    auto join_node = graph->getNode(join_node_name);
-    if (!join_node)
+    const auto &predecessors = graph.predecessors(join_index);
+    if (predecessors.size() < 2) {
       return result;
+    }
 
-    const auto &predecessors = graph->getIncomingNeighbors(join_node);
-    if (predecessors.size() < 2)
-      return result;
+    const auto is_fork = [&graph](NodeIndex index) {
+      return graph.successors(index).size() > 1;
+    };
 
-    // Special case: If all predecessors share a common parent with out_degree >
-    // 1, that parent is the fork node
-
-    // First, try the simple case: check if there's a direct common parent
-    std::unordered_map<std::string, int> parent_count;
-    for (const auto &pred : predecessors) {
-      const auto &grandparents = graph->getIncomingNeighbors(pred);
-      for (const auto &gp : grandparents) {
-        parent_count[gp->getName()]++;
+    // Simple case first: a direct common parent of all predecessors
+    // that fans out is the fork node
+    std::unordered_map<NodeIndex, std::size_t> parent_count;
+    for (const auto pred : predecessors) {
+      for (const auto grandparent : graph.predecessors(pred)) {
+        parent_count[grandparent]++;
+      }
+    }
+    for (const auto &[parent, count] : parent_count) {
+      if (count == predecessors.size() && is_fork(parent)) {
+        result.valid = true;
+        result.fork_node = parent;
+        result.paths = findAllPaths(graph, parent, join_index);
+        return result;
       }
     }
 
-    // Find a common parent that is a fork point
-    for (const auto &[parent_name, count] : parent_count) {
-      if (count == static_cast<int>(predecessors.size())) {
-        auto parent_node = graph->getNode(parent_name);
-        if (parent_node && graph->getOutDegree(parent_node) > 1) {
-          result.valid = true;
-          result.fork_node = parent_name;
-          result.paths = findAllPaths(graph, parent_name, join_node_name);
-          return result;
-        }
-      }
-    }
-
-    // General case: BFS backward to find the lowest common ancestor
-    // Track which sources can reach each node
-    std::vector<std::unordered_set<std::string>> reachable_from_source(
+    // General case: BFS backward to find the lowest common ancestor.
+    // Track which sources can reach each node.
+    std::vector<std::unordered_set<NodeIndex>> reachable_from_source(
         predecessors.size());
-    std::vector<std::deque<std::string>> queues(predecessors.size());
+    std::vector<std::deque<NodeIndex>> queues(predecessors.size());
 
-    // Initialize with immediate predecessors
-    for (size_t i = 0; i < predecessors.size(); ++i) {
-      const auto &pred = predecessors[i];
-      queues[i].push_back(pred->getName());
-      reachable_from_source[i].insert(pred->getName());
+    for (std::size_t i = 0; i < predecessors.size(); ++i) {
+      queues[i].push_back(predecessors[i]);
+      reachable_from_source[i].insert(predecessors[i]);
     }
 
-    std::string fork_node;
+    NodeIndex fork_node = CompiledGraph::k_invalid_index;
     bool found = false;
     int max_iterations = 1000; // Safety limit
     int iterations = 0;
@@ -381,21 +384,18 @@ private:
       iterations++;
 
       // Check for common fork before expanding
-      for (const auto &node_name : reachable_from_source[0]) {
+      for (const auto candidate : reachable_from_source[0]) {
         bool reachable_from_all = true;
-        for (size_t i = 1; i < reachable_from_source.size(); ++i) {
-          if (reachable_from_source[i].count(node_name) == 0) {
+        for (std::size_t i = 1; i < reachable_from_source.size(); ++i) {
+          if (reachable_from_source[i].count(candidate) == 0) {
             reachable_from_all = false;
             break;
           }
         }
-        if (reachable_from_all) {
-          auto cand_node = graph->getNode(node_name);
-          if (cand_node && graph->getOutDegree(cand_node) > 1) {
-            fork_node = node_name;
-            found = true;
-            break;
-          }
+        if (reachable_from_all && is_fork(candidate)) {
+          fork_node = candidate;
+          found = true;
+          break;
         }
       }
 
@@ -403,27 +403,18 @@ private:
         break;
 
       // Expand BFS for each source
-      for (size_t src_idx = 0; src_idx < queues.size(); ++src_idx) {
-        if (queues[src_idx].empty())
-          continue;
-
-        size_t queue_size = queues[src_idx].size();
-        for (size_t q = 0; q < queue_size; ++q) {
-          std::string current = queues[src_idx].front();
-          queues[src_idx].pop_front();
+      for (std::size_t src_idx = 0; src_idx < queues.size(); ++src_idx) {
+        auto &queue = queues[src_idx];
+        std::size_t queue_size = queue.size();
+        for (std::size_t q = 0; q < queue_size; ++q) {
+          NodeIndex current = queue.front();
+          queue.pop_front();
           any_progress = true;
 
-          auto current_node = graph->getNode(current);
-          if (!current_node)
-            continue;
-
-          const auto &preds = graph->getIncomingNeighbors(current_node);
-          for (const auto &pred : preds) {
-            const std::string &pred_name = pred->getName();
-
-            if (reachable_from_source[src_idx].count(pred_name) == 0) {
-              reachable_from_source[src_idx].insert(pred_name);
-              queues[src_idx].push_back(pred_name);
+          for (const auto pred : graph.predecessors(current)) {
+            if (reachable_from_source[src_idx].count(pred) == 0) {
+              reachable_from_source[src_idx].insert(pred);
+              queue.push_back(pred);
             }
           }
         }
@@ -438,7 +429,7 @@ private:
 
     result.valid = true;
     result.fork_node = fork_node;
-    result.paths = findAllPaths(graph, fork_node, join_node_name);
+    result.paths = findAllPaths(graph, fork_node, join_index);
 
     return result;
   }
@@ -448,23 +439,22 @@ private:
    *
    * Uses DFS to enumerate all paths. For DAGs, this is guaranteed to terminate.
    */
-  std::vector<std::vector<std::string>> findAllPaths(const Graph *graph,
-                                                     const std::string &source,
-                                                     const std::string &dest) {
-    std::vector<std::vector<std::string>> all_paths;
-    std::vector<std::string> current_path;
-    std::unordered_set<std::string> visited;
+  static std::vector<std::vector<NodeIndex>>
+  findAllPaths(const CompiledGraph &graph, NodeIndex source, NodeIndex dest) {
+    std::vector<std::vector<NodeIndex>> all_paths;
+    std::vector<NodeIndex> current_path;
+    std::unordered_set<NodeIndex> visited;
 
     findAllPathsDFS(graph, source, dest, current_path, visited, all_paths);
 
     return all_paths;
   }
 
-  void findAllPathsDFS(const Graph *graph, const std::string &current,
-                       const std::string &dest,
-                       std::vector<std::string> &current_path,
-                       std::unordered_set<std::string> &visited,
-                       std::vector<std::vector<std::string>> &all_paths) {
+  static void findAllPathsDFS(const CompiledGraph &graph, NodeIndex current,
+                              NodeIndex dest,
+                              std::vector<NodeIndex> &current_path,
+                              std::unordered_set<NodeIndex> &visited,
+                              std::vector<std::vector<NodeIndex>> &all_paths) {
 
     visited.insert(current);
     current_path.push_back(current);
@@ -475,19 +465,15 @@ private:
       // The join node is handled separately in initialize()
       if (current_path.size() >= 2) {
         // Include all intermediate nodes (excluding fork, excluding join)
-        std::vector<std::string> branch_path(current_path.begin() + 1,
-                                             current_path.end() - 1);
+        std::vector<NodeIndex> branch_path(current_path.begin() + 1,
+                                           current_path.end() - 1);
         all_paths.push_back(branch_path);
       }
     } else {
-      auto current_node = graph->getNode(current);
-      if (current_node) {
-        const auto &neighbors = graph->getOutgoingNeighbors(current_node);
-        for (const auto &neighbor : neighbors) {
-          if (visited.count(neighbor->getName()) == 0) {
-            findAllPathsDFS(graph, neighbor->getName(), dest, current_path,
-                            visited, all_paths);
-          }
+      for (const auto neighbor : graph.successors(current)) {
+        if (visited.count(neighbor) == 0) {
+          findAllPathsDFS(graph, neighbor, dest, current_path, visited,
+                          all_paths);
         }
       }
     }
@@ -510,7 +496,6 @@ private:
     m_nodeMultiMapping[node_name].push_back({group_id, branch_id});
   }
 
-  const Graph *m_graph = nullptr;
   std::shared_ptr<SyncCoordinator> m_coordinator;
 
   // Primary mapping (for simple lookups)

@@ -447,14 +447,6 @@ TEST_F(ConfigTest, EngineConfigStream) {
   EXPECT_TRUE(cfg.enable_sync_coordination);
 }
 
-TEST_F(ConfigTest, EngineConfigHybrid) {
-  auto cfg = EngineConfig::hybrid(2, 64);
-  EXPECT_EQ(cfg.mode, ExecutionMode::HYBRID);
-  EXPECT_EQ(cfg.num_workers, 2);
-  EXPECT_EQ(cfg.default_queue_capacity, 64u);
-  EXPECT_TRUE(cfg.enable_sync_coordination);
-}
-
 TEST_F(ConfigTest, PipelineOptionsBatch) {
   auto opts = PipelineOptions::batch(6);
   EXPECT_EQ(opts.mode, ExecutionMode::BATCH);
@@ -474,7 +466,6 @@ TEST_F(ConfigTest, PipelineOptionsStream) {
 TEST_F(ConfigTest, ExecutionModeToString) {
   EXPECT_EQ(executionModeToString(ExecutionMode::BATCH), "BATCH");
   EXPECT_EQ(executionModeToString(ExecutionMode::STREAM), "STREAM");
-  EXPECT_EQ(executionModeToString(ExecutionMode::HYBRID), "HYBRID");
 }
 
 class ObserverTest : public ::testing::Test {};

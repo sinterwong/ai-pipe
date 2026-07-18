@@ -5,7 +5,9 @@
  * @version 0.1
  * @date 2026-07-03
  *
- * This is an INTERNAL header file. Users should not include this directly.
+ * Public since R4.2: scheduler/sync strategies initialize from this
+ * immutable snapshot instead of a raw Graph*, so strategies no longer
+ * depend on the mutable Graph outliving the engine.
  *
  * Graph is the mutable construction API; CompiledGraph is the execution
  * engine's read-only view of it. Compilation happens once in
@@ -22,8 +24,8 @@
  * @copyright Copyright (c) 2026
  */
 
-#ifndef AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP
-#define AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP
+#ifndef AI_PIPE_COMPILED_GRAPH_HPP
+#define AI_PIPE_COMPILED_GRAPH_HPP
 
 #include "ai_pipe/error.hpp"
 #include "ai_pipe/graph.hpp"
@@ -282,4 +284,4 @@ private:
 
 } // namespace ai_pipe
 
-#endif // AI_PIPE_INTERNAL_COMPILED_GRAPH_HPP
+#endif // AI_PIPE_COMPILED_GRAPH_HPP

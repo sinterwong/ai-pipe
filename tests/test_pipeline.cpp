@@ -26,14 +26,14 @@ using namespace std::chrono_literals;
 // =============================================================================
 
 inline PortDataPtr makeDataPacket(uint64_t id = 0) {
-  auto packet = std::make_shared<common_utils::DataPacket>();
+  auto packet = std::make_shared<DataPacket>();
   packet->id = id;
   return packet;
 }
 
 inline PortDataPtr makeDataPacketWithValue(uint64_t id, const std::string &key,
                                            int value) {
-  auto packet = std::make_shared<common_utils::DataPacket>();
+  auto packet = std::make_shared<DataPacket>();
   packet->id = id;
   packet->setParam(key, value);
   return packet;
@@ -1054,6 +1054,78 @@ TEST_F(PipelineStreamingTest, StartPushDrainStopFullChain) {
   EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
 }
 
+TEST_F(PipelineStreamingTest, NodeExceptionIsPerFrameNotPipelineFatal) {
+  auto thrower = std::make_shared<ThrowingNode>("thrower");
+
+  Graph graph;
+  graph.addNode(thrower);
+
+  std::atomic<int> error_count{0};
+  auto pipeline = Pipeline::create()
+                      .withGraph(std::move(graph))
+                      .withMode(ExecutionMode::STREAM)
+                      .withWorkers(1)
+                      .onError([&](const Error &) { error_count.fetch_add(1); })
+                      .build()
+                      .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  ASSERT_TRUE(pipeline.pushInput("thrower", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(waitFor([&] { return error_count.load() >= 1; }));
+
+  // Regression (R1.2): a per-frame node exception in streaming mode used
+  // to latch the facade into ERROR while the engine kept running -
+  // isRunning() went false and validateState() refused everything until
+  // reset(). The facade must stay RUNNING and keep accepting frames.
+  EXPECT_TRUE(pipeline.isStreaming());
+  EXPECT_TRUE(pipeline.isRunning());
+  EXPECT_EQ(pipeline.state(), PipelineState::RUNNING);
+  EXPECT_FALSE(pipeline.hasError());
+
+  thrower->disarm();
+  auto push = pipeline.pushInput("thrower", makeDataPacket(2));
+  ASSERT_TRUE(push.isOk()) << push.errorMessage();
+  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
+
+  pipeline.stop(true);
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+  EXPECT_EQ(error_count.load(), 1);
+}
+
+TEST_F(PipelineStreamingTest, RateLimitedTailFrameEventuallyExecutes) {
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(sink);
+
+  StreamSchedulerConfig sched_config;
+  sched_config.auto_reschedule = true;
+  sched_config.min_interval = 100ms;
+
+  auto pipeline =
+      Pipeline::create()
+          .withGraph(std::move(graph))
+          .withMode(ExecutionMode::STREAM)
+          .withWorkers(1)
+          .withSchedulerStrategy(
+              std::make_unique<StreamSchedulerStrategy>(sched_config))
+          .build()
+          .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(2)).isOk());
+
+  // Regression (R3.2): the first frame executes immediately; the second
+  // lands inside the min_interval window and is deferred. With no
+  // further data events, only the engine's defer timer can reschedule
+  // it - previously DeferToNextCycle had no consumer and the tail frame
+  // was stranded forever.
+  EXPECT_TRUE(waitFor([&] { return sink->processCount() >= 2; }, 3000ms));
+
+  pipeline.stop(false);
+}
+
 TEST_F(PipelineStreamingTest, StartFailsInBatchMode) {
   auto source = std::make_shared<SourceNode>("source");
   auto sink = std::make_shared<SinkNode>("sink");
@@ -1293,6 +1365,263 @@ TEST_F(PipelineAsyncTest, RunAsyncPropagatesNodeFailure) {
   EXPECT_TRUE(pipeline.hasError());
 }
 
+TEST_F(PipelineAsyncTest, WaitBlocksUntilAsyncCompletion) {
+  // R4.4: wait() is a blocking CV wait on the engine's completion
+  // signal (formerly a 10ms sleep poll). After it returns, the async
+  // submission must be fully finished.
+  auto source = std::make_shared<TestNode>("entry", 100ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink);
+  graph.addEdge("entry", "output", "sink", "input");
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["entry"] = makeDataPacket(1);
+
+  ASSERT_TRUE(pipeline.submit(inputs).isOk());
+  pipeline.wait();
+
+  EXPECT_NE(pipeline.engineState(), EngineState::RUNNING);
+  EXPECT_EQ(sink->processCount(), 1);
+}
+
+TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
+  auto pipeline = buildWithResultFlag();
+
+  PortDataMap inputs;
+  inputs["source"] = makeDataPacket(1);
+
+  auto future = pipeline.runAsync(inputs);
+  ASSERT_EQ(future.wait_for(5s), std::future_status::ready);
+  ASSERT_TRUE(future.get().isOk());
+  ASSERT_TRUE(waitFor([&] { return m_results.load() >= 1; }));
+  const int results_after_async = m_results.load();
+
+  // Regression (R1.1): runAsync used to leave its one-shot promise
+  // callbacks registered on the engine. The next run() then re-fired
+  // them; the second set_value threw std::future_error out of
+  // checkCompletionAndNotify, skipping notifyCompletionWaiters, and
+  // the synchronous run() hung forever. Run it on a side thread so a
+  // regression fails the assertion instead of hanging the suite.
+  auto second =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_EQ(second.wait_for(5s), std::future_status::ready)
+      << "run() after runAsync() hung";
+  auto run_result = second.get();
+  ASSERT_TRUE(run_result.isOk()) << run_result.errorMessage();
+
+  // Exactly one additional observer notification: the resident result
+  // callback fired for run(), and the stale runAsync handler did not.
+  ASSERT_TRUE(
+      waitFor([&] { return m_results.load() >= results_after_async + 1; }));
+  EXPECT_EQ(m_results.load(), results_after_async + 1);
+  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
+}
+
+// =============================================================================
+// CancellationToken wiring (R3.1)
+// =============================================================================
+
+namespace {
+
+// Pass-through node that blocks until released, recording entry
+class GatedPassNode : public ILogicNode {
+public:
+  explicit GatedPassNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &inputs, PortDataMap &outputs,
+               std::shared_ptr<PipelineContext>) override {
+    m_entered.store(true);
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this] { return m_open; });
+    for (const auto &[port, data] : inputs) {
+      outputs["output"] = data;
+    }
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {"output"};
+  }
+
+  void open() {
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_open = true;
+    }
+    m_cv.notify_all();
+  }
+
+  bool waitEntered(std::chrono::milliseconds timeout = 2000ms) const {
+    return waitFor([this] { return m_entered.load(); }, timeout);
+  }
+
+private:
+  mutable std::mutex m_mutex;
+  std::condition_variable m_cv;
+  bool m_open = false;
+  std::atomic<bool> m_entered{false};
+};
+
+// Node whose process() spins until the cooperative token fires
+class CancellationAwareNode : public ILogicNode {
+public:
+  explicit CancellationAwareNode(const std::string &name) : ILogicNode(name) {}
+
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext> ctx) override {
+    m_entered.store(true);
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (ctx && ctx->isCancellationRequested()) {
+        m_sawCancellation.store(true);
+        return;
+      }
+      std::this_thread::sleep_for(1ms);
+    }
+  }
+
+  std::vector<std::string> getExpectedInputPorts() const override {
+    return {"input"};
+  }
+  std::vector<std::string> getExpectedOutputPorts() const override {
+    return {};
+  }
+
+  bool waitEntered(std::chrono::milliseconds timeout = 2000ms) const {
+    return waitFor([this] { return m_entered.load(); }, timeout);
+  }
+  bool sawCancellation() const { return m_sawCancellation.load(); }
+
+private:
+  std::atomic<bool> m_entered{false};
+  std::atomic<bool> m_sawCancellation{false};
+};
+
+} // namespace
+
+TEST(PipelineCancellationTest, CancelReachesNodeThroughToken) {
+  auto node = std::make_shared<CancellationAwareNode>("aware");
+
+  Graph graph;
+  graph.addNode(node);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["aware"] = makeDataPacket(1);
+
+  auto future =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_TRUE(node->waitEntered());
+
+  // cancel() must reach the node mid-process via the cooperative token,
+  // not only stop future scheduling: the node exits its loop well before
+  // its 5s deadline.
+  pipeline.cancel();
+
+  ASSERT_EQ(future.wait_for(3s), std::future_status::ready);
+  EXPECT_FALSE(future.get().isOk());
+  // run() returns via the stop protocol as soon as cancel() lands; the
+  // node observes the token at its next loop iteration. Its deadline is
+  // 5s, so seeing the flag within 3s proves the token (not the deadline)
+  // ended the loop.
+  EXPECT_TRUE(waitFor([&] { return node->sawCancellation(); }, 3000ms));
+}
+
+TEST(PipelineCancellationTest, DirectTokenCancelStopsScheduling) {
+  auto gate = std::make_shared<GatedPassNode>("gate");
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(gate);
+  graph.addNode(sink);
+  graph.addEdge("gate", "output", "sink", "input");
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["gate"] = makeDataPacket(1);
+
+  auto future =
+      std::async(std::launch::async, [&] { return pipeline.run(inputs); });
+  ASSERT_TRUE(gate->waitEntered());
+
+  // Cancel through the shared context token alone - no facade cancel().
+  // The engine's scheduling points must treat the cancelled token as a
+  // stop request: the sink downstream of the gate never executes.
+  pipeline.context().requestCancellation();
+  gate->open();
+
+  ASSERT_EQ(future.wait_for(3s), std::future_status::ready);
+  EXPECT_FALSE(future.get().isOk());
+  EXPECT_EQ(sink->processCount(), 0);
+}
+
+// =============================================================================
+// Real run(timeout) semantics (R1.3)
+// =============================================================================
+
+TEST(PipelineTimeoutTest, TimeoutFiresWhileNodeHangs) {
+  auto gate = std::make_shared<GatedPassNode>("gate");
+
+  Graph graph;
+  graph.addNode(gate);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["gate"] = makeDataPacket(1);
+
+  // Regression (R1.3): the timeout used to be checked only after the
+  // engine finished - with a hung node, run(timeout) never returned.
+  const auto start = std::chrono::steady_clock::now();
+  auto result = pipeline.run(inputs, 100ms);
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start);
+
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+  EXPECT_LT(elapsed.count(), 2000) << "timeout did not bound the wait";
+  EXPECT_TRUE(pipeline.hasError());
+
+  // Contract: reset() releases the residue and restores IDLE
+  gate->open();
+  pipeline.reset();
+  EXPECT_TRUE(pipeline.isReady());
+}
+
+TEST(PipelineTimeoutTest, TimeoutCancelsCooperativeNode) {
+  auto node = std::make_shared<CancellationAwareNode>("aware");
+
+  Graph graph;
+  graph.addNode(node);
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["aware"] = makeDataPacket(1);
+
+  auto result = pipeline.run(inputs, 100ms);
+  EXPECT_FALSE(result.isOk());
+  EXPECT_EQ(result.errorCode(), ErrorCode::ExecutionTimeout);
+
+  // The expiry must reach the node through the cooperative token (its
+  // own deadline is 5s, far beyond this wait)
+  EXPECT_TRUE(waitFor([&] { return node->sawCancellation(); }, 3000ms));
+}
+
 // =============================================================================
 // End-to-End Observer Error Notification + reset()
 // =============================================================================
@@ -1418,177 +1747,4 @@ TEST(PipelineUninitializedTest, AccessorsAreSafeWithoutEngine) {
   pipeline.stop(true);
   pipeline.cancel();
   pipeline.wait();
-}
-
-// =============================================================================
-// HYBRID Execution Mode (end-to-end through the facade)
-//
-// Existing HYBRID coverage stopped at config/strategy-creation assertions;
-// these tests actually move data through a HYBRID pipeline in both its
-// streaming and batch invocations.
-// =============================================================================
-
-namespace {
-
-// Two-input join emitting one packet per aligned pair
-class JoinPairNode : public ILogicNode {
-public:
-  explicit JoinPairNode(const std::string &name) : ILogicNode(name) {}
-
-  void process(const PortDataMap &inputs, PortDataMap &outputs,
-               std::shared_ptr<PipelineContext>) override {
-    m_pairs.fetch_add(1);
-    auto it = inputs.find("input1");
-    outputs["output"] =
-        (it != inputs.end() && it->second) ? it->second : makeDataPacket(0);
-  }
-
-  std::vector<std::string> getExpectedInputPorts() const override {
-    return {"input1", "input2"};
-  }
-  std::vector<std::string> getExpectedOutputPorts() const override {
-    return {"output"};
-  }
-
-  int pairs() const { return m_pairs.load(); }
-
-private:
-  std::atomic<int> m_pairs{0};
-};
-
-} // namespace
-
-class PipelineHybridTest : public ::testing::Test {
-protected:
-  // source (no input ports) -> sink
-  Pipeline buildLinearHybrid() {
-    m_source = std::make_shared<SourceNode>("source");
-    m_sink = std::make_shared<SinkNode>("sink");
-
-    Graph graph;
-    graph.addNode(m_source);
-    graph.addNode(m_sink);
-    graph.addEdge("source", "output", "sink", "input");
-
-    auto result = Pipeline::create()
-                      .withGraph(std::move(graph))
-                      .withMode(ExecutionMode::HYBRID)
-                      .withWorkers(2)
-                      .withQueueCapacity(8)
-                      .build();
-    EXPECT_TRUE(result) << result.errorMessage();
-    return std::move(result).value();
-  }
-
-  std::shared_ptr<SourceNode> m_source;
-  std::shared_ptr<SinkNode> m_sink;
-};
-
-TEST_F(PipelineHybridTest, ModeAccessorReportsHybrid) {
-  auto pipeline = buildLinearHybrid();
-  EXPECT_EQ(pipeline.mode(), ExecutionMode::HYBRID);
-  EXPECT_TRUE(pipeline.isReady());
-}
-
-TEST_F(PipelineHybridTest, StreamingFullChainProcessesEveryFrame) {
-  auto pipeline = buildLinearHybrid();
-
-  // start() accepts HYBRID alongside STREAM
-  ASSERT_TRUE(pipeline.start().isOk());
-  EXPECT_TRUE(pipeline.isStreaming());
-
-  constexpr int k_frames = 5;
-  for (int i = 1; i <= k_frames; ++i) {
-    auto push = pipeline.pushInput("source", makeDataPacket(i));
-    ASSERT_TRUE(push.isOk()) << push.errorMessage();
-  }
-
-  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
-  EXPECT_EQ(m_sink->processCount(), k_frames);
-  EXPECT_GE(pipeline.statistics().total_input_frames,
-            static_cast<std::uint64_t>(k_frames));
-
-  pipeline.stop(true);
-  EXPECT_FALSE(pipeline.isStreaming());
-  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
-}
-
-TEST_F(PipelineHybridTest, StreamingForkJoinAlignsFrames) {
-  // source fans out to two branches that rejoin: exercises the
-  // JoinAwareSyncStrategy + frame alignment path under HYBRID
-  auto source = std::make_shared<SourceNode>("source");
-  auto branch1 = std::make_shared<TestNode>("branch1");
-  auto branch2 = std::make_shared<TestNode>("branch2");
-  auto join = std::make_shared<JoinPairNode>("join");
-  auto sink = std::make_shared<SinkNode>("sink");
-
-  Graph graph;
-  graph.addNode(source);
-  graph.addNode(branch1);
-  graph.addNode(branch2);
-  graph.addNode(join);
-  graph.addNode(sink);
-  graph.addEdge("source", "output", "branch1", "input");
-  graph.addEdge("source", "output", "branch2", "input");
-  graph.addEdge("branch1", "output", "join", "input1");
-  graph.addEdge("branch2", "output", "join", "input2");
-  graph.addEdge("join", "output", "sink", "input");
-
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(graph))
-                      .withMode(ExecutionMode::HYBRID)
-                      .withWorkers(2)
-                      .withQueueCapacity(8)
-                      .build()
-                      .value();
-
-  ASSERT_TRUE(pipeline.start().isOk());
-
-  constexpr int k_frames = 4;
-  for (int i = 1; i <= k_frames; ++i) {
-    ASSERT_TRUE(pipeline.pushInput("source", makeDataPacket(i)).isOk());
-  }
-
-  ASSERT_TRUE(pipeline.waitForDrain(0, 5000ms).isOk());
-  pipeline.stop(true);
-
-  EXPECT_EQ(join->pairs(), k_frames);
-  EXPECT_EQ(sink->processCount(), k_frames);
-}
-
-TEST_F(PipelineHybridTest, BatchRunOverInputDrivenNodesCompletes) {
-  // HYBRID reschedules nodes on success (continuous semantics), so a
-  // batch run only terminates when every node is input-driven: with no
-  // fresh input the reschedule stalls and the execution drains.
-  // (A self-generating source node under a HYBRID batch run keeps
-  // regenerating until queues overflow - that combination belongs to
-  // streaming, where pushInput drives the pace.)
-  auto entry = std::make_shared<TestNode>("entry");
-  auto sink = std::make_shared<SinkNode>("sink");
-
-  Graph graph;
-  graph.addNode(entry);
-  graph.addNode(sink);
-  graph.addEdge("entry", "output", "sink", "input");
-
-  auto pipeline = Pipeline::create()
-                      .withGraph(std::move(graph))
-                      .withMode(ExecutionMode::HYBRID)
-                      .withWorkers(2)
-                      .withQueueCapacity(8)
-                      .build()
-                      .value();
-
-  PortDataMap inputs;
-  inputs["entry"] = makeDataPacket(1);
-
-  auto result = pipeline.run(inputs);
-  ASSERT_TRUE(result.isOk()) << result.errorMessage();
-  EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
-  EXPECT_EQ(sink->processCount(), 1);
-
-  // A second run must work as well
-  auto again = pipeline.run(inputs);
-  ASSERT_TRUE(again.isOk()) << again.errorMessage();
-  EXPECT_EQ(sink->processCount(), 2);
 }

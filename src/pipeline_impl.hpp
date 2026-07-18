@@ -44,11 +44,15 @@ public:
   Impl();
   ~Impl();
 
+  // Neither copyable nor movable: the engine callbacks installed by
+  // setupEngineCallbacks() capture `this`, so the Impl address must stay
+  // stable for its lifetime. Pipeline's move semantics come from moving
+  // the unique_ptr<Impl>, which never relocates the Impl object itself
+  // (same rule as ExecutionEngine::Impl).
   Impl(const Impl &) = delete;
   Impl &operator=(const Impl &) = delete;
-
-  Impl(Impl &&other) noexcept;
-  Impl &operator=(Impl &&other) noexcept;
+  Impl(Impl &&) = delete;
+  Impl &operator=(Impl &&) = delete;
 
   // ---- Initialization ----
 
@@ -140,6 +144,13 @@ private:
   std::unique_ptr<ISchedulerStrategy> m_customScheduler;
   std::unique_ptr<ISyncStrategy> m_customSync;
 
+  // Deliberately self-maintained rather than derived from EngineState:
+  // run()/submit() claim RUNNING synchronously at submission, before the
+  // engine transitions, so a concurrent second submission fails
+  // AlreadyRunning instead of slipping through the engine's IDLE window.
+  // The cost of the duplicate is drift, handled at the callback boundary:
+  // per-frame streaming errors must not latch ERROR here (see
+  // setupEngineCallbacks).
   std::atomic<PipelineState> m_state{PipelineState::UNINITIALIZED};
   mutable std::mutex m_stateMutex;
 

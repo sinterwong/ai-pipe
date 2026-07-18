@@ -25,6 +25,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -99,15 +100,27 @@ public:
 
   /**
    * @brief Execute the pipeline with initial inputs
+   *
+   * When `timeout` is set (and wait_for_completion is true), the wait is
+   * bounded: on expiry the engine requests cooperative cancellation on
+   * the context's CancellationToken, triggers the stop protocol, and
+   * returns ExecutionTimeout immediately. An in-flight node keeps
+   * running until its next cancellation point (or until it returns);
+   * the engine is left STOPPED with possible queue residue - call
+   * reset() before the next execution. `timeout` is ignored in
+   * streaming mode and when wait_for_completion is false.
+   *
    * @return Result<void> - success or Error with:
    *   - AlreadyRunning: engine already executing
    *   - NotInitialized: engine not initialized
    *   - ExecutionFailed: input distribution or execution failed
    *   - ExecutionStopped: execution was stopped externally
+   *   - ExecutionTimeout: bounded wait expired (see above)
    */
-  Result<void> execute(const PortDataMap &initial_inputs,
-                       bool wait_for_completion = true,
-                       std::shared_ptr<PipelineContext> context = nullptr);
+  Result<void>
+  execute(const PortDataMap &initial_inputs, bool wait_for_completion = true,
+          std::shared_ptr<PipelineContext> context = nullptr,
+          std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
   void stopExecutionAsync();
   void stopExecutionSync();
@@ -178,6 +191,15 @@ public:
       std::size_t max_depth = 0,
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 
+  /**
+   * @brief Block until the engine leaves the RUNNING state (R4.4)
+   *
+   * A condition-variable wait on the engine's completion signal - no
+   * polling. Covers batch completion, stop/cancel, errors, and
+   * streaming shutdown. Returns immediately when not RUNNING.
+   */
+  void waitForIdle();
+
   // -------------------------------------------------------------------------
   // Configuration
   // -------------------------------------------------------------------------
@@ -212,11 +234,6 @@ createBatchEngine(std::uint8_t workers = 4) {
 inline std::unique_ptr<ExecutionEngine>
 createStreamEngine(std::uint8_t workers = 4, std::size_t queue_capacity = 16) {
   return ExecutionEngine::create(EngineConfig::stream(workers, queue_capacity));
-}
-
-inline std::unique_ptr<ExecutionEngine>
-createHybridEngine(std::uint8_t workers = 4, std::size_t queue_capacity = 16) {
-  return ExecutionEngine::create(EngineConfig::hybrid(workers, queue_capacity));
 }
 
 } // namespace ai_pipe

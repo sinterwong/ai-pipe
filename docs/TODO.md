@@ -1,129 +1,98 @@
-# AI Pipe 未来规划 TODO（post-v0.5.0）
+# AI Pipe TODO
 
-> 前一版 TODO（2026-07 架构审计路线图，6 阶段 35 项）已于 v0.4.0 全部完成并随
-> v0.5.0 补齐评审差距，文档见 git 历史 v0.4.0 tag。本文件规划 v0.5.0 之后的
-> 演进方向：所有条目均为**增强项**，无已知正确性欠账。
->
-> 规则不变：每完成一项勾选并注明提交；条目动手前先确认前提仍成立。
+> v0.4.0 架构审计（35 项）、v0.5.0 增强（F1–F9）、2026-07 的 R1–R4
+> 重构（正确性修复 / 命名与 API 边界 / 装饰性 API 清理 / 架构冗余，共
+> 20 项）均已完成，记录见 git 历史。以下为剩余工作。
 
-## 状态图例
+## R5. 验证与冻结
 
-- [ ] 未开始　[x] 已完成　（进行中的条目在行尾标注 `(WIP)`）
+- [ ] **R5.1 真实业务负载验证**：至少一个生产场景 7×24 长期运行。实施中
+  撞到的能力墙按需拉动 R6 对应条目（预计首先是 R6.1 EOS 与 R6.3 内存
+  策略）。
 
----
+- [ ] **R5.2 ABI/SemVer 政策文档**：1.0 冻结前明确公共头文件清单、ABI
+  兼容承诺与弃用流程。
 
-## 近期（v0.6 候选）
+- [ ] **R5.3 公共 API 终审**：逐头文件 review。关注点：头文件自洽性
+  （compile-check 已有 CI）、命名一致性、`Timestamp` 用 steady_clock
+  对跨进程/多机时间戳对齐的语义边界在文档中写明；一并处理下面的
+  N1/N2。
 
-- [x] **F1. JSON 构图加载器**：基于 `NodeRegistry`（v0.4.0 P6.1）实现
-  `Result<Graph> loadGraphFromJson(...)`——节点（type/name/config）+ 边 +
-  引擎选项的声明式描述。nlohmann/json 已在 3rdparty 中（目前仅测试用），
-  需决策：作为可选组件（`AI_PIPE_WITH_JSON`）保持核心零依赖。
-  ——已按可选组件方案落地（`AI_PIPE_WITH_JSON`，默认 OFF，OFF 时编译为返回
-  `InvalidConfiguration` 的 stub，链接兼容不变），提供
-  `loadGraphFromJson` / `loadPipelineFromJson` 及文件变体，schema 严格校验
-  （未知键报错），文档 `docs/JSON_Graph_Loader.md`。提交 9a1d721。
-- [x] **F2. clang-tidy 转必过门禁**：先分诊咨询 job 的现有告警，固化
-  `.clang-tidy` checks 集（排除误报类），修净后移除 `continue-on-error`。
-  ——checks 集固化为 bugprone/concurrency/performance/portability 全组 +
-  命名检查，排除 3 个误报/低价值类（easily-swappable-parameters、
-  unchecked-optional-access、enum-size，理由见 `.clang-tidy` 注释）；
-  `HeaderFilterRegex` 覆盖 src/ 头文件，`WarningsAsErrors: '*'` 保证退出码
-  把关。分诊 65 条告警：34 条归入排除类，其余修净（含 shared_ptr 传参优化、
-  窄化转换显式化等），3 处有意偏离用行内 NOLINT + 理由标注。CI 移除
-  `continue-on-error`。提交 `fix+ci: promote clang-tidy to a required
-  gate (F2)`。
-- [x] **F3. KeepLatest 语义细化**：明确"保留最新 N 帧"在并发生产者下的精确
-  语义边界（当前实现在竞争窗口内可能短暂超出 N），补契约文档与并发测试。
-  ——契约定稿：单生产者严格 ≤ N；P 个并发生产者短暂超出上界 N + P − 1
-  （自愈：任一后续无竞争 push 恢复窗口）。契约写入 `pushKeepLatest` 注释、
-  `QueueConfig`、Framework_Design §7.1；新增 4 个测试（单生产者逐 push 严格
-  窗口、N=0 视作 1、并发超出上界 + 自愈、生产者+消费者守恒），TSan 验证通过。
-  提交 `docs+test: KeepLatest concurrency contract (F3)`。
-- [x] **F4. aarch64 交叉编译 CI**：现有 `platforms/linux/aarch64.cmake` 依赖
-  外部 NDK 式 clang 工具链；补一个基于 `g++-aarch64-linux-gnu` 的通用
-  toolchain 文件 + CI build-only job，守住嵌入式可移植性宣称。
-  ——新增 `platforms/linux/aarch64-gnu.cmake`（零外部输入）、`aarch64`
-  CMake preset、CI `build-aarch64` job（WERROR + JSON 加载器一并交叉编译，
-  `file` 校验产物确为 ARM aarch64）。提交 `feat: aarch64 cross-compile
-  toolchain + CI build-only gate (F4)`。
+## R6. 能力扩展
 
-## 中期（v0.7+）
+每项动手前先在 docs/design/ 写设计短文（目标、非目标、与现有语义的
+冲突分析），实际优先级以 R5.1 真实负载的需求为准。
 
-- [x] **F5. 多流同步**：帧对齐目前仅按 FrameId（P4.1），`stream_id` 已在
-  DataPacket 头部但不参与对齐。多摄像头场景需要 (stream, frame) 二元对齐
-  或基于 `TimestampFrameMetadata` 的时间戳容差对齐（API 已定义未接线）。
-  ——新增 `EngineConfig::alignment_policy`（FrameId 默认 / StreamFrameId /
-  Timestamp + `alignment_tolerance`，默认 33ms 对齐
-  `TimestampFrameMetadata::k_default_sync_tolerance`）；StreamFrameId 模式
-  下引擎自动编号改为流内单调；滞留帧按入线时间戳序丢弃（契约见
-  Framework_Design §8.2，含丢弃协调仍以 FrameId 为键的边界说明）。
-  PipelineOptions 与 JSON loader（`alignment_policy`/
-  `alignment_tolerance_us`）同步暴露。5 个新测试
-  （test_multistream_alignment.cpp）。提交 `feat: multi-stream join
-  alignment policies (F5)`。
-- [x] **F6. Join 对齐超时降级（可选项）**：审计目标中有意搁置的一项——当前
-  落后分支由重调度机制自然等待、永失配对帧直接丢弃。为"宁要不完整数据也
-  不要等待"的场景提供可配置的等待上限与降级策略（部分输入执行/跳帧）。
-  ——新增 `EngineConfig::join_wait_timeout`（0 = 无限等待，默认保持原行为）
-  + `JoinTimeoutPolicy`（PartialInputs / SkipFrame）。部分就绪的 Join 无
-  新数据时不会被重调度，故由轻量看门狗线程（仅超时启用且存在多输入节点时
-  运行，timeout/4 节拍）主动触发降级执行；降级取数按当前 AlignmentPolicy
-  选取最老配对集。新增 `total_join_timeouts` 统计；PipelineOptions 与
-  JSON loader（`join_wait_timeout_ms`/`join_timeout_policy`）同步暴露；
-  文档 Framework_Design §8.3。4 个新测试（test_join_timeout.cpp）。
-  提交 `feat: join alignment timeout degradation (F6)`。
-- [x] **F7. 执行追踪 hooks**：per-frame span 事件（入队/调度/执行/传播）经
-  可注入 sink 输出，支持导出 chrome://tracing / Perfetto 格式，把第 9 章
-  统计从聚合数字升级为可视化时间线。
-  ——新增公共头 `ai_pipe/trace.hpp`：`ITraceSink` 接口 + `TraceEvent`
-  （phase/node/detail/frame/stream/start/duration/thread）+ 内置
-  `ChromeTraceSink`（Chrome Trace Event JSON，chrome://tracing 与
-  Perfetto 均可打开）。注入点 `ExecutionEngine::setTraceSink` 与
-  `Pipeline::setTraceSink`（仅 IDLE）；四个埋点（Enqueue 瞬时 +
-  Schedule/Execute/Propagate 区间），未启用时开销为一次指针判空。
-  文档 Framework_Design §9.4。4 个新测试（test_trace.cpp）。
-  提交 `feat: execution tracing hooks with Chrome trace export (F7)`。
-- [x] **F8. 动态插件加载**：`dlopen` 扫描目录自动注册节点（注册宏在共享库
-  静态初始化时生效，NodeRegistry 基础已具备），需定义插件 ABI 边界与
-  版本握手。
-  ——新增 `ai_pipe/plugin.hpp`：`AI_PIPE_PLUGIN` 宏导出 C-linkage 描述符
-  （插件协议修订号 + 构建时 AI_PIPE_VERSION），`PluginLoader` 提供
-  `load`/`loadDirectory`（非递归、排序确定）/`unload`。注册仍走静态
-  初始化（dlopen 触发）；加载器以注册表前后快照识别插件贡献的类型，
-  握手失败（缺符号/ABI 修订不符/major.minor 不符）回滚注册再 dlclose。
-  新错误码 5xx（PluginLoadFailed/PluginSymbolMissing/
-  PluginVersionMismatch）。ABI 边界（同一 libai_pipe.so、工具链兼容、
-  STB_GNU_UNIQUE/NODELETE 注意事项）文档化于 Framework_Design §12.4。
-  测试基建：3 个真实测试插件（有效/无描述符/ABI 不符）+ 5 个测试
-  （test_plugin_loader.cpp，含卸载后真实重载验证）。提交
-  `feat: dlopen node plugin loading with ABI handshake (F8)`。
-- [x] **F9. 类型化数据通路第二阶段**：`process()` 的 `PortDataMap`
-  （`std::map<string, ptr>`）是热路径上最后的字符串键容器（每次执行构造）。
-  替换为索引化端口数组的新 process API 是**重大 API 变更**——先在真实负载
-  上 profile 证明收益再动手，避免为微优化破坏 API。
-  ——按条目自身的门槛完成 profile 并**决策不实施**：map 版 47–153 ns/次
-  执行 vs 索引版 17–21 ns（1–4 端口），最大节省 30–132 ns，仅与纯框架
-  开销同量级；对任意真实负载（≥100 μs/节点）占比 < 0.15%，不值得破坏
-  API。基准 `benchmarks/portdatamap_benchmark.cpp`，证据与重开条件
-  （F10 真实负载 profile 中 PortDataMap 进入热点前列）记录于
-  Performance_Report §7。提交 `perf: F9 profiling verdict - keep
-  PortDataMap, no API break`。
+- [ ] **R6.1 流内 EOS / flush 协议**：源无法宣告流结束、无 flush 传播、
+  下游不知道"不会再有帧"；`stopStreaming(wait_for_drain)` 是外部整体
+  停机，替代不了流内 EOS，处理有限输入（视频文件）时是硬缺口。设计
+  要点：EOS 标记如何过 join（多输入端口的合流语义）、如何与对齐/丢弃
+  协调、sink 完成通知。落地后收尾 `k_end_of_stream_frame_id` 的语义
+  （目前仅是 sync_coordinator 的 watermark 哨兵，头文件已注明；若最终
+  不做流内 EOS，则从 frame_constants 移除对外暴露）。
 
-## v1.0 / API 冻结条件
+- [ ] **R6.2 编译期类型安全的节点层**：数据面目前全是 `std::any` +
+  字符串键（DataPacket 参数、context 资源），`portPayloadType` 仅是
+  运行时可选检查。在 ILogicNode 之上加模板化 TypedNode 糖层（声明式
+  输入/输出端口类型），接线错误编译期报错，底层协议不变。验收：
+  examples 中至少一个示例全程用 TypedNode 编写。（F9 基准否决的是
+  索引化端口的性能收益，与本条的类型安全目标无冲突。）
 
-- [ ] **F10. 真实业务负载验证**：至少一个生产场景 7×24 长期运行（审计结论：
-  框架的下一步考验应来自真实负载而非继续内部打磨）。
-- [ ] **F11. ABI/SemVer 政策文档**：冻结前明确公共头文件清单、ABI 兼容承诺
-  与弃用流程。
-- [ ] **F12. 公共 API 终审**：逐头文件 review（遗留的抛异常兼容层
-  `getParam`/`throwIfCancelled` 是否随 1.0 移除或永久保留需定稿）。
+- [ ] **R6.3 内存策略：packet 池与 allocator 注入点**：每个 packet 都是
+  独立堆分配的 shared_ptr，无对象池、无 allocator hook、无设备内存/
+  零拷贝概念。30fps × 多路流下分配 churn 是真实成本。最小落地：
+  DataPacket 池化分配接口 + 引擎内部容器的复用审计；设备内存抽象仅做
+  设计预留。
 
-## 长期观察项（性能报告跟踪，见 docs/Performance_Report.md §5.4）
+- [ ] **R6.4 反馈环（delay-edge）**：纯 DAG 无法表达 tracking、时域
+  平滑等"输出回喂上游"拓扑。候选设计：带显式延迟语义的反馈边
+  （初始帧注入 + z^-1 语义），保持无环调度性质不变。批模式完成语义
+  受影响，与 F15（微批处理）统筹设计。
 
-- [ ] **F13. 高 worker 数轻量帧场景的调度竞争**：worker 数远超有效并行度时
-  流式吞吐下降；候选方向是 StreamScheduler 自适应并行度。
+- [ ] **R6.5 子图组合**：pipeline 不能作为节点嵌套复用。候选设计：
+  `SubgraphNode`（内部持有 CompiledGraph，端口映射到外层）或图级
+  compose API；也是 JSON loader 的自然延伸（子图引用）。
+
+- [ ] **R6.6 示例体系**：examples/ 目前仅一个 dummy.cpp。至少补齐：
+  ① 多路摄像头 + 推理 + 对齐 join 的流式示例；② 视频文件批/流处理
+  示例（依赖 R6.1）；③ TypedNode + JSON 构图 + 插件的组合示例。
+  示例纳入 CI 编译。
+
+## 已知问题
+
+- [ ] **N1. 批模式完成通知可能重复触发**：任务完成路径上，两个 worker
+  可能先后把 `m_activeTasks` 读成 0 并都走进
+  `checkCompletionAndNotify` 的完成分支——引擎状态 CAS 保证状态只翻转
+  一次，但 result 回调/observer 通知可能重复。runAsync 的 promise 已用
+  done 标志自防，常驻回调的重复 `onExecutionCompleted` 对 observer
+  可见。随 R5.3 定契约（at-least-once vs exactly-once）或在引擎加
+  一次性完成闩。
+
+- [ ] **N2. 策略热替换不触发 initialize**：`setSchedulerStrategy`/
+  `setSyncStrategy` 在 IDLE 时可调用，但只有
+  `ExecutionEngine::initialize()` 会对策略跑
+  `initialize(CompiledGraph&)`——引擎已 initialize 后再 set 的策略拿
+  不到拓扑（JoinAware 将没有任何 sync group）。门面路径不受影响
+  （先 set 后 initialize）。随 R5.3 决定：set 时若已有 CompiledGraph
+  即补跑 initialize，或在文档写明调用顺序契约。
+
+## 性能观察项（跟踪记录见 docs/Performance_Report.md §5.4）
+
+- [ ] **F13. 高 worker 数轻量帧场景的调度竞争**：worker 数远超有效并行
+  度时流式吞吐下降；候选方向是 StreamScheduler 自适应并行度。
+
 - [ ] **F14. 大队列容量的吞吐衰减**：容量增大时环形缓冲缓存局部性变差；
   候选方向是自适应容量或分段缓冲。
-- [ ] **F15. 深线性管线微批处理**：线性链数据依赖限制强扩展性；帧级流水线
-  重叠（多帧同时处于不同 stage）可突破，但会改变批模式完成语义，需设计。
 
+- [ ] **F15. 深线性管线微批处理**：线性链数据依赖限制强扩展性；帧级
+  流水线重叠可突破，但会改变批模式完成语义，需设计（与 R6.4 统筹）。
+
+## 明确不做
+
+- **PortDataMap 字符串键的性能化替换**：F9 已用基准数据定为保留（收益
+  < 0.15%，证据见 Performance_Report §7）；重开条件是 R5.1 真实负载
+  profile 中 PortDataMap 进入热点前列。R6.2 是类型安全糖层、不改运行时
+  协议，不受此约束。
+- **无锁队列 / 线程池唤醒协议 / KeepLatest 契约 / join 看门狗**：实现与
+  注释契约一致，不动。
+- **install/ 目录疑似头文件双份**：未被 git 跟踪（构建产物），非问题。

@@ -50,8 +50,8 @@ context.ready_input_ports.empty()    →  !context.hasReadyInput()
 
 ### 4. `DataPacket` 存储私有化
 
-直接访问 `.params` 成员的代码改用访问器：`getParam/setParam/has/
-paramCount/paramKeys`，或新的无异常接口 `param<T>()`（返回 `Result<T>`）。
+直接访问 `.params` 成员的代码改用访问器：`param<T>()`（返回
+`Result<T>`，唯一取参通路）/`setParam/has/paramCount/paramKeys`。
 
 ---
 
@@ -70,7 +70,7 @@ paramCount/paramKeys`，或新的无异常接口 `param<T>()`（返回 `Result<T
 
 ### 3. 多输入节点按帧对齐取数（流模式）
 
-启用同步策略时（STREAM/HYBRID 默认），join 节点只会收到 FrameId 相等
+启用同步策略时（STREAM 默认），join 节点只会收到 FrameId 相等
 的输入组合；因兄弟分支丢帧而永失配对的帧会被丢弃并计入统计与 drop
 回调。`id==0` 的包视为通配、不参与对齐（保留旧行为）。
 

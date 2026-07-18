@@ -7,7 +7,7 @@
  *
  * @copyright Copyright (c) 2026
  */
-#include "compiled_graph.hpp"
+#include "ai_pipe/compiled_graph.hpp"
 #include "helper_nodes.hpp"
 #include <gtest/gtest.h>
 

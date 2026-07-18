@@ -143,6 +143,64 @@ TEST_F(LockFreeDropStrategyTest, DropHead_SingleThread_NoDataLoss) {
   }
 }
 
+TEST_F(LockFreeDropStrategyTest, DropEvent_QueueSizeBeforeIsRealSize) {
+  // Regression (R1.6): queue_size_before used to report capacity()
+  // regardless of occupancy. With a single thread the pre-eviction size
+  // is deterministic: the queue is exactly full when an overflow push
+  // evicts.
+  constexpr std::size_t capacity = 8;
+
+  LockFreeNodeQueue<int>::Config config{
+      .capacity = capacity,
+      .drop_policy = LockFreeDropPolicy::DropHead,
+      .track_statistics = true,
+      .node_name = "test_node",
+      .port_name = "input",
+  };
+
+  LockFreeNodeQueue<int> queue(config);
+
+  std::vector<DropEvent> events;
+  queue.setDropCallback([&](const DropEvent &e) { events.push_back(e); });
+
+  for (std::size_t i = 0; i < capacity; ++i) {
+    ASSERT_TRUE(queue.push(static_cast<int>(i)));
+  }
+  ASSERT_TRUE(events.empty());
+
+  ASSERT_TRUE(queue.push(999)); // full -> one eviction
+
+  ASSERT_EQ(events.size(), 1u);
+  EXPECT_EQ(events[0].queue_size_before, capacity);
+  EXPECT_EQ(events[0].queue_size_after, capacity - 1);
+
+  // KeepLatest window smaller than capacity: before-size must be the
+  // window occupancy (previously it reported capacity even here)
+  LockFreeNodeQueue<int>::Config keep_config{
+      .capacity = capacity,
+      .drop_policy = LockFreeDropPolicy::KeepLatest,
+      .keep_latest_n = 3,
+      .track_statistics = true,
+      .node_name = "test_node",
+      .port_name = "input",
+  };
+  LockFreeNodeQueue<int> keep_queue(keep_config);
+
+  events.clear();
+  keep_queue.setDropCallback([&](const DropEvent &e) { events.push_back(e); });
+
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(keep_queue.push(i));
+  }
+  ASSERT_TRUE(events.empty());
+
+  ASSERT_TRUE(keep_queue.push(42)); // window full at 3 -> evict oldest
+
+  ASSERT_EQ(events.size(), 1u);
+  EXPECT_EQ(events[0].queue_size_before, 3u);
+  EXPECT_LT(events[0].queue_size_before, capacity);
+}
+
 // =============================================================================
 // 2. DropHead: Concurrent Producers — No Silent Loss
 //    (Regression test for the forcePush slot-stealing bug)

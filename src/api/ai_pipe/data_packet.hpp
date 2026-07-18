@@ -24,13 +24,11 @@
 #include "ai_pipe/frame_metadata.hpp"
 #include <any>
 #include <cstdint>
-#include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace ai_pipe::common_utils {
+namespace ai_pipe {
 using DataPacketId = uint64_t;
 
 struct DataPacket {
@@ -51,25 +49,14 @@ struct DataPacket {
     return id != frame_constants::k_invalid_frame_id;
   }
 
-  template <typename T> T getParam(const std::string &key) const {
-    const std::any *value = findParam(key);
-    if (!value) {
-      throw std::runtime_error("Missing required parameter: " + key);
-    }
-    try {
-      return std::any_cast<T>(*value);
-    } catch (const std::bad_any_cast &) {
-      throw std::runtime_error("Invalid parameter type for key '" + key +
-                               "'. Expected type: " + typeid(T).name());
-    }
-  }
-
   /**
-   * @brief Exception-free typed access returning Result<T>
+   * @brief Typed access returning Result<T> - the only read path (R2.2)
    *
-   * The preferred accessor for new code: missing keys and type
-   * mismatches come back as Error values (InvalidArgument) instead of
-   * thrown exceptions, matching the framework-wide Result convention.
+   * Missing keys and type mismatches come back as Error values
+   * (InvalidArgument), matching the framework-wide Result convention.
+   * The former exception-throwing accessors (getParam/getOptionalParam)
+   * were removed with the exception dual-track; use
+   * `param<T>(key).valueOr(default)` where a fallback is wanted.
    */
   template <typename T> Result<T> param(const std::string &key) const {
     const std::any *value = findParam(key);
@@ -83,20 +70,6 @@ struct DataPacket {
     return Result<T>::err(ErrorCode::InvalidArgument,
                           "Invalid parameter type for key '" + key +
                               "'. Expected type: " + typeid(T).name());
-  }
-
-  template <typename T>
-  std::optional<T> getOptionalParam(const std::string &key) const {
-    const std::any *value = findParam(key);
-    if (!value) {
-      return std::nullopt;
-    }
-    try {
-      return std::any_cast<T>(*value);
-    } catch (const std::bad_any_cast &) {
-      throw std::runtime_error("Invalid parameter type for optional key '" +
-                               key + "'. Expected type: " + typeid(T).name());
-    }
   }
 
   template <typename T> void setParam(const std::string &key, T value) {
@@ -170,7 +143,7 @@ private:
  *   static inline const TypedParam<int64_t> k_ts{"capture_ts"};
  *
  *   // In process():
- *   cv::Mat img = k_image.get(*packet);
+ *   auto img = k_image.read(*packet);   // Result<cv::Mat>
  *   k_ts.set(*out_packet, now_us);
  * @endcode
  */
@@ -180,17 +153,7 @@ public:
 
   [[nodiscard]] const std::string &key() const { return m_key; }
 
-  /** @brief Read the param; throws if missing or of the wrong type */
-  [[nodiscard]] T get(const DataPacket &packet) const {
-    return packet.getParam<T>(m_key);
-  }
-
-  /** @brief Read the param; nullopt if missing, throws on type mismatch */
-  [[nodiscard]] std::optional<T> tryGet(const DataPacket &packet) const {
-    return packet.getOptionalParam<T>(m_key);
-  }
-
-  /** @brief Exception-free read: Error value on missing key or mismatch */
+  /** @brief Read the param: Error value on missing key or mismatch */
   [[nodiscard]] Result<T> read(const DataPacket &packet) const {
     return packet.param<T>(m_key);
   }
@@ -207,6 +170,6 @@ private:
   std::string m_key;
 };
 
-} // namespace ai_pipe::common_utils
+} // namespace ai_pipe
 
 #endif

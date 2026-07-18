@@ -1,3 +1,5 @@
+#include "ai_pipe/compiled_graph.hpp"
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "scheduler_strategies.hpp"
 #include <chrono>
@@ -221,7 +223,7 @@ TEST_F(BatchSchedulerStrategyTest, OnNodeCompleteNoReschedule) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionActiveTasksRemaining) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 1}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 1}};
 
   auto status = m_strategy.checkCompletion(1, 0, sink_counts);
 
@@ -230,7 +232,7 @@ TEST_F(BatchSchedulerStrategyTest, CheckCompletionActiveTasksRemaining) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionSinkNotExecuted) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 0}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 0}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
 
@@ -239,7 +241,7 @@ TEST_F(BatchSchedulerStrategyTest, CheckCompletionSinkNotExecuted) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionAllSinksExecuted) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {
+  std::vector<SinkExecutionCount> sink_counts = {
       {"sink1", 1}, {"sink2", 1}, {"sink3", 1}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
@@ -414,7 +416,7 @@ TEST_F(StreamSchedulerStrategyTest, OnNodeCompleteWithAutoRescheduleDisabled) {
 }
 
 TEST_F(StreamSchedulerStrategyTest, CheckCompletionNeverComplete) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 100}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 100}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
 
@@ -431,94 +433,6 @@ TEST_F(StreamSchedulerStrategyTest, ConfigAccessors) {
 
   EXPECT_TRUE(m_strategy.config().allow_partial_inputs);
   EXPECT_DOUBLE_EQ(m_strategy.config().min_input_ratio, 0.7);
-}
-
-// =============================================================================
-// HybridSchedulerStrategy Tests
-// =============================================================================
-
-class HybridSchedulerStrategyTest : public ::testing::Test {
-protected:
-  HybridSchedulerStrategy m_strategy;
-  SchedulingContext m_context;
-
-  void SetUp() override {
-    m_context.node = std::make_shared<MockNode>("test_node");
-  }
-};
-
-TEST_F(HybridSchedulerStrategyTest, Name) {
-  EXPECT_EQ(m_strategy.name(), "HybridSchedulerStrategy");
-}
-
-TEST_F(HybridSchedulerStrategyTest, Clone) {
-  auto cloned = m_strategy.clone();
-  ASSERT_NE(cloned, nullptr);
-  EXPECT_EQ(cloned->name(), "HybridSchedulerStrategy");
-}
-
-TEST_F(HybridSchedulerStrategyTest, CompletionSemantics) {
-  EXPECT_EQ(m_strategy.completionSemantics(), CompletionSemantics::Continuous);
-}
-
-TEST_F(HybridSchedulerStrategyTest, SupportsStreaming) {
-  EXPECT_TRUE(m_strategy.supportsStreaming());
-}
-
-TEST_F(HybridSchedulerStrategyTest, SourceNodeWithInitialInput) {
-  m_context.is_source_node = true;
-  m_context.has_initial_input = true;
-
-  auto result = m_strategy.shouldSchedule(m_context);
-
-  EXPECT_EQ(result.decision, ScheduleDecision::ScheduleNow);
-}
-
-TEST_F(HybridSchedulerStrategyTest, AllInputsReady) {
-  m_context.is_source_node = false;
-  m_context.expected_input_count = 2;
-  m_context.ready_input_count = 2;
-
-  auto result = m_strategy.shouldSchedule(m_context);
-
-  EXPECT_EQ(result.decision, ScheduleDecision::ScheduleNow);
-}
-
-TEST_F(HybridSchedulerStrategyTest, WaitingForInputs) {
-  m_context.is_source_node = false;
-  m_context.expected_input_count = 2;
-  m_context.ready_input_count = 1;
-
-  auto result = m_strategy.shouldSchedule(m_context);
-
-  EXPECT_EQ(result.decision, ScheduleDecision::WaitForInputs);
-}
-
-TEST_F(HybridSchedulerStrategyTest, OnNodeCompleteSuccess) {
-  auto node = std::make_shared<MockNode>("test");
-  PortDataMap outputs;
-
-  bool reschedule = m_strategy.onNodeComplete(node, true, outputs);
-
-  EXPECT_TRUE(reschedule);
-}
-
-TEST_F(HybridSchedulerStrategyTest, OnNodeCompleteFailure) {
-  auto node = std::make_shared<MockNode>("test");
-  PortDataMap outputs;
-
-  bool reschedule = m_strategy.onNodeComplete(node, false, outputs);
-
-  EXPECT_FALSE(reschedule);
-}
-
-TEST_F(HybridSchedulerStrategyTest, CheckCompletionNeverComplete) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts;
-
-  auto status = m_strategy.checkCompletion(0, 0, sink_counts);
-
-  EXPECT_FALSE(status.is_complete);
-  EXPECT_NE(status.reason.find("hybrid"), std::string::npos);
 }
 
 // =============================================================================
@@ -555,13 +469,6 @@ TEST(SchedulerStrategyFactoryTest, CreateStreamStrategyWithConfig) {
   EXPECT_TRUE(stream_strategy->config().allow_partial_inputs);
 }
 
-TEST(SchedulerStrategyFactoryTest, CreateHybridStrategy) {
-  auto strategy = createSchedulerStrategy(ExecutionMode::HYBRID);
-
-  EXPECT_EQ(strategy->name(), "HybridSchedulerStrategy");
-  EXPECT_TRUE(strategy->supportsStreaming());
-}
-
 // =============================================================================
 // ISchedulerStrategy Interface Tests
 // =============================================================================
@@ -569,8 +476,12 @@ TEST(SchedulerStrategyFactoryTest, CreateHybridStrategy) {
 TEST(ISchedulerStrategyTest, InitializeAndResetAreNoOps) {
   BatchSchedulerStrategy strategy;
 
-  // These should not crash
-  strategy.initialize(nullptr);
+  // These should not crash (R4.2: initialize takes the compiled snapshot)
+  Graph graph;
+  graph.addNode(std::make_shared<MockNode>("solo"));
+  auto compiled = CompiledGraph::compile(graph);
+  ASSERT_TRUE(compiled.isOk()) << compiled.errorMessage();
+  strategy.initialize(compiled.value());
   strategy.reset();
 }
 
@@ -594,7 +505,23 @@ TEST(StreamSchedulerConfigTest, DefaultValues) {
   StreamSchedulerConfig config;
 
   EXPECT_FALSE(config.allow_partial_inputs);
-  EXPECT_DOUBLE_EQ(config.min_input_ratio, 1.0);
+  // R3.4: 0.0 so that enabling allow_partial_inputs alone is
+  // meaningful ("any ready input schedules")
+  EXPECT_DOUBLE_EQ(config.min_input_ratio, 0.0);
   EXPECT_TRUE(config.auto_reschedule);
   EXPECT_EQ(config.min_interval.count(), 0);
+}
+
+TEST(StreamSchedulerConfigTest, PartialInputsAloneSchedulesOnAnyReadyInput) {
+  StreamSchedulerConfig config;
+  config.allow_partial_inputs = true; // ratio left at its default
+
+  StreamSchedulerStrategy strategy(config);
+
+  SchedulingContext context;
+  context.expected_input_count = 2;
+  context.ready_input_count = 1;
+
+  auto result = strategy.shouldSchedule(context);
+  EXPECT_EQ(result.decision, ScheduleDecision::ScheduleNow);
 }

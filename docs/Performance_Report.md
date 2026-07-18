@@ -541,7 +541,7 @@
 |------|-----------|-----------|---------|
 | Workers | 2 | 4 | 4 |
 | Queue Capacity | 8-16 | 32-64 | 16-32 |
-| 执行模式 | STREAM | BATCH | HYBRID |
+| 执行模式 | STREAM | BATCH | STREAM |
 | Drop Strategy | KeepLatest | DropHead | DropHead |
 
 ### 5.4 已知局限与优化方向

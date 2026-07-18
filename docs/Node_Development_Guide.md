@@ -18,7 +18,7 @@ public:
                std::shared_ptr<ai_pipe::PipelineContext> ctx) override {
     auto in = inputs.at("input");              // 只读共享包
     auto out = std::make_shared<ai_pipe::PortData>();
-    out->setParam("image", resize(in->getParam<cv::Mat>("image")));
+    out->setParam("image", resize(in->param<cv::Mat>("image").value()));
     outputs["output"] = out;                   // 交接后不可再改
   }
 
@@ -48,24 +48,25 @@ public:
 - 确需"修改输入"：`auto copy = ai_pipe::mutableCopy(packet);`（显式 COW）。
 - **不要**缓存收到的包并在 `process()` 返回后异步修改。
 
-### 参数访问的三种层次
+### 参数访问（单通路：Result）
 
 ```cpp
-// 1. 抛异常（legacy，简短）
-auto mat = packet->getParam<cv::Mat>("image");
-
-// 2. optional（缺失返回 nullopt，类型错仍抛）
-auto mat = packet->getOptionalParam<cv::Mat>("image");
-
-// 3. Result（推荐：全程无异常）
+// 唯一取参通路：全程无异常
 auto mat = packet->param<cv::Mat>("image");
-if (!mat) { /* mat.error() 带上下文 */ }
+if (!mat) { /* mat.error() 带上下文（缺键/类型不匹配均为 InvalidArgument） */ }
+
+// 带默认值
+double thr = packet->param<double>("threshold").valueOr(0.5);
 
 // 声明式（键+类型只写一次）
-static inline const ai_pipe::common_utils::TypedParam<cv::Mat>
+static inline const ai_pipe::TypedParam<cv::Mat>
     k_image{"image"};
-auto mat = k_image.read(*packet);
+auto mat = k_image.read(*packet);   // Result<cv::Mat>
 ```
+
+早期的抛异常接口（`getParam`/`getOptionalParam`/`TypedParam::get/tryGet`）
+已移除。节点 `process()` 内部**抛异常仍然合法**——那是引擎的防御边界
+（转为 `NodeException`），不是取参 API 的错误通道。
 
 ### 帧标识
 
@@ -78,7 +79,7 @@ FrameId 做对齐**——除非有明确理由，不要手工改写它。
 ```cpp
 ai_pipe::Result<void>
 setup(std::shared_ptr<ai_pipe::PipelineContext> ctx) override {
-  m_model = loadModel(ctx->getConfig<std::string>("model_path").value());
+  m_model = loadModel(ctx->getConfig<std::string>("model_path"));
   if (!m_model) {
     return ai_pipe::Result<void>::err(ai_pipe::ErrorCode::NodeException,
                                       "model load failed", getName());
@@ -122,7 +123,13 @@ auto node = ai_pipe::NodeRegistry::instance()
 ## 6. 上下文（PipelineContext）
 
 - 资源/服务：`ctx->setResource` / `ctx->getService<T>()`（线程安全）。
-- 取消：长任务内轮询 `ctx->cancellation().isCancelled()`。
+- 取消：`Pipeline::cancel()` 与 `run(timeout)` 超时
+  都会触发 context 的 `CancellationToken`；引擎在调度点将其与 stopFlag
+  等效对待——已取消后不再调度新节点。**长任务节点应在内部循环里协作式
+  检查** `ctx->isCancellationRequested()`（或
+  `ctx->cancellation().isCancelled()`），发现取消后尽快返回（部分输出会
+  被丢弃，不必清理下游）。不检查也不会破坏正确性，只是取消要等到当前
+  `process()` 自然结束才生效。token 在每次执行/流启动时自动复位。
 - 日志：节点内用 `ctx->logInfo(getName(), ...)`；若希望框架日志也进入
   你的 logger，调用 `ctx->attachEngineLogs()`。
 - `ctx` 可能为 `nullptr`（直接驱动引擎且未传 context 时）——访问前判空。

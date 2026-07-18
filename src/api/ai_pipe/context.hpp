@@ -101,18 +101,10 @@ public:
   void cancel() { m_cancelled.store(true, std::memory_order_release); }
   void reset() { m_cancelled.store(false, std::memory_order_release); }
 
+  // The former throwIfCancelled() was removed with the exception
+  // dual-track (R2.2): poll isCancelled() and return early instead.
   [[nodiscard]] bool isCancelled() const {
     return m_cancelled.load(std::memory_order_acquire);
-  }
-
-  /**
-   * @brief Throw if cancelled (for convenient cancellation point)
-   * @throws std::runtime_error if cancelled
-   */
-  void throwIfCancelled() const {
-    if (isCancelled()) {
-      throw std::runtime_error("Operation cancelled");
-    }
   }
 
 private:
@@ -238,7 +230,7 @@ public:
  *
  *   // In node processing
  *   void process(..., std::shared_ptr<PipelineContext> ctx) {
- *     ctx->cancellation().throwIfCancelled();
+ *     if (ctx->isCancellationRequested()) return;
  *     auto model = ctx->getResource<Model>("model");
  *     ctx->logInfo(name(), "Processing...");  // Goes to your logger
  *   }
@@ -698,10 +690,10 @@ public:
     m_errorMessage = error_message;
   }
 
-  void checkCancellation() const {
-    if (m_ctx) {
-      m_ctx->cancellation().throwIfCancelled();
-    }
+  /** @brief True when cooperative cancellation was requested (R2.2:
+   *  replaces the throwing checkCancellation) */
+  [[nodiscard]] bool cancellationRequested() const {
+    return m_ctx && m_ctx->isCancellationRequested();
   }
 
   void reportProgress(double progress, const std::string &message = "") {

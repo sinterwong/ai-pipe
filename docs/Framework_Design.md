@@ -11,7 +11,7 @@
 
 ## 1. 概述
 
-AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理、流式处理和混合处理三种执行模式，并提供背压管理、帧同步和性能监控能力。
+AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理与流式处理两种执行模式，并提供背压管理、帧同步和性能监控能力。
 
 ### 1.1 核心设计目标
 
@@ -26,7 +26,6 @@ AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专�
 |------|------|------|----------|----------|
 | **BATCH** | 单次遍历 | 无界/不启用 | 所有 Sink 执行一次 | 离线推理、图片批处理 |
 | **STREAM** | 持续流式 | 有界+丢弃策略 | 手动停止 | 视频流、实时推理 |
-| **HYBRID** | 混合 | 有界+丢弃策略 | 手动停止 | 批+流混合负载 |
 
 ---
 
@@ -77,7 +76,7 @@ ai_pipe.hpp (统一入口)
 execution_engine_impl.hpp / .cpp
 ├── lock_free_queue.hpp (Lock-Free MPMC)
 ├── work_stealing_thread_pool.hpp
-├── scheduler_strategies.hpp (Batch/Stream/Hybrid)
+├── scheduler_strategies.hpp (Batch/Stream)
 ├── join_aware_sync_strategy.hpp
 ├── sync_coordinator.hpp
 ```
@@ -120,11 +119,9 @@ public:
 
 ```cpp
 struct DataPacket {
-  DataPacketId id;                          // uint64_t 唯一标识
-  std::map<std::string, std::any> params;   // 类型擦除的键值参数表
+  DataPacketId id;                          // uint64_t 唯一标识（兼作 FrameId）
 
-  template <typename T> T getParam(const std::string &key) const;
-  template <typename T> std::optional<T> getOptionalParam(const std::string &key) const;
+  template <typename T> Result<T> param(const std::string &key) const;
   template <typename T> void setParam(const std::string &key, T value);
   bool has(const std::string &key) const;
 };
@@ -132,9 +129,11 @@ struct DataPacket {
 
 **设计要点**：
 
-- 使用 `std::any` 实现类型擦除，单一容器承载任意类型参数
+- 使用 `std::any` 实现类型擦除，扁平 vector 存储承载任意类型参数
 - 通过 `shared_ptr<DataPacket>` 传递，零拷贝在节点间共享数据
-- `getParam<T>()` 在类型不匹配时抛出详细异常，便于调试
+- `param<T>()` 是唯一取参通路：缺键/类型不匹配返回
+  `InvalidArgument` 错误值，不抛异常；带默认值用 `.valueOr(v)`；
+  声明式访问用 `TypedParam<T>::read`
 
 ### 3.3 图结构 — `Graph`
 
@@ -227,11 +226,12 @@ public:
   virtual bool onNodeComplete(const std::shared_ptr<ILogicNode> &node,
                               bool success, const PortDataMap &outputs) = 0;
 
-  // 检查整体执行是否完成
+  // 检查整体执行是否完成。快照为复用 vector：批模式每个任务完成
+  // 都会调用，避免每次构造 unordered_map 的堆分配
   virtual CompletionStatus checkCompletion(
       std::size_t active_node_count,
       std::size_t pending_node_count,
-      const std::unordered_map<std::string, std::uint64_t> &sink_execution_counts) const = 0;
+      const std::vector<SinkExecutionCount> &sink_execution_counts) const = 0;
 
   // 策略元信息
   virtual CompletionSemantics completionSemantics() const = 0;
@@ -248,7 +248,7 @@ public:
 | `ScheduleNow` | 立即调度执行 |
 | `WaitForInputs` | 等待更多输入就绪 |
 | `SkipExecution` | 跳过本轮执行 |
-| `DeferToNextCycle` | 延迟到下一调度周期（可附带重试延迟） |
+| `DeferToNextCycle` | 延迟 `retry_delay` 后由引擎 defer 定时器重新评估（限流的尾帧无需等待新数据事件） |
 
 **调度上下文** (`SchedulingContext`)：
 
@@ -271,7 +271,6 @@ struct SchedulingContext {
 |------|---------|---------|--------|
 | `BatchSchedulerStrategy` | 所有输入就绪才调度 | `SinglePass`：所有 Sink 执行一次即完成 | 不重调度 |
 | `StreamSchedulerStrategy` | 支持部分输入、速率限制 | `Continuous`：永不自动完成 | 成功后自动重调度 |
-| `HybridSchedulerStrategy` | 所有输入就绪即调度 | `Continuous` | 成功后重调度 |
 
 ### 4.2 同步策略 — `ISyncStrategy`
 
@@ -280,7 +279,8 @@ struct SchedulingContext {
 ```cpp
 class ISyncStrategy {
 public:
-  virtual void initialize(const Graph *graph) = 0;
+  // 以引擎持有的不可变拓扑快照初始化，策略不得保留 Graph 引用
+  virtual void initialize(const CompiledGraph &graph) = 0;
   virtual void reset() = 0;
 
   // 同步组注册
@@ -381,7 +381,6 @@ private:
 ```cpp
 auto engine = createBatchEngine(4);    // 4 Worker 批处理引擎
 auto engine = createStreamEngine(4, 16); // 4 Worker、队列容量 16 的流式引擎
-auto engine = createHybridEngine(4, 16); // 混合模式引擎
 ```
 
 ### 5.2 内部执行流程
@@ -510,6 +509,12 @@ public:
 
 可通过继承 `IPipelineObserver` 或使用内置的 `CallbackObserver` 链式注册回调。
 
+**错误分级契约**：节点异常按执行模式分级。批模式下节点异常是
+pipeline-fatal——执行中止，`PipelineState` 进入 `ERROR`，需 `reset()`
+恢复。流式模式下节点异常是 per-frame 事件——出错帧被消费丢弃，节点回到
+服务，管线保持 `RUNNING` 并继续接受 `pushInput`；错误通过
+`onExecutionFailed` 通知观察者（每个坏帧一次），不改变门面状态。
+
 ### 6.3 便捷工厂
 
 ```cpp
@@ -532,6 +537,12 @@ auto stream_pipe = makeStreamPipeline(std::move(graph), 4, 16);
 - **Sequence Tag**：每个 Slot 带原子序列号，解决 ABA 问题
 - **宽松内存序**：非同步路径使用 `relaxed`，仅在同步点使用 `acquire/release`
 - **集成丢弃策略**：`DropHead`（CAS 推进 head）、`DropTail`（拒绝新入）、`KeepLatest`
+
+**"Lock-Free" 的精确边界**：核心 push/pop 路径无锁（Vyukov CAS
+槽位所有权）；`tryPeek` 与生产者侧驱逐（DropHead/KeepLatest 的
+`evictOne`）共用一把 `m_headMutex`——非占有式 peek 读的是驱逐正在搬出的
+同一个 head 槽位，必须互斥。因此多输入 join 的对齐 gather 每次 peek 都
+拿一次锁；消费者 tryPop 保持无锁（pop-vs-pop 由 CAS 序号保证安全）。
 
 **KeepLatest 并发语义**（F3，完整契约见 `pushKeepLatest` 注释）：push 恒成功，
 背压完全表现为驱逐（逐条计数并回调）。"至多保留 N 帧"对单生产者严格成立；
@@ -738,6 +749,26 @@ public:
 ctx->setLoggerAdapter(std::make_shared<SpdlogAdapter>());
 ```
 
+### 10.2 框架自身日志的公共控制面
+
+引擎/门面内部走进程级私有 logger（`LOG_*_S`，logger.hpp 已私有化）。
+链接方通过公共头 `ai_pipe/engine_log.hpp` 控制这条通路，无需触碰私有头：
+
+```cpp
+ai_pipe::setEngineLogLevel(PipeLogLevel::KWarning);  // 全局级别
+ai_pipe::setEngineConsoleLogging(false);             // 静音内置控制台
+auto id = ai_pipe::addEngineLogSink(                 // 注入 sink
+    [](PipeLogLevel lv, const std::string &msg) { mylog(lv, msg); });
+ai_pipe::removeEngineLogSink(id);
+```
+
+与 `ctx->attachEngineLogs()` 的关系：adapter 是**每 context** 的节点日志
+通道，attachEngineLogs 把框架日志桥入该 context 的 adapter；engine_log
+是**进程级、无 context** 的控制面。两者目前都是对内部
+`Logger::addCallback` 的薄桥接。**后续方向（已记录未实施）**：框架内部
+日志改走 adapter 抽象，两条通路合一，内部 logger 降级为某个 adapter 的
+实现细节。
+
 ---
 
 ## 11. 构建与集成
@@ -793,14 +824,15 @@ public:
     // 使用 RAII 辅助管理指标收集
     ScopedNodeExecution scope(ctx, getName());
 
-    // 检查取消
-    scope.checkCancellation();
+    // 检查取消（协作式：查询后自行返回，不抛异常）
+    if (scope.cancellationRequested()) return;
 
     // 获取共享资源
     auto model = ctx->getResource<MyModel>("model");
 
-    // 读取输入
-    auto frame = inputs.at("input")->getParam<cv::Mat>("frame");
+    // 读取输入（唯一取参通路：Result）
+    auto frame = inputs.at("input")->param<cv::Mat>("frame");
+    if (!frame) return;
 
     // 推理
     auto result = model->infer(frame);
@@ -905,7 +937,7 @@ auto all = loader.loadDirectory("plugins/");
 
 ```cpp
 // 数据流类型
-using PortData    = common_utils::DataPacket;
+using PortData    = DataPacket;
 using PortDataPtr = std::shared_ptr<PortData>;
 using PortDataMap = std::map<std::string, PortDataPtr>;
 
@@ -920,7 +952,7 @@ using BranchId    = std::string;
 enum class NodeExecutionState { WAITING, READY, EXECUTING, COMPLETED, FAILED };
 enum class EngineState         { IDLE, RUNNING, STOPPED, ERROR };
 enum class PipelineState       { UNINITIALIZED, IDLE, RUNNING, STOPPING, ERROR };
-enum class ExecutionMode       { BATCH, STREAM, HYBRID };
+enum class ExecutionMode       { BATCH, STREAM };
 ```
 
 ## 附录 B：完整使用示例

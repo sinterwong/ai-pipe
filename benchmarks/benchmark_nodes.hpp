@@ -404,12 +404,11 @@ public:
     auto it = inputs.find(m_input_port);
     if (it != inputs.end() && it->second) {
       auto ts =
-          it->second->getOptionalParam<std::chrono::steady_clock::time_point>(
-              "timestamp");
+          it->second->param<std::chrono::steady_clock::time_point>("timestamp");
       if (ts) {
-        auto latency =
-            std::chrono::duration_cast<std::chrono::microseconds>(now - *ts)
-                .count();
+        auto latency = std::chrono::duration_cast<std::chrono::microseconds>(
+                           now - ts.value())
+                           .count();
         std::lock_guard<std::mutex> lock(m_mutex);
         m_latencies.push_back(latency);
       }
