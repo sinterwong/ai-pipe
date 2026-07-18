@@ -223,7 +223,7 @@ TEST_F(BatchSchedulerStrategyTest, OnNodeCompleteNoReschedule) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionActiveTasksRemaining) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 1}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 1}};
 
   auto status = m_strategy.checkCompletion(1, 0, sink_counts);
 
@@ -232,7 +232,7 @@ TEST_F(BatchSchedulerStrategyTest, CheckCompletionActiveTasksRemaining) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionSinkNotExecuted) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 0}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 0}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
 
@@ -241,7 +241,7 @@ TEST_F(BatchSchedulerStrategyTest, CheckCompletionSinkNotExecuted) {
 }
 
 TEST_F(BatchSchedulerStrategyTest, CheckCompletionAllSinksExecuted) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {
+  std::vector<SinkExecutionCount> sink_counts = {
       {"sink1", 1}, {"sink2", 1}, {"sink3", 1}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
@@ -416,7 +416,7 @@ TEST_F(StreamSchedulerStrategyTest, OnNodeCompleteWithAutoRescheduleDisabled) {
 }
 
 TEST_F(StreamSchedulerStrategyTest, CheckCompletionNeverComplete) {
-  std::unordered_map<std::string, std::uint64_t> sink_counts = {{"sink1", 100}};
+  std::vector<SinkExecutionCount> sink_counts = {{"sink1", 100}};
 
   auto status = m_strategy.checkCompletion(0, 0, sink_counts);
 

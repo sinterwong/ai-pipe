@@ -226,11 +226,12 @@ public:
   virtual bool onNodeComplete(const std::shared_ptr<ILogicNode> &node,
                               bool success, const PortDataMap &outputs) = 0;
 
-  // 检查整体执行是否完成
+  // 检查整体执行是否完成（R4.5：快照为复用 vector，批模式每个任务
+  // 完成都会调用，避免每次构造 unordered_map 的堆分配）
   virtual CompletionStatus checkCompletion(
       std::size_t active_node_count,
       std::size_t pending_node_count,
-      const std::unordered_map<std::string, std::uint64_t> &sink_execution_counts) const = 0;
+      const std::vector<SinkExecutionCount> &sink_execution_counts) const = 0;
 
   // 策略元信息
   virtual CompletionSemantics completionSemantics() const = 0;

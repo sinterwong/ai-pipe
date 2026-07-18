@@ -1977,13 +1977,19 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
     return;
   }
 
-  std::unordered_map<std::string, std::uint64_t> sink_counts;
+  // R4.5: this runs on every task completion in batch mode, so the
+  // snapshot reuses a thread-local vector of name views (sink indices
+  // are already precomputed in the CompiledGraph) instead of building
+  // an unordered_map with per-key string allocations each time.
+  static thread_local std::vector<SinkExecutionCount> sink_counts;
+  sink_counts.clear();
   if (m_compiledGraph) {
+    sink_counts.reserve(m_compiledGraph->sinkNodes().size());
     for (const auto sink_index : m_compiledGraph->sinkNodes()) {
       const NodeState *state = stateByIndex(sink_index);
       if (state) {
-        sink_counts[state->name] =
-            state->execution_count.load(std::memory_order_relaxed);
+        sink_counts.push_back({state->name, state->execution_count.load(
+                                                std::memory_order_relaxed)});
       }
     }
   }

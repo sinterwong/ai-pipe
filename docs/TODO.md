@@ -298,9 +298,15 @@
   `PipelineAsyncTest.WaitBlocksUntilAsyncCompletion`。提交 `refactor:
   blocking waitForIdle() replaces the wait() sleep poll (R4.4)`。
 
-- [ ] **R4.5 批模式完成检查去堆分配**：`checkCompletionAndNotify` 每个
+- [x] **R4.5 批模式完成检查去堆分配**：`checkCompletionAndNotify` 每个
   任务完成都构造 `sink_counts` unordered_map（per-task 堆分配，微秒级
   节点的批模式可见）。sink 索引在 initialize 预计算，快照复用 vector。
+  ——已完成：`ISchedulerStrategy::checkCompletion` 快照参数改
+  `vector<SinkExecutionCount>`（name 为 string_view，借用引擎存储，
+  仅调用期内有效——接口注释注明）；引擎侧用 thread_local 复用 vector
+  填充（sink 索引本就由 CompiledGraph 预计算），稳态零堆分配。
+  内建策略与测试同步迁移，Framework_Design §4.1 更新。提交
+  `perf: allocation-free batch completion snapshot (R4.5)`。
 
 ## R5. 建设期：验证与冻结（清算完成后启动；承接原 F10–F12）
 

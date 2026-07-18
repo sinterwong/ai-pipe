@@ -68,15 +68,15 @@ public:
   [[nodiscard]] CompletionStatus
   checkCompletion(std::size_t active_node_count,
                   std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      &sink_execution_counts) const override {
+                  const std::vector<SinkExecutionCount> &sink_execution_counts)
+      const override {
     if (active_node_count > 0) {
       return {false, "active tasks remaining", std::nullopt};
     }
 
-    for (const auto &[sink_name, count] : sink_execution_counts) {
-      if (count == 0) {
-        return {false, "sink '" + sink_name + "' has not executed",
+    for (const auto &sink : sink_execution_counts) {
+      if (sink.executions == 0) {
+        return {false, "sink '" + std::string(sink.name) + "' has not executed",
                 std::nullopt};
       }
     }
@@ -184,11 +184,10 @@ public:
     return success && m_config.auto_reschedule;
   }
 
-  [[nodiscard]] CompletionStatus
-  checkCompletion(std::size_t /*active_node_count*/,
-                  std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      & /*sink_execution_counts*/) const override {
+  [[nodiscard]] CompletionStatus checkCompletion(
+      std::size_t /*active_node_count*/, std::size_t /*pending_node_count*/,
+      const std::vector<SinkExecutionCount> & /*sink_execution_counts*/)
+      const override {
     return {false, "streaming mode - continuous execution", std::nullopt};
   }
 

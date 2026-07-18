@@ -17,10 +17,11 @@
 #include "ai_pipe/data_types.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
+#include <string_view>
 #include <vector>
 
 namespace ai_pipe {
@@ -132,6 +133,18 @@ struct CompletionStatus {
   std::optional<std::chrono::milliseconds> time_to_completion;
 };
 
+/**
+ * @brief One sink node's execution count for completion checks (R4.5)
+ *
+ * The name view aliases engine-owned storage and is only valid for the
+ * duration of the checkCompletion() call - copy it if a strategy needs
+ * to keep it (none of the built-ins do).
+ */
+struct SinkExecutionCount {
+  std::string_view name;
+  std::uint64_t executions{0};
+};
+
 // =============================================================================
 // Scheduler Strategy Interface
 // =============================================================================
@@ -174,13 +187,15 @@ public:
    * @brief Check if execution is complete
    * @param active_node_count Number of currently active nodes
    * @param pending_node_count Number of pending nodes
-   * @param sink_execution_counts Execution counts for sink nodes
+   * @param sink_execution_counts Execution counts for sink nodes (R4.5:
+   *        a reused snapshot vector - the engine calls this on every
+   *        task completion in batch mode, so the parameter type avoids
+   *        per-call map/string allocations)
    * @return Completion status
    */
-  [[nodiscard]] virtual CompletionStatus
-  checkCompletion(std::size_t active_node_count, std::size_t pending_node_count,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      &sink_execution_counts) const = 0;
+  [[nodiscard]] virtual CompletionStatus checkCompletion(
+      std::size_t active_node_count, std::size_t pending_node_count,
+      const std::vector<SinkExecutionCount> &sink_execution_counts) const = 0;
 
   /**
    * @brief Get completion semantics for this strategy
