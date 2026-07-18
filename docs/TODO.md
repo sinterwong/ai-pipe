@@ -212,10 +212,23 @@
   提交 `refactor!: remove HybridSchedulerStrategy and
   ExecutionMode::HYBRID (R3.3)`。
 
-- [ ] **R3.4 死配置旋钮清理**：`StreamSchedulerConfig::min_input_ratio`
+- [x] **R3.4 死配置旋钮清理**：`StreamSchedulerConfig::min_input_ratio`
   默认 1.0 且仅在 allow_partial_inputs 下参与判断，组合语义含混；
   逐一核对 `EngineConfig`/`PipelineOptions`/`QueueConfig` 全部字段，
   每个旋钮要么有测试覆盖的真实语义，要么删除。
+  ——审计结论：真死旋钮一个——`EngineConfig::enable_sync_coordination`
+  （三处公共面暴露、loader 解析、门面拷贝，但引擎从不读取，STREAM 恒装
+  JoinAware）。裁决接线而非删除：STREAM 下按该旗标选
+  JoinAware/NoSync，字段注释写明语义与 setSyncStrategy 覆盖关系。
+  `min_input_ratio` 保留（0.5/0.8 已有测试），默认 1.0→0.0：单开
+  allow_partial_inputs 即为"任一输入就绪可调度"，不再是形同虚设的
+  组合陷阱。其余字段（QueueConfig 全部、EngineConfig/PipelineOptions
+  其余）逐一核实均有真实消费点；`min_execution_interval` 已由 R3.2
+  变为真实语义。测试
+  `ExecutionEngineTest.SyncCoordinationKnobSelectsSyncStrategy`、
+  `StreamSchedulerConfigTest.PartialInputsAloneSchedulesOnAnyReadyInput`。
+  提交 `fix: wire enable_sync_coordination; sane partial-inputs default
+  (R3.4)`。
 
 - [ ] **R3.5 EOS 常量语义定案（依赖 R6.1 设计）**：
   `k_end_of_stream_frame_id` 目前只在 sync_coordinator 里当哨兵最大值

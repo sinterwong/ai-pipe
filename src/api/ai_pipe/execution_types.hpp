@@ -187,7 +187,16 @@ struct EngineConfig {
   std::size_t default_queue_capacity = 0;
   std::string default_drop_strategy = "DropHead";
 
+  /**
+   * Streaming only: install the JoinAwareSyncStrategy (cross-branch
+   * coordinated drops and frame-aligned gathering at joins). When
+   * false, streaming runs without a sync strategy - suitable for
+   * linear/fan-out-only graphs that never rejoin. Ignored in batch
+   * mode (always NoSync). Overridden entirely by an explicit
+   * setSyncStrategy().
+   */
   bool enable_sync_coordination = false;
+
   bool allow_partial_inputs = false;
   std::chrono::milliseconds min_execution_interval{0};
 

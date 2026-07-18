@@ -107,9 +107,19 @@ public:
  * @brief Configuration for stream scheduling
  */
 struct StreamSchedulerConfig {
-  bool allow_partial_inputs = false; ///< Allow scheduling with partial inputs
-  double min_input_ratio = 1.0;      ///< Minimum input readiness ratio
-  bool auto_reschedule = true;       ///< Automatically reschedule on completion
+  /**
+   * Allow a multi-input node to schedule before every port has data.
+   * min_input_ratio is consulted only when this is true: a node
+   * schedules once ready_inputs/expected_inputs >= min_input_ratio and
+   * at least one input is ready. The default of 0.0 means "any ready
+   * input schedules" - raising the ratio raises the bar. (R3.4: the
+   * previous default of 1.0 made enabling partial inputs a no-op
+   * unless the ratio was also lowered.)
+   */
+  bool allow_partial_inputs = false;
+  double min_input_ratio = 0.0;
+
+  bool auto_reschedule = true; ///< Automatically reschedule on completion
   std::chrono::milliseconds min_interval{
       0}; ///< Minimum interval between executions
 };

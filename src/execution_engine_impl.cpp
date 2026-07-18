@@ -297,7 +297,15 @@ void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
     sched_config.min_interval = m_config.min_execution_interval;
     m_schedulerStrategy =
         std::make_unique<StreamSchedulerStrategy>(sched_config);
-    m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
+    // R3.4: the knob is real - streaming without cross-branch drop
+    // coordination is a valid configuration (previously the field was
+    // parsed and copied everywhere but never read; STREAM always got
+    // the JoinAware strategy).
+    if (m_config.enable_sync_coordination) {
+      m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
+    } else {
+      m_syncStrategy = std::make_unique<NoSyncStrategy>();
+    }
     break;
   }
   }

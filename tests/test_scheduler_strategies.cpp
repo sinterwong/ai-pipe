@@ -499,7 +499,23 @@ TEST(StreamSchedulerConfigTest, DefaultValues) {
   StreamSchedulerConfig config;
 
   EXPECT_FALSE(config.allow_partial_inputs);
-  EXPECT_DOUBLE_EQ(config.min_input_ratio, 1.0);
+  // R3.4: 0.0 so that enabling allow_partial_inputs alone is
+  // meaningful ("any ready input schedules")
+  EXPECT_DOUBLE_EQ(config.min_input_ratio, 0.0);
   EXPECT_TRUE(config.auto_reschedule);
   EXPECT_EQ(config.min_interval.count(), 0);
+}
+
+TEST(StreamSchedulerConfigTest, PartialInputsAloneSchedulesOnAnyReadyInput) {
+  StreamSchedulerConfig config;
+  config.allow_partial_inputs = true; // ratio left at its default
+
+  StreamSchedulerStrategy strategy(config);
+
+  SchedulingContext context;
+  context.expected_input_count = 2;
+  context.ready_input_count = 1;
+
+  auto result = strategy.shouldSchedule(context);
+  EXPECT_EQ(result.decision, ScheduleDecision::ScheduleNow);
 }

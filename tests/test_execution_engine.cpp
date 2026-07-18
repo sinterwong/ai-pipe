@@ -186,6 +186,21 @@ TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
               std::string::npos);
 }
 
+TEST_F(ExecutionEngineTest, SyncCoordinationKnobSelectsSyncStrategy) {
+  // Regression (R3.4): enable_sync_coordination was parsed and copied
+  // everywhere but never read - STREAM always installed the JoinAware
+  // strategy regardless of the knob.
+  auto with_sync = ExecutionEngine::create(EngineConfig::stream());
+  EXPECT_NE(with_sync->strategyInfo().find("JoinAwareSyncStrategy"),
+            std::string::npos);
+
+  auto config = EngineConfig::stream();
+  config.enable_sync_coordination = false;
+  auto without_sync = ExecutionEngine::create(config);
+  EXPECT_NE(without_sync->strategyInfo().find("NoSyncStrategy"),
+            std::string::npos);
+}
+
 TEST_F(ExecutionEngineTest, CannotChangeStrategyWhileRunning) {
   auto engine = createStreamEngine();
   createLinearPipeline();
