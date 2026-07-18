@@ -137,12 +137,19 @@
   提交 `refactor!: remove the exception dual-track, Result is the only
   error channel (R2.2)`。
 
-- [ ] **R2.3 日志通路统一**：公共 API 有 `ILoggerAdapter`
+- [x] **R2.3 日志通路统一**：公共 API 有 `ILoggerAdapter`
   （context.hpp），但引擎/门面的 `LOG_*_S` 全走私有 logger 单例；
   logger.hpp 私有化后，链接方无法重定向或静音框架自身日志。冻结前必须
   给出公共控制面：最小方案是公共头暴露全局级别 + sink 注入（桥接到
   内部 Logger::addCallback）；理想方案是框架内部日志也走 adapter 抽象，
   两条通路合一。决策后落地并文档化。
+  ——已按最小方案落地：新公共头 `ai_pipe/engine_log.hpp`
+  （setEngineLogLevel / engineLogLevel / setEngineConsoleLogging /
+  addEngineLogSink / removeEngineLogSink），engine_log.cpp 桥接
+  Logger 单例；通路合一作为后续方向记录在头文件注释与
+  Framework_Design §10.2。测试 `LoggerTest.PublicSurface*`/
+  `PublicSink*`。提交 `feat: public control surface for framework
+  logging (R2.3)`。
 
 - [ ] **R2.4 "Lock-Free" 宣称精确化**：`tryPeek` 与生产者侧驱逐共用
   `m_headMutex`（lock_free_queue.hpp），多输入 join 的对齐 gather 每次

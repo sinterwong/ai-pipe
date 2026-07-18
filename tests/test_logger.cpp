@@ -1,3 +1,4 @@
+#include "ai_pipe/engine_log.hpp"
 #include "logger.hpp"
 #include <algorithm>
 #include <atomic>
@@ -750,4 +751,55 @@ TEST(HexDumpTest, CustomBytesPerLine) {
   EXPECT_EQ(std::count(dump.begin(), dump.end(), '\n'), 2);
   EXPECT_NE(dump.find("00000004 "), std::string::npos);
   EXPECT_NE(dump.find("|BBBB|"), std::string::npos);
+}
+
+// =============================================================================
+// Public engine-log control surface (R2.3, ai_pipe/engine_log.hpp)
+// =============================================================================
+
+TEST_F(LoggerTest, PublicSurfaceLevelRoundTrip) {
+  ai_pipe::setEngineLogLevel(ai_pipe::PipeLogLevel::KWarning);
+  EXPECT_EQ(ai_pipe::engineLogLevel(), ai_pipe::PipeLogLevel::KWarning);
+  EXPECT_EQ(Logger::instance().level(), LogLevel::Warning);
+
+  // Console toggle: no public read-back accessor, so exercise the call
+  // only; the fixture's configure() restore covers cleanup.
+  ai_pipe::setEngineConsoleLogging(false);
+}
+
+TEST_F(LoggerTest, PublicSinkReceivesFrameworkLogs) {
+  std::vector<std::pair<ai_pipe::PipeLogLevel, std::string>> received;
+  const auto id = ai_pipe::addEngineLogSink(
+      [&](ai_pipe::PipeLogLevel level, const std::string &message) {
+        if (message.find("PublicSinkReceives") != std::string::npos) {
+          received.emplace_back(level, message);
+        }
+      });
+
+  LOG_INFO_S << "PublicSinkReceives framework message";
+
+  ai_pipe::removeEngineLogSink(id);
+  LOG_INFO_S << "PublicSinkReceives after removal";
+
+  ASSERT_EQ(received.size(), 1u);
+  EXPECT_EQ(received[0].first, ai_pipe::PipeLogLevel::KInfo);
+  EXPECT_NE(received[0].second.find("framework message"), std::string::npos);
+}
+
+TEST_F(LoggerTest, PublicSinkHonorsGlobalLevel) {
+  ai_pipe::setEngineLogLevel(ai_pipe::PipeLogLevel::KError);
+
+  int hits = 0;
+  const auto id = ai_pipe::addEngineLogSink(
+      [&](ai_pipe::PipeLogLevel, const std::string &message) {
+        if (message.find("PublicSinkHonors") != std::string::npos) {
+          ++hits;
+        }
+      });
+
+  Logger::instance().info("PublicSinkHonors info suppressed");
+  Logger::instance().error("PublicSinkHonors error delivered");
+
+  ai_pipe::removeEngineLogSink(id);
+  EXPECT_EQ(hits, 1);
 }

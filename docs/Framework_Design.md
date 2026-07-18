@@ -744,6 +744,26 @@ public:
 ctx->setLoggerAdapter(std::make_shared<SpdlogAdapter>());
 ```
 
+### 10.2 框架自身日志的公共控制面（R2.3）
+
+引擎/门面内部走进程级私有 logger（`LOG_*_S`，logger.hpp 已私有化）。
+链接方通过公共头 `ai_pipe/engine_log.hpp` 控制这条通路，无需触碰私有头：
+
+```cpp
+ai_pipe::setEngineLogLevel(PipeLogLevel::KWarning);  // 全局级别
+ai_pipe::setEngineConsoleLogging(false);             // 静音内置控制台
+auto id = ai_pipe::addEngineLogSink(                 // 注入 sink
+    [](PipeLogLevel lv, const std::string &msg) { mylog(lv, msg); });
+ai_pipe::removeEngineLogSink(id);
+```
+
+与 `ctx->attachEngineLogs()` 的关系：adapter 是**每 context** 的节点日志
+通道，attachEngineLogs 把框架日志桥入该 context 的 adapter；engine_log
+是**进程级、无 context** 的控制面。两者目前都是对内部
+`Logger::addCallback` 的薄桥接。**后续方向（已记录未实施）**：框架内部
+日志改走 adapter 抽象，两条通路合一，内部 logger 降级为某个 adapter 的
+实现细节。
+
 ---
 
 ## 11. 构建与集成
