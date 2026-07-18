@@ -324,19 +324,6 @@ createBenchmarkStreamEngine(std::uint8_t workers = 4,
   return engine;
 }
 
-/**
- * @brief Create a hybrid execution engine
- */
-inline std::unique_ptr<ExecutionEngine>
-createBenchmarkHybridEngine(std::uint8_t workers = 4,
-                            std::size_t queue_capacity = 16) {
-
-  auto config = EngineConfig::hybrid(workers, queue_capacity);
-  config.enable_statistics = true;
-  config.enable_sync_coordination = true;
-  return ExecutionEngine::create(config);
-}
-
 // =============================================================================
 // Measurement Helpers
 // =============================================================================

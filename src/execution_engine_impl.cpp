@@ -300,11 +300,6 @@ void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
     m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
     break;
   }
-
-  case ExecutionMode::HYBRID:
-    m_schedulerStrategy = std::make_unique<HybridSchedulerStrategy>();
-    m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
-    break;
   }
 }
 

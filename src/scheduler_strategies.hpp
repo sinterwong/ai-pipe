@@ -12,7 +12,6 @@
  * Strategies provided:
  * - BatchSchedulerStrategy: Traditional batch processing
  * - StreamSchedulerStrategy: Continuous streaming with backpressure
- * - HybridSchedulerStrategy: Mixed batch/stream behavior
  *
  * @copyright Copyright (c) 2025
  */
@@ -218,60 +217,6 @@ private:
 };
 
 // =============================================================================
-// Hybrid Scheduler Strategy
-// =============================================================================
-
-/**
- * @brief Hybrid scheduler combining batch and stream behaviors
- *
- * Allows per-node configuration of scheduling behavior.
- */
-class HybridSchedulerStrategy final : public ISchedulerStrategy {
-public:
-  [[nodiscard]] ScheduleResult
-  shouldSchedule(const SchedulingContext &context) const override {
-    // Default to stream-like behavior
-    if (context.is_source_node && context.has_initial_input) {
-      return ScheduleResult::scheduleNow("source node with input ready");
-    }
-
-    if (context.allInputsReady()) {
-      return ScheduleResult::scheduleNow("all inputs ready");
-    }
-
-    return ScheduleResult::waitForInputs("waiting for inputs");
-  }
-
-  [[nodiscard]] bool
-  onNodeComplete(const std::shared_ptr<ILogicNode> & /*node*/, bool success,
-                 const PortDataMap & /*outputs*/) override {
-    return success; // Reschedule on success
-  }
-
-  [[nodiscard]] CompletionStatus
-  checkCompletion(std::size_t /*active_node_count*/,
-                  std::size_t /*pending_node_count*/,
-                  const std::unordered_map<std::string, std::uint64_t>
-                      & /*sink_execution_counts*/) const override {
-    return {false, "hybrid mode - continuous execution", std::nullopt};
-  }
-
-  [[nodiscard]] CompletionSemantics completionSemantics() const override {
-    return CompletionSemantics::Continuous;
-  }
-
-  [[nodiscard]] bool supportsStreaming() const override { return true; }
-
-  [[nodiscard]] std::string name() const override {
-    return "HybridSchedulerStrategy";
-  }
-
-  [[nodiscard]] std::unique_ptr<ISchedulerStrategy> clone() const override {
-    return std::make_unique<HybridSchedulerStrategy>(*this);
-  }
-};
-
-// =============================================================================
 // Factory Functions
 // =============================================================================
 
@@ -286,8 +231,6 @@ createSchedulerStrategy(ExecutionMode mode,
     return std::make_unique<BatchSchedulerStrategy>();
   case ExecutionMode::STREAM:
     return std::make_unique<StreamSchedulerStrategy>(stream_config);
-  case ExecutionMode::HYBRID:
-    return std::make_unique<HybridSchedulerStrategy>();
   }
   return std::make_unique<BatchSchedulerStrategy>();
 }

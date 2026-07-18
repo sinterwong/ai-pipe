@@ -197,12 +197,20 @@
   `PipelineStreamingTest.RateLimitedTailFrameEventuallyExecutes`。
   提交 `feat: engine defer timer makes DeferToNextCycle real (R3.2)`。
 
-- [ ] **R3.3 HybridSchedulerStrategy 名不副实**：注释宣称 "per-node
+- [x] **R3.3 HybridSchedulerStrategy 名不副实**：注释宣称 "per-node
   configuration of scheduling behavior"，实现无一行 per-node 配置，
   实际等于"无 partial-inputs 的 Stream"。要么实现 per-node 调度配置
   （需求存疑），要么删除该策略与 `ExecutionMode::HYBRID`（连带
   configureForMode/JSON loader/文档/测试），把模式收敛为 BATCH/STREAM。
   倾向删除：模式越少，语义越硬。
+  ——已按裁决删除：HybridSchedulerStrategy、ExecutionMode::HYBRID、
+  EngineConfig::hybrid()、createHybridEngine、configureForMode HYBRID
+  分支、门面 start()/withMode 的 HYBRID 分支、全部 Hybrid 测试
+  （策略套件/门面端到端套件/工厂/配置）与 benchmark 工厂、README/
+  Framework_Design/Migration_Guide/Performance_Report 措辞，模式收敛为
+  BATCH/STREAM。核实：JSON loader 本就只接受 batch/stream，无需改动。
+  提交 `refactor!: remove HybridSchedulerStrategy and
+  ExecutionMode::HYBRID (R3.3)`。
 
 - [ ] **R3.4 死配置旋钮清理**：`StreamSchedulerConfig::min_input_ratio`
   默认 1.0 且仅在 allow_partial_inputs 下参与判断，组合语义含混；

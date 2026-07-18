@@ -11,7 +11,7 @@
 
 ## 1. 概述
 
-AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理、流式处理和混合处理三种执行模式，并提供背压管理、帧同步和性能监控能力。
+AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专为深度学习推理、视频处理等高吞吐场景设计。框架通过策略模式实现组件可插拔，支持批处理与流式处理两种执行模式，并提供背压管理、帧同步和性能监控能力。
 
 ### 1.1 核心设计目标
 
@@ -26,7 +26,6 @@ AI Pipe 是一个高性能 DAG（有向无环图）数据流处理框架，专�
 |------|------|------|----------|----------|
 | **BATCH** | 单次遍历 | 无界/不启用 | 所有 Sink 执行一次 | 离线推理、图片批处理 |
 | **STREAM** | 持续流式 | 有界+丢弃策略 | 手动停止 | 视频流、实时推理 |
-| **HYBRID** | 混合 | 有界+丢弃策略 | 手动停止 | 批+流混合负载 |
 
 ---
 
@@ -77,7 +76,7 @@ ai_pipe.hpp (统一入口)
 execution_engine_impl.hpp / .cpp
 ├── lock_free_queue.hpp (Lock-Free MPMC)
 ├── work_stealing_thread_pool.hpp
-├── scheduler_strategies.hpp (Batch/Stream/Hybrid)
+├── scheduler_strategies.hpp (Batch/Stream)
 ├── join_aware_sync_strategy.hpp
 ├── sync_coordinator.hpp
 ```
@@ -271,7 +270,6 @@ struct SchedulingContext {
 |------|---------|---------|--------|
 | `BatchSchedulerStrategy` | 所有输入就绪才调度 | `SinglePass`：所有 Sink 执行一次即完成 | 不重调度 |
 | `StreamSchedulerStrategy` | 支持部分输入、速率限制 | `Continuous`：永不自动完成 | 成功后自动重调度 |
-| `HybridSchedulerStrategy` | 所有输入就绪即调度 | `Continuous` | 成功后重调度 |
 
 ### 4.2 同步策略 — `ISyncStrategy`
 
@@ -381,7 +379,6 @@ private:
 ```cpp
 auto engine = createBatchEngine(4);    // 4 Worker 批处理引擎
 auto engine = createStreamEngine(4, 16); // 4 Worker、队列容量 16 的流式引擎
-auto engine = createHybridEngine(4, 16); // 混合模式引擎
 ```
 
 ### 5.2 内部执行流程
@@ -953,7 +950,7 @@ using BranchId    = std::string;
 enum class NodeExecutionState { WAITING, READY, EXECUTING, COMPLETED, FAILED };
 enum class EngineState         { IDLE, RUNNING, STOPPED, ERROR };
 enum class PipelineState       { UNINITIALIZED, IDLE, RUNNING, STOPPING, ERROR };
-enum class ExecutionMode       { BATCH, STREAM, HYBRID };
+enum class ExecutionMode       { BATCH, STREAM };
 ```
 
 ## 附录 B：完整使用示例

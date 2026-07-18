@@ -104,7 +104,6 @@ TEST_F(ExecutionEngineTest, FactoryCreate) {
 TEST_F(ExecutionEngineTest, ConvenienceFactoryFunctions) {
   auto batch = createBatchEngine(2);
   auto stream = createStreamEngine(4, 16);
-  auto hybrid = createHybridEngine(6, 32);
 
   EXPECT_EQ(batch->config().mode, ExecutionMode::BATCH);
   EXPECT_EQ(batch->config().num_workers, 2);
@@ -112,9 +111,6 @@ TEST_F(ExecutionEngineTest, ConvenienceFactoryFunctions) {
   EXPECT_EQ(stream->config().mode, ExecutionMode::STREAM);
   EXPECT_EQ(stream->config().num_workers, 4);
   EXPECT_EQ(stream->config().default_queue_capacity, 16);
-
-  EXPECT_EQ(hybrid->config().mode, ExecutionMode::HYBRID);
-  EXPECT_EQ(hybrid->config().num_workers, 6);
 }
 
 TEST_F(ExecutionEngineTest, MoveConstruction) {
@@ -187,14 +183,6 @@ TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
   engine->configureForMode(ExecutionMode::STREAM);
 
   EXPECT_TRUE(engine->strategyInfo().find("StreamSchedulerStrategy") !=
-              std::string::npos);
-}
-
-TEST_F(ExecutionEngineTest, ConfigureForHybridMode) {
-  auto engine = ExecutionEngine::create();
-  engine->configureForMode(ExecutionMode::HYBRID);
-
-  EXPECT_TRUE(engine->strategyInfo().find("HybridSchedulerStrategy") !=
               std::string::npos);
 }
 
@@ -1387,35 +1375,6 @@ TEST_F(ExecutionEngineTest, EngineConfigStream) {
   EXPECT_EQ(config.num_workers, 4);
   EXPECT_EQ(config.default_queue_capacity, 32);
   EXPECT_TRUE(config.enable_sync_coordination);
-}
-
-TEST_F(ExecutionEngineTest, EngineConfigHybrid) {
-  auto config = EngineConfig::hybrid(8, 64);
-
-  EXPECT_EQ(config.mode, ExecutionMode::HYBRID);
-  EXPECT_EQ(config.num_workers, 8);
-  EXPECT_EQ(config.default_queue_capacity, 64);
-  EXPECT_TRUE(config.enable_sync_coordination);
-}
-
-// =============================================================================
-// Hybrid Mode Tests
-// =============================================================================
-
-TEST_F(ExecutionEngineTest, HybridModeExecution) {
-  auto engine = createHybridEngine();
-  createLinearPipeline();
-  engine->initialize(m_graph.get());
-
-  // Hybrid mode supports both batch and streaming
-  EXPECT_TRUE(engine->startStreaming().isOk());
-
-  (void)engine->pushInput("source", createData(1));
-  std::this_thread::sleep_for(100ms);
-
-  engine->stopStreaming();
-
-  EXPECT_GE(m_sink->processCount(), 1);
 }
 
 TEST_F(ExecutionEngineTest, PartialInputHandlingInStreaming) {

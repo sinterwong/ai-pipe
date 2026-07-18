@@ -227,11 +227,6 @@ createStreamEngine(std::uint8_t workers = 4, std::size_t queue_capacity = 16) {
   return ExecutionEngine::create(EngineConfig::stream(workers, queue_capacity));
 }
 
-inline std::unique_ptr<ExecutionEngine>
-createHybridEngine(std::uint8_t workers = 4, std::size_t queue_capacity = 16) {
-  return ExecutionEngine::create(EngineConfig::hybrid(workers, queue_capacity));
-}
-
 } // namespace ai_pipe
 
 #endif // AI_PIPE_EXECUTION_ENGINE_HPP

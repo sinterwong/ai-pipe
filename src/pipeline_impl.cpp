@@ -366,13 +366,12 @@ Result<void> Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
     return validation;
   }
 
-  if (m_options.mode != ExecutionMode::STREAM &&
-      m_options.mode != ExecutionMode::HYBRID) {
+  if (m_options.mode != ExecutionMode::STREAM) {
     LOG_ERROR_S << "Pipeline::Impl: Cannot start streaming in batch mode";
     return Result<void>::err(ErrorCode::InvalidState,
                              "Cannot start streaming in batch mode. "
-                             "Pipeline must be configured with STREAM or "
-                             "HYBRID execution mode");
+                             "Pipeline must be configured with STREAM "
+                             "execution mode");
   }
 
   if (context) {
@@ -883,7 +882,7 @@ PipelineBuilder::withContext(std::shared_ptr<PipelineContext> context) {
 PipelineBuilder &PipelineBuilder::withMode(ExecutionMode mode) {
   m_state->options.mode = mode;
   // Auto-enable sync coordination for stream mode
-  if (mode == ExecutionMode::STREAM || mode == ExecutionMode::HYBRID) {
+  if (mode == ExecutionMode::STREAM) {
     m_state->options.enable_sync_coordination = true;
   }
   return *this;

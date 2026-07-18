@@ -70,7 +70,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 | Component | Header | Description |
 |-----------|--------|-------------|
 | `Pipeline` / `PipelineBuilder` | `pipeline.hpp` | High-level fluent API for building and running pipelines |
-| `ExecutionEngine` | `execution_engine.hpp` | Core engine supporting batch, stream, and hybrid modes |
+| `ExecutionEngine` | `execution_engine.hpp` | Core engine supporting batch and stream modes |
 | `Graph` / `Edge` | `graph.hpp`, `edge.hpp` | DAG topology with cycle detection, adjacency tracking |
 | `ILogicNode` | `i_logic_node.hpp` | Abstract processing node interface |
 | `PipelineContext` | `context.hpp` | Thread-safe shared context: resources, metrics, cancellation |
@@ -308,7 +308,6 @@ The `ISchedulerStrategy` interface controls when nodes execute and what "complet
 |----------|------|----------|
 | `BatchSchedulerStrategy` | Batch | Execute when all inputs ready; complete when all sinks finish once |
 | `StreamSchedulerStrategy` | Stream | Continuous execution; reschedule nodes after completion |
-| `HybridSchedulerStrategy` | Hybrid | Batch-like with streaming support and partial input tolerance |
 
 Custom strategies can be injected:
 
@@ -414,7 +413,7 @@ auto stream_opts = ai_pipe::PipelineOptions::stream(4, 16);  // 4 workers, queue
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `mode` | `ExecutionMode` | `BATCH` | `BATCH`, `STREAM`, or `HYBRID` |
+| `mode` | `ExecutionMode` | `BATCH` | `BATCH` or `STREAM` |
 | `num_workers` | `uint8_t` | `4` | Thread pool worker count |
 | `execution_timeout` | `milliseconds` | `0` (none) | Per-execution timeout |
 | `queue_capacity` | `size_t` | `0` (unbounded) | Per-node input queue capacity |
