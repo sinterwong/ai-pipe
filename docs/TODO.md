@@ -364,6 +364,23 @@
   示例（撞 R6.1）；③ TypedNode + JSON 构图 + 插件的组合示例。
   示例纳入 CI 编译。
 
+## 清算轮（R1–R4）过程中新发现、未即时处理的问题
+
+- [ ] **N1. 批模式完成通知的并发重复触发窗口**：任务完成路径上，两个
+  worker 可能先后把 `m_activeTasks` 读成 0 并都走进
+  `checkCompletionAndNotify` 的完成分支——引擎状态 CAS 保证状态只翻转
+  一次，但 result 回调/observer 通知可能重复触发。runAsync 的 promise
+  已用 done 标志自防（R1.1），常驻回调的重复 `onExecutionCompleted`
+  对 observer 可见。R5.3 终审时定契约（at-least-once vs exactly-once）
+  或在引擎加一次性完成闩。R1.1 实施中发现。
+- [ ] **N2. 策略热替换不触发 initialize**：`setSchedulerStrategy`/
+  `setSyncStrategy` 在 IDLE 时可调用，但只有 `ExecutionEngine::
+  initialize()` 会对策略跑 `initialize(CompiledGraph&)`——引擎已
+  initialize 后再 set 的策略拿不到拓扑（JoinAware 将没有任何 sync
+  group）。门面路径不受影响（先 set 后 initialize）。R4.2 实施中发现，
+  R5.3 终审时决定：set 时若已有 CompiledGraph 即补跑 initialize，或在
+  文档写明调用顺序契约。
+
 ## 长期观察项（性能报告跟踪，见 docs/Performance_Report.md §5.4）
 
 - [ ] **F13. 高 worker 数轻量帧场景的调度竞争**：worker 数远超有效并行
