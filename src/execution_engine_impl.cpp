@@ -202,7 +202,7 @@ ExecutionEngine::Impl::~Impl() {
 
   // Always shut down the thread pool first, regardless of engine state.
   // Worker threads may still be executing tasks that access members
-  // (m_nodeStates, m_activeTasks, m_stopFlag, callbacks, etc.) via the
+  // (m_statesByIndex, m_activeTasks, m_stopFlag, callbacks, etc.) via the
   // captured `this` pointer. C++ destroys members in reverse declaration
   // order, so m_threadPool must be stopped and joined before any member
   // it depends on is destroyed.
@@ -363,7 +363,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
   // Cache sync-tracking membership so hot paths skip the strategy lock
   // for nodes outside any sync group.
   const bool sync_active = m_syncStrategy && m_syncStrategy->isEnabled();
-  for (auto &[node_ptr, state] : m_nodeStates) {
+  for (auto &state : m_statesByIndex) {
     if (state) {
       state->sync_tracked =
           sync_active && m_syncStrategy->tracksNode(state->name);
@@ -382,7 +382,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   LOG_INFO_S << "ExecutionEngine: Initialized with "
              << static_cast<int>(m_config.num_workers) << " workers, "
-             << m_nodeStates.size()
+             << m_statesByIndex.size()
              << " nodes. Mode: " << executionModeToString(m_config.mode);
 
   return Result<void>::ok();
@@ -536,7 +536,7 @@ void ExecutionEngine::Impl::reset() {
 
   std::lock_guard<std::mutex> lock(m_engineMutex);
 
-  for (auto &[node_ptr, state] : m_nodeStates) {
+  for (auto &state : m_statesByIndex) {
     if (!state)
       continue;
 
@@ -579,7 +579,7 @@ std::unordered_map<std::string, NodeExecutionState>
 ExecutionEngine::Impl::getNodeStates() const {
   std::unordered_map<std::string, NodeExecutionState> result;
 
-  for (const auto &[node_ptr, state] : m_nodeStates) {
+  for (const auto &state : m_statesByIndex) {
     if (state) {
       result[state->name] = state->exec_state.load(std::memory_order_acquire);
     }
@@ -760,12 +760,12 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
                                    "Not in streaming/running mode");
   }
 
-  auto node_it = m_nodeNameMap.find(source_node);
-  if (node_it == m_nodeNameMap.end()) {
+  NodeState *state = stateByName(source_node);
+  if (!state) {
     return Result<PushStatus>::err(Error::nodeNotFound(source_node));
   }
 
-  const auto &node = node_it->second;
+  const auto &node = state->node;
 
   std::string actual_port = port_name;
   if (actual_port.empty()) {
@@ -783,15 +783,15 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
 
   if (isInputPort(node, actual_port)) {
     stampIncomingFrame(data);
-    if (!pushToQueue(node, actual_port, std::move(data))) {
+    if (!pushToQueue(*state, actual_port, std::move(data))) {
       return Result<PushStatus>::err(
           ErrorCode::QueueRejected,
           "Queue full (DropTail) on port: " + actual_port, source_node);
     }
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
-    tryScheduleNode(node);
-    auto size = getQueueSize(node, actual_port);
+    tryScheduleNode(state->index);
+    auto size = getQueueSize(*state, actual_port);
     return PushStatus::enqueued(size);
   } else if (isOutputPort(node, actual_port)) {
     return routeToDownstream(node, actual_port, data);
@@ -814,8 +814,8 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
 EngineStatisticsSnapshot ExecutionEngine::Impl::statistics() const {
   EngineStatisticsSnapshot snapshot(m_statistics);
 
-  snapshot.node_stats.reserve(m_nodeStates.size());
-  for (const auto &[node_ptr, state] : m_nodeStates) {
+  snapshot.node_stats.reserve(m_statesByIndex.size());
+  for (const auto &state : m_statesByIndex) {
     if (!state) {
       continue;
     }
@@ -836,36 +836,29 @@ EngineStatisticsSnapshot ExecutionEngine::Impl::statistics() const {
 std::size_t
 ExecutionEngine::Impl::queueDepth(const std::string &node_name,
                                   const std::string &port_name) const {
-  auto node_it = m_nodeNameMap.find(node_name);
-  if (node_it == m_nodeNameMap.end()) {
+  const NodeState *state = stateByName(node_name);
+  if (!state) {
     return 0;
   }
 
   std::string actual_port =
-      port_name.empty() ? getFirstInputPort(node_it->second) : port_name;
+      port_name.empty() ? getFirstInputPort(state->node) : port_name;
 
-  return getQueueSize(node_it->second, actual_port);
+  return getQueueSize(*state, actual_port);
 }
 
 bool ExecutionEngine::Impl::hasQueueCapacity(
     const std::string &node_name, const std::string &port_name) const {
-  auto node_it = m_nodeNameMap.find(node_name);
-  if (node_it == m_nodeNameMap.end()) {
-    return false;
-  }
-
-  auto state_it = m_nodeStates.find(node_it->second);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
+  const NodeState *state = stateByName(node_name);
+  if (!state) {
     return false;
   }
 
   std::string actual_port =
-      port_name.empty() ? getFirstInputPort(node_it->second) : port_name;
+      port_name.empty() ? getFirstInputPort(state->node) : port_name;
 
-  auto &state = *state_it->second;
-
-  auto queue_it = state.lock_free_queues.find(actual_port);
-  if (queue_it != state.lock_free_queues.end() && queue_it->second) {
+  auto queue_it = state->lock_free_queues.find(actual_port);
+  if (queue_it != state->lock_free_queues.end() && queue_it->second) {
     return !queue_it->second->isFull();
   }
 
@@ -903,7 +896,7 @@ ExecutionEngine::Impl::waitForDrain(std::size_t max_depth,
 }
 
 bool ExecutionEngine::Impl::allQueuesDrained(std::size_t max_depth) const {
-  for (const auto &[node, state] : m_nodeStates) {
+  for (const auto &state : m_statesByIndex) {
     if (!state) {
       continue;
     }
@@ -943,7 +936,7 @@ std::string ExecutionEngine::Impl::info() const {
       << "  workers: " << static_cast<int>(m_config.num_workers) << "\n"
       << "  state: " << stateToString(m_engineState.load()) << "\n"
       << "  streaming: " << (isStreaming() ? "yes" : "no") << "\n"
-      << "  nodes: " << m_nodeStates.size() << "\n"
+      << "  nodes: " << m_statesByIndex.size() << "\n"
       << "  strategies: " << strategyInfo() << "\n"
       << "  statistics: {\n"
       << "    executions: " << m_statistics.total_executions.load() << "\n"
@@ -1018,31 +1011,28 @@ void ExecutionEngine::Impl::teardownNodes() noexcept {
 }
 
 void ExecutionEngine::Impl::initializeNodeStates() {
-  m_nodeStates.clear();
-  m_nodeNameMap.clear();
-  m_statesByIndex.assign(m_compiledGraph->nodeCount(), nullptr);
+  m_statesByIndex.clear();
+  m_statesByIndex.resize(m_compiledGraph->nodeCount());
   m_multiInputIndices.clear();
 
-  for (const auto &node : m_graph->getNodes()) {
+  const auto node_count =
+      static_cast<CompiledGraph::NodeIndex>(m_compiledGraph->nodeCount());
+  for (CompiledGraph::NodeIndex i = 0; i < node_count; ++i) {
+    const auto &node = m_compiledGraph->node(i);
     auto state = std::make_unique<NodeState>(node, node->getName());
     state->queue_config = getNodeQueueConfig(node->getName());
-    state->index = m_compiledGraph->indexOfPtr(node.get());
-    if (state->index != CompiledGraph::k_invalid_index) {
-      m_statesByIndex[state->index] = state.get();
-    }
-
-    m_nodeNameMap[node->getName()] = node;
-    m_nodeStates[node] = std::move(state);
+    state->index = i;
+    m_statesByIndex[i] = std::move(state);
   }
 }
 
 void ExecutionEngine::Impl::initializeQueues() {
-  for (auto &[node_ptr, state] : m_nodeStates) {
+  for (auto &state : m_statesByIndex) {
     if (!state)
       continue;
 
     state->lock_free_queues.clear();
-    state->input_ports = node_ptr->getExpectedInputPorts();
+    state->input_ports = state->node->getExpectedInputPorts();
     state->input_queues.clear();
 
     for (const auto &port_name : state->input_ports) {
@@ -1085,7 +1075,7 @@ void ExecutionEngine::Impl::initializeQueues() {
 }
 
 void ExecutionEngine::Impl::setupDropCallbacks() {
-  for (auto &[node_ptr, state] : m_nodeStates) {
+  for (auto &state : m_statesByIndex) {
     if (!state)
       continue;
 
@@ -1130,32 +1120,35 @@ bool ExecutionEngine::Impl::distributeInitialInputs(
   bool has_scheduled = false;
 
   for (const auto source_index : m_compiledGraph->sourceNodes()) {
-    const auto &node = m_compiledGraph->node(source_index);
+    NodeState *state = stateByIndex(source_index);
+    if (!state) {
+      continue;
+    }
 
-    const auto &expected_ports = node->getExpectedInputPorts();
-    const bool has_input = initial_inputs.count(node->getName()) > 0;
+    const auto &expected_ports = state->input_ports;
+    const bool has_input = initial_inputs.count(state->name) > 0;
 
     if (has_input) {
-      const auto &data_packet = initial_inputs.at(node->getName());
+      const auto &data_packet = initial_inputs.at(state->name);
       stampIncomingFrame(data_packet);
       if (!expected_ports.empty()) {
         const std::string &target_port = expected_ports[0];
-        if (!pushToQueue(node, target_port, data_packet)) {
+        if (!pushToQueue(*state, target_port, data_packet)) {
           LOG_ERROR_S << "ExecutionEngine: Failed to distribute input to "
-                      << node->getName() << ":" << target_port;
+                      << state->name << ":" << target_port;
           return false;
         }
         m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
-        LOG_TRACE_S << "ExecutionEngine: Distributed input to "
-                    << node->getName() << ":" << target_port;
+        LOG_TRACE_S << "ExecutionEngine: Distributed input to " << state->name
+                    << ":" << target_port;
       }
       has_scheduled = true;
-      tryScheduleNode(node);
+      tryScheduleNode(source_index);
     } else if (expected_ports.empty()) {
       LOG_TRACE_S << "ExecutionEngine: Auto-scheduling source node "
-                  << node->getName();
+                  << state->name;
       has_scheduled = true;
-      tryScheduleNode(node);
+      tryScheduleNode(source_index);
     }
   }
 
@@ -1183,7 +1176,7 @@ void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
     return;
   }
 
-  NodeState *state_ptr = m_statesByIndex[index];
+  NodeState *state_ptr = stateByIndex(index);
   if (!state_ptr) {
     return;
   }
@@ -1273,7 +1266,7 @@ void ExecutionEngine::Impl::deferTimerLoop() {
     const auto index = m_deferQueue.top().index;
     m_deferQueue.pop();
     lock.unlock();
-    if (NodeState *state = m_statesByIndex[index]) {
+    if (NodeState *state = stateByIndex(index)) {
       state->defer_pending.store(false, std::memory_order_release);
       tryScheduleNode(index);
     }
@@ -1301,7 +1294,7 @@ void ExecutionEngine::Impl::stopDeferTimer() {
   }
   // Re-arm capability for a later execution: clear the per-node flags
   // whose timer entries were just discarded.
-  for (NodeState *state : m_statesByIndex) {
+  for (auto &state : m_statesByIndex) {
     if (state) {
       state->defer_pending.store(false, std::memory_order_relaxed);
     }
@@ -1330,7 +1323,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
               static_cast<std::uint64_t>(delay.count()),
               std::memory_order_relaxed);
         }
-        if (NodeState *scheduled = m_statesByIndex[index]) {
+        if (NodeState *scheduled = stateByIndex(index)) {
           emitTrace(TracePhase::Schedule, scheduled->name, {}, nullptr,
                     scheduled_at, delay);
         }
@@ -1352,7 +1345,7 @@ void ExecutionEngine::Impl::scheduleNodeExecution(NodeState &state) {
 void ExecutionEngine::Impl::executeNodeTask(
     CompiledGraph::NodeIndex index,
     const std::shared_ptr<PipelineContext> &context) {
-  NodeState *state_ptr = m_statesByIndex[index];
+  NodeState *state_ptr = stateByIndex(index);
   if (!state_ptr) {
     m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
     checkCompletionAndNotify();
@@ -1801,7 +1794,7 @@ void ExecutionEngine::Impl::joinTimeoutWatchdogLoop() {
 
     const auto now = std::chrono::steady_clock::now();
     for (const auto index : m_multiInputIndices) {
-      NodeState *state = m_statesByIndex[index];
+      NodeState *state = stateByIndex(index);
       if (!state) {
         continue;
       }
@@ -2062,7 +2055,7 @@ void ExecutionEngine::Impl::propagateOutputs(NodeState &source_state,
       continue;
     }
 
-    NodeState *dest = m_statesByIndex[edge.dest_node];
+    NodeState *dest = stateByIndex(edge.dest_node);
     if (!dest) {
       continue;
     }
@@ -2170,7 +2163,7 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
   std::unordered_map<std::string, std::uint64_t> sink_counts;
   if (m_compiledGraph) {
     for (const auto sink_index : m_compiledGraph->sinkNodes()) {
-      const NodeState *state = m_statesByIndex[sink_index];
+      const NodeState *state = stateByIndex(sink_index);
       if (state) {
         sink_counts[state->name] =
             state->execution_count.load(std::memory_order_relaxed);
@@ -2283,7 +2276,7 @@ void ExecutionEngine::Impl::resetInternalState() {
     m_accumulatedResults.clear();
   }
 
-  for (auto &[node, state] : m_nodeStates) {
+  for (auto &state : m_statesByIndex) {
     if (state) {
       state->exec_state.store(NodeExecutionState::WAITING,
                               std::memory_order_relaxed);
@@ -2304,16 +2297,9 @@ void ExecutionEngine::Impl::resetInternalState() {
 // Impl: Queue Operations
 // -------------------------------------------------------------------------
 
-bool ExecutionEngine::Impl::pushToQueue(const NodePtr &node,
+bool ExecutionEngine::Impl::pushToQueue(NodeState &state,
                                         const std::string &port_name,
                                         PortDataPtr data) {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return false;
-  }
-
-  auto &state = *state_it->second;
-
   auto queue_it = state.lock_free_queues.find(port_name);
   if (queue_it != state.lock_free_queues.end() && queue_it->second) {
     // Copy the identity header before the queue takes ownership: once
@@ -2413,16 +2399,8 @@ void ExecutionEngine::Impl::recordQueueRejection(const std::string &node_name,
                      "DropTail queue full");
 }
 
-std::size_t
-ExecutionEngine::Impl::getQueueSize(const NodePtr &node,
-                                    const std::string &port_name) const {
-  auto state_it = m_nodeStates.find(node);
-  if (state_it == m_nodeStates.end() || !state_it->second) {
-    return 0;
-  }
-
-  auto &state = *state_it->second;
-
+std::size_t ExecutionEngine::Impl::getQueueSize(const NodeState &state,
+                                                const std::string &port_name) {
   auto queue_it = state.lock_free_queues.find(port_name);
   if (queue_it != state.lock_free_queues.end() && queue_it->second) {
     return queue_it->second->size();
@@ -2484,12 +2462,15 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
       continue;
     }
 
-    const auto &dest_node = m_compiledGraph->node(edge.dest_node);
+    NodeState *dest = stateByIndex(edge.dest_node);
+    if (!dest) {
+      continue;
+    }
     const auto &dest_port = edge.dest_port;
 
     PortDataPtr data_copy = data;
 
-    if (!pushToQueue(dest_node, dest_port, std::move(data_copy))) {
+    if (!pushToQueue(*dest, dest_port, std::move(data_copy))) {
       rejected_count++;
       continue;
     }
@@ -2497,14 +2478,14 @@ ExecutionEngine::Impl::routeToDownstream(const NodePtr &source_node,
     m_statistics.total_queue_pushes.fetch_add(1, std::memory_order_relaxed);
     m_statistics.total_input_frames.fetch_add(1, std::memory_order_relaxed);
 
-    tryScheduleNode(dest_node);
+    tryScheduleNode(edge.dest_node);
 
-    total_queue_size += getQueueSize(dest_node, dest_port);
+    total_queue_size += getQueueSize(*dest, dest_port);
     routed_count++;
 
     LOG_TRACE_S << "ExecutionEngine: Routed data from "
                 << source_node->getName() << ":" << output_port << " -> "
-                << dest_node->getName() << ":" << dest_port;
+                << dest->name << ":" << dest_port;
   }
 
   if (routed_count == 0) {

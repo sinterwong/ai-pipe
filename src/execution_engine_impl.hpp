@@ -186,6 +186,23 @@ private:
   void initializeQueues();
   void setupDropCallbacks();
 
+  // Node-state lookup (R4.1): index is the primary key; name and
+  // pointer resolve through the CompiledGraph. All return nullptr for
+  // unknown keys (indexOf/indexOfPtr yield k_invalid_index, which the
+  // range check rejects).
+  [[nodiscard]] NodeState *stateByIndex(CompiledGraph::NodeIndex index) const {
+    return index < m_statesByIndex.size() ? m_statesByIndex[index].get()
+                                          : nullptr;
+  }
+  [[nodiscard]] NodeState *stateByName(const std::string &name) const {
+    return m_compiledGraph ? stateByIndex(m_compiledGraph->indexOf(name))
+                           : nullptr;
+  }
+  [[nodiscard]] NodeState *stateByPtr(const ILogicNode *node) const {
+    return m_compiledGraph ? stateByIndex(m_compiledGraph->indexOfPtr(node))
+                           : nullptr;
+  }
+
   bool distributeInitialInputs(const PortDataMap &initial_inputs);
 
   /** @brief Boundary wrapper: resolves the index once, then dispatches */
@@ -393,8 +410,7 @@ private:
    *         false if it was rejected (DropTail policy on a full queue) or the
    *         target queue does not exist
    */
-  [[nodiscard]] bool pushToQueue(const NodePtr &node,
-                                 const std::string &port_name,
+  [[nodiscard]] bool pushToQueue(NodeState &state, const std::string &port_name,
                                  PortDataPtr data);
 
   void recordQueueRejection(const std::string &node_name,
@@ -414,8 +430,8 @@ private:
    */
   static void inheritFrameIdentity(const PortDataMap &inputs,
                                    PortDataMap &outputs);
-  std::size_t getQueueSize(const NodePtr &node,
-                           const std::string &port_name) const;
+  static std::size_t getQueueSize(const NodeState &state,
+                                  const std::string &port_name);
 
   void collectResults(const NodePtr &node, const PortDataMap &outputs);
   [[nodiscard]] QueueConfig
@@ -457,12 +473,12 @@ private:
   // shared_ptr keeps those accesses race-free.
   std::atomic<std::shared_ptr<PipelineContext>> m_currentContext;
 
-  std::unordered_map<NodePtr, std::unique_ptr<NodeState>> m_nodeStates;
-  std::unordered_map<std::string, NodePtr> m_nodeNameMap;
-
-  // Dense index -> state lookup aligned with CompiledGraph::NodeIndex;
-  // the raw pointers are owned by m_nodeStates.
-  std::vector<NodeState *> m_statesByIndex;
+  // Owning per-node states, indexed by CompiledGraph::NodeIndex (R4.1).
+  // The single node-state container: name/pointer resolution goes
+  // through CompiledGraph (indexOf / indexOfPtr) via the stateBy*
+  // helpers, and cold paths (statistics, reset, drain checks) are
+  // plain sequential scans.
+  std::vector<std::unique_ptr<NodeState>> m_statesByIndex;
 
   // Multi-input node indices, precomputed at initialize; the join
   // timeout watchdog scans only these.

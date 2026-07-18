@@ -243,11 +243,18 @@
 
 ## R4. 架构冗余清算
 
-- [ ] **R4.1 引擎节点查找结构收敛**：`m_nodeStates`
+- [x] **R4.1 引擎节点查找结构收敛**：`m_nodeStates`
   （unordered_map<NodePtr, unique_ptr<NodeState>>）、`m_nodeNameMap`、
   `m_statesByIndex` 三份并存。收敛为按 `CompiledGraph::NodeIndex` 索引
   的 `vector<unique_ptr<NodeState>>`，name/ptr 查找复用 CompiledGraph；
   冷路径（statistics/reset/allQueuesDrained）随之简化为顺序遍历。
+  ——已收敛：唯一容器 `vector<unique_ptr<NodeState>>`，新增
+  stateByIndex/stateByName/stateByPtr 三个查找辅助（name/ptr 走
+  CompiledGraph::indexOf/indexOfPtr）；pushToQueue/getQueueSize 改收
+  `NodeState&`（routeToDownstream 顺带改为按边索引直达，免去 ptr 反查）；
+  initializeNodeStates 按 CompiledGraph 顺序构建。行为不变，现有全部
+  测试为回归网。提交 `refactor: converge engine node lookup on a single
+  index-keyed vector (R4.1)`。
 
 - [ ] **R4.2 策略接口摆脱 Graph\* 生命周期**：`ISchedulerStrategy`/
   `ISyncStrategy::initialize(Graph*)` 让策略持有裸指针
