@@ -86,6 +86,8 @@ ExecutionEngine::execute(const PortDataMap &initial_inputs,
 
 void ExecutionEngine::stopExecutionAsync() { m_impl->stopExecutionAsync(); }
 
+void ExecutionEngine::waitForIdle() { m_impl->waitForIdle(); }
+
 void ExecutionEngine::stopExecutionSync() { m_impl->stopExecutionSync(); }
 
 void ExecutionEngine::reset() { m_impl->reset(); }
@@ -461,10 +463,14 @@ Result<void> ExecutionEngine::Impl::execute(
   }
 
   if (!distributeInitialInputs(initial_inputs)) {
-    std::lock_guard<std::mutex> lock(m_engineMutex);
-    m_engineState.store(EngineState::ERROR, std::memory_order_release);
+    {
+      std::lock_guard<std::mutex> lock(m_engineMutex);
+      m_engineState.store(EngineState::ERROR, std::memory_order_release);
+      m_currentContext.store(nullptr);
+    }
+    // Wake waitForIdle() blockers observing the RUNNING -> ERROR edge
+    notifyCompletionWaiters();
     LOG_ERROR_S << "ExecutionEngine: Failed to distribute inputs.";
-    m_currentContext.store(nullptr);
     return Result<void>::err(ErrorCode::ExecutionFailed,
                              "Failed to distribute initial inputs to source "
                              "nodes");
@@ -744,12 +750,22 @@ void ExecutionEngine::Impl::stopStreaming(bool wait_for_drain) {
     m_streamingMode.store(false, std::memory_order_release);
     m_engineState.store(EngineState::IDLE, std::memory_order_release);
   }
+  // Wake waitForIdle() blockers observing the RUNNING -> IDLE edge
+  notifyCompletionWaiters();
 
   LOG_INFO_S << "ExecutionEngine: Stopped streaming mode.";
 }
 
 bool ExecutionEngine::Impl::isStreaming() const {
   return m_streamingMode.load(std::memory_order_acquire);
+}
+
+void ExecutionEngine::Impl::waitForIdle() {
+  std::unique_lock<std::mutex> lock(m_completionMutex);
+  m_completionCV.wait(lock, [this] {
+    return m_engineState.load(std::memory_order_acquire) !=
+           EngineState::RUNNING;
+  });
 }
 
 Result<PushStatus>
@@ -2028,39 +2044,49 @@ Result<void> ExecutionEngine::Impl::waitForCompletion(
     m_completionCV.wait(lock, completion_reached);
   }
 
-  const bool was_stopped = m_stopFlag.load(std::memory_order_acquire);
-  const int active_tasks = m_activeTasks.load(std::memory_order_acquire);
-  const auto current_state = m_engineState.load(std::memory_order_acquire);
+  // The tail only touches atomics under m_engineMutex; release the
+  // completion lock so the final notify below cannot self-deadlock.
+  lock.unlock();
 
-  std::lock_guard<std::mutex> engine_lock(m_engineMutex);
+  auto result = [this]() -> Result<void> {
+    const bool was_stopped = m_stopFlag.load(std::memory_order_acquire);
+    const int active_tasks = m_activeTasks.load(std::memory_order_acquire);
+    const auto current_state = m_engineState.load(std::memory_order_acquire);
 
-  if (was_stopped && current_state != EngineState::STOPPED) {
-    m_engineState.store(EngineState::STOPPED, std::memory_order_release);
-    LOG_ERROR_S << "ExecutionEngine: Execution was stopped.";
+    std::lock_guard<std::mutex> engine_lock(m_engineMutex);
+
+    if (was_stopped && current_state != EngineState::STOPPED) {
+      m_engineState.store(EngineState::STOPPED, std::memory_order_release);
+      LOG_ERROR_S << "ExecutionEngine: Execution was stopped.";
+      m_currentContext.store(nullptr);
+      return Result<void>::err(ErrorCode::ExecutionStopped,
+                               "Execution was stopped externally");
+    } else if (active_tasks == 0 && (current_state == EngineState::RUNNING ||
+                                     current_state == EngineState::IDLE)) {
+      // IDLE means checkCompletionAndNotify already restored the state
+      m_engineState.store(EngineState::IDLE, std::memory_order_release);
+      LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
+      m_currentContext.store(nullptr);
+      return Result<void>::ok();
+    } else if (current_state != EngineState::ERROR &&
+               current_state != EngineState::STOPPED) {
+      m_engineState.store(EngineState::ERROR, std::memory_order_release);
+      LOG_ERROR_S << "ExecutionEngine: Execution finished abnormally.";
+      m_currentContext.store(nullptr);
+      return Result<void>::err(ErrorCode::ExecutionFailed,
+                               "Execution finished abnormally");
+    }
+
     m_currentContext.store(nullptr);
-    return Result<void>::err(ErrorCode::ExecutionStopped,
-                             "Execution was stopped externally");
-  } else if (active_tasks == 0 && (current_state == EngineState::RUNNING ||
-                                   current_state == EngineState::IDLE)) {
-    // IDLE means checkCompletionAndNotify already restored the state
-    m_engineState.store(EngineState::IDLE, std::memory_order_release);
-    LOG_INFO_S << "ExecutionEngine: Execution completed successfully.";
-    m_currentContext.store(nullptr);
-    return Result<void>::ok();
-  } else if (current_state != EngineState::ERROR &&
-             current_state != EngineState::STOPPED) {
-    m_engineState.store(EngineState::ERROR, std::memory_order_release);
-    LOG_ERROR_S << "ExecutionEngine: Execution finished abnormally.";
-    m_currentContext.store(nullptr);
+    // Already in ERROR or STOPPED state
     return Result<void>::err(ErrorCode::ExecutionFailed,
-                             "Execution finished abnormally");
-  }
+                             "Execution ended in " +
+                                 stateToString(current_state) + " state");
+  }();
 
-  m_currentContext.store(nullptr);
-  // Already in ERROR or STOPPED state
-  return Result<void>::err(ErrorCode::ExecutionFailed,
-                           "Execution ended in " +
-                               stateToString(current_state) + " state");
+  // Wake waitForIdle() blockers observing the final-state store above
+  notifyCompletionWaiters();
+  return result;
 }
 
 void ExecutionEngine::Impl::resetInternalState() {

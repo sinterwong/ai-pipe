@@ -149,6 +149,15 @@ public:
   void stopStreaming(bool wait_for_drain);
   [[nodiscard]] bool isStreaming() const;
 
+  /**
+   * @brief Block until the engine leaves RUNNING (R4.4)
+   *
+   * Rides the completion CV: every final-state transition
+   * (completion, stop, error, streaming shutdown) notifies it, so no
+   * polling is involved. Returns immediately when not RUNNING.
+   */
+  void waitForIdle();
+
   Result<PushStatus> pushInput(const std::string &source_node,
                                const std::string &port_name, PortDataPtr data);
 

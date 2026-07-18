@@ -191,6 +191,15 @@ public:
       std::size_t max_depth = 0,
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 
+  /**
+   * @brief Block until the engine leaves the RUNNING state (R4.4)
+   *
+   * A condition-variable wait on the engine's completion signal - no
+   * polling. Covers batch completion, stop/cancel, errors, and
+   * streaming shutdown. Returns immediately when not RUNNING.
+   */
+  void waitForIdle();
+
   // -------------------------------------------------------------------------
   // Configuration
   // -------------------------------------------------------------------------

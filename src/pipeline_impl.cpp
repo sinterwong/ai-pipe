@@ -475,10 +475,9 @@ void Pipeline::Impl::wait() {
   auto current_state = m_state.load(std::memory_order_acquire);
   if (current_state == PipelineState::RUNNING ||
       current_state == PipelineState::STOPPING) {
-    // Wait for engine to complete
-    while (m_engine->getState() == EngineState::RUNNING) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    }
+    // Blocking wait on the engine's completion signal (R4.4): the
+    // former 10ms sleep poll is gone.
+    m_engine->waitForIdle();
   }
 }
 

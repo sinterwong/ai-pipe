@@ -1365,6 +1365,31 @@ TEST_F(PipelineAsyncTest, RunAsyncPropagatesNodeFailure) {
   EXPECT_TRUE(pipeline.hasError());
 }
 
+TEST_F(PipelineAsyncTest, WaitBlocksUntilAsyncCompletion) {
+  // R4.4: wait() is a blocking CV wait on the engine's completion
+  // signal (formerly a 10ms sleep poll). After it returns, the async
+  // submission must be fully finished.
+  auto source = std::make_shared<TestNode>("entry", 100ms);
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(source);
+  graph.addNode(sink);
+  graph.addEdge("entry", "output", "sink", "input");
+
+  auto pipeline =
+      Pipeline::create().withGraph(std::move(graph)).build().value();
+
+  PortDataMap inputs;
+  inputs["entry"] = makeDataPacket(1);
+
+  ASSERT_TRUE(pipeline.submit(inputs).isOk());
+  pipeline.wait();
+
+  EXPECT_NE(pipeline.engineState(), EngineState::RUNNING);
+  EXPECT_EQ(sink->processCount(), 1);
+}
+
 TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
   auto pipeline = buildWithResultFlag();
 

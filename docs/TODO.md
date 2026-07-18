@@ -287,9 +287,16 @@
   全量门禁绿。提交 `refactor: unify the aligned-gather skeleton into
   frame_alignment.hpp (R4.3)`。
 
-- [ ] **R4.4 wait() 轮询改阻塞**：`Pipeline::Impl::wait()` 是 10ms
+- [x] **R4.4 wait() 轮询改阻塞**：`Pipeline::Impl::wait()` 是 10ms
   sleep 轮询；引擎已有 completion CV，暴露一个阻塞等待接口
   （如 `ExecutionEngine::waitForIdle()`）供门面使用。
+  ——已完成：公共 `ExecutionEngine::waitForIdle()` 骑在 completion CV
+  上等 `state != RUNNING`；为保证唤醒完备，stopStreaming 尾部、
+  waitForCompletion 终态写入后、execute 分发失败路径补齐
+  notifyCompletionWaiters（waitForCompletion 顺带修正了尾段一直持有
+  completion 锁的问题）。门面 wait() 改调 waitForIdle。测试
+  `PipelineAsyncTest.WaitBlocksUntilAsyncCompletion`。提交 `refactor:
+  blocking waitForIdle() replaces the wait() sleep poll (R4.4)`。
 
 - [ ] **R4.5 批模式完成检查去堆分配**：`checkCompletionAndNotify` 每个
   任务完成都构造 `sink_counts` unordered_map（per-task 堆分配，微秒级
