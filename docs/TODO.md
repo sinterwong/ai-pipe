@@ -256,12 +256,19 @@
   测试为回归网。提交 `refactor: converge engine node lookup on a single
   index-keyed vector (R4.1)`。
 
-- [ ] **R4.2 策略接口摆脱 Graph\* 生命周期**：`ISchedulerStrategy`/
+- [x] **R4.2 策略接口摆脱 Graph\* 生命周期**：`ISchedulerStrategy`/
   `ISyncStrategy::initialize(Graph*)` 让策略持有裸指针
   （JoinAwareSyncStrategy 还长期存 `m_graph`），直接用引擎的用户要自己
   保证 Graph 活得比引擎久。CompiledGraph 已持有节点所有权：策略接口改
   以 `const CompiledGraph&`（或专门的拓扑快照视图）初始化，初始化后不
   再依赖可变 Graph。这是公共接口变更，趁无包袱做掉。
+  ——已完成：compiled_graph.hpp 转为公共头（ai_pipe/compiled_graph.hpp），
+  两个策略接口 initialize 改 `const CompiledGraph&`；
+  JoinAwareSyncStrategy 拓扑分析整体重写为按 NodeIndex 走
+  predecessors/successors/inDegree，删除长期持有的 `m_graph` 成员，
+  初始化后只留节点名映射；引擎以 `*m_compiledGraph` 初始化策略。
+  策略/同步测试迁移为 compile 后传快照。提交 `refactor!: strategies
+  initialize from the CompiledGraph snapshot (R4.2)`。
 
 - [ ] **R4.3 对齐 gather 骨架统一 + 拆出 alignment 组件**：
   `gatherAlignedInputs`/`gatherStreamAlignedInputs`/

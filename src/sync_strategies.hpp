@@ -36,7 +36,7 @@ namespace ai_pipe {
  */
 class NoSyncStrategy final : public ISyncStrategy {
 public:
-  void initialize(const Graph * /*graph*/) override {}
+  void initialize(const CompiledGraph & /*graph*/) override {}
   void reset() override {}
 
   void registerSyncGroup(const SyncGroupId & /*group_id*/,

@@ -1,3 +1,6 @@
+#include "ai_pipe/compiled_graph.hpp"
+#include "ai_pipe/graph.hpp"
+#include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
 #include "sync_strategies.hpp"
 #include <gtest/gtest.h>
@@ -6,6 +9,26 @@
 #include <vector>
 
 using namespace ai_pipe;
+
+namespace {
+
+class DummyNode : public ILogicNode {
+public:
+  explicit DummyNode(const std::string &name) : ILogicNode(name) {}
+  void process(const PortDataMap &, PortDataMap &,
+               std::shared_ptr<PipelineContext>) override {}
+};
+
+// R4.2: strategies initialize from a CompiledGraph snapshot
+CompiledGraph makeTrivialCompiledGraph() {
+  Graph graph;
+  graph.addNode(std::make_shared<DummyNode>("solo"));
+  auto compiled = CompiledGraph::compile(graph);
+  EXPECT_TRUE(compiled.isOk()) << compiled.errorMessage();
+  return std::move(compiled).value();
+}
+
+} // namespace
 
 // =============================================================================
 // NoSyncStrategy Tests
@@ -31,8 +54,9 @@ TEST_F(NoSyncStrategyTest, IsEnabledReturnsFalse) {
 }
 
 TEST_F(NoSyncStrategyTest, InitializeIsNoop) {
-  // Should not crash with nullptr
-  m_strategy.initialize(nullptr);
+  // Should not crash
+  auto compiled = makeTrivialCompiledGraph();
+  m_strategy.initialize(compiled);
 }
 
 TEST_F(NoSyncStrategyTest, ResetIsNoop) {
@@ -83,7 +107,8 @@ TEST(NoSyncStrategyIntegrationTest, SimulatePipelineExecution) {
   NoSyncStrategy strategy;
 
   // Setup
-  strategy.initialize(nullptr);
+  auto compiled = makeTrivialCompiledGraph();
+  strategy.initialize(compiled);
   strategy.registerSyncGroup("group1", {"branch_A", "branch_B"}, "join");
   strategy.mapNodeToGroup("node_A", "group1", "branch_A");
   strategy.mapNodeToGroup("node_B", "group1", "branch_B");
@@ -142,7 +167,8 @@ TEST(ISyncStrategyTest, NoSyncStrategyImplementsInterface) {
   std::unique_ptr<ISyncStrategy> strategy = std::make_unique<NoSyncStrategy>();
 
   // All interface methods should be callable
-  strategy->initialize(nullptr);
+  auto compiled = makeTrivialCompiledGraph();
+  strategy->initialize(compiled);
   strategy->reset();
   strategy->registerSyncGroup("group", {}, "");
   strategy->mapNodeToGroup("node", "group", "branch");

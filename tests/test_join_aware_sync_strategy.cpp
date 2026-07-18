@@ -37,6 +37,13 @@ protected:
   std::unique_ptr<JoinAwareSyncStrategy> m_strategy;
   Graph m_graph;
 
+  // R4.2: strategies initialize from the compiled snapshot
+  [[nodiscard]] CompiledGraph compiledGraph() {
+    auto compiled = CompiledGraph::compile(m_graph);
+    EXPECT_TRUE(compiled.isOk()) << compiled.errorMessage();
+    return std::move(compiled).value();
+  }
+
   void addNode(const std::string &name) {
     m_graph.addNode(std::make_shared<MockNode>(name));
   }
@@ -65,7 +72,8 @@ TEST_F(JoinAwareSyncStrategyTest, SimpleDiamondPattern) {
   addEdge("B", "D");
   addEdge("C", "D");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   auto b_mappings = m_strategy->getNodeMappings("B");
   auto c_mappings = m_strategy->getNodeMappings("C");
@@ -101,7 +109,8 @@ TEST_F(JoinAwareSyncStrategyTest, DivergentBranchesNoSync) {
   addEdge("B", "D");
   addEdge("C", "E");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   EXPECT_TRUE(m_strategy->getNodeMappings("B").empty());
   EXPECT_TRUE(m_strategy->getNodeMappings("C").empty());
@@ -132,7 +141,8 @@ TEST_F(JoinAwareSyncStrategyTest, DeepBranchSync) {
   addEdge("D", "F");
   addEdge("E", "F");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   auto b_map = m_strategy->getNodeMappings("B");
   auto d_map = m_strategy->getNodeMappings("D");
@@ -178,7 +188,8 @@ TEST_F(JoinAwareSyncStrategyTest, AsymmetricBranchLengths) {
   addEdge("E", "F");
   addEdge("C", "F");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   auto b_map = m_strategy->getNodeMappings("B");
   auto d_map = m_strategy->getNodeMappings("D");
@@ -208,7 +219,8 @@ TEST_F(JoinAwareSyncStrategyTest, LinearChainNoSync) {
   addEdge("B", "C");
   addEdge("C", "D");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   EXPECT_TRUE(m_strategy->getNodeMappings("A").empty());
   EXPECT_TRUE(m_strategy->getNodeMappings("B").empty());
@@ -246,7 +258,8 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   addEdge("E", "F");
   addEdge("F", "G");
 
-  m_strategy->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  m_strategy->initialize(compiled);
 
   // C and D should be in a sync group (inner fork-join: B -> C,D -> F)
   // B and E should be in a sync group (outer fork-join: A -> B,E -> F)
@@ -360,7 +373,8 @@ TEST_F(JoinAwareSyncStrategyTest, CloneThenInitializeMatchesOriginal) {
   EXPECT_EQ(clone->name(), m_strategy->name());
   EXPECT_TRUE(clone->isEnabled());
 
-  clone->initialize(&m_graph);
+  auto compiled = compiledGraph();
+  clone->initialize(compiled);
   EXPECT_TRUE(clone->tracksNode("B"));
   EXPECT_TRUE(clone->tracksNode("C"));
 
@@ -383,7 +397,7 @@ class MinimalSyncStrategy : public ISyncStrategy {
 public:
   explicit MinimalSyncStrategy(bool enabled) : m_enabled(enabled) {}
 
-  void initialize(const Graph *) override {}
+  void initialize(const CompiledGraph &) override {}
   void reset() override {}
   void registerSyncGroup(const SyncGroupId &, const std::vector<BranchId> &,
                          const std::string &) override {}

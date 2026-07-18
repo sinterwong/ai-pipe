@@ -21,8 +21,8 @@
 
 namespace ai_pipe {
 
-// Forward declaration
-class Graph;
+// Forward declaration; full definition in ai_pipe/compiled_graph.hpp
+class CompiledGraph;
 
 // =============================================================================
 // Sync Types
@@ -63,9 +63,13 @@ public:
   virtual ~ISyncStrategy() = default;
 
   /**
-   * @brief Initialize strategy with graph topology
+   * @brief Initialize strategy with the compiled topology snapshot
+   *
+   * R4.2: the CompiledGraph is an immutable indexed snapshot that owns
+   * the nodes, so strategies must not retain references to the mutable
+   * Graph (and need not - everything topological is available here).
    */
-  virtual void initialize(const Graph *graph) = 0;
+  virtual void initialize(const CompiledGraph &graph) = 0;
 
   /**
    * @brief Reset strategy state

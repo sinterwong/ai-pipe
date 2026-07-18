@@ -1,3 +1,5 @@
+#include "ai_pipe/compiled_graph.hpp"
+#include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "scheduler_strategies.hpp"
 #include <chrono>
@@ -474,8 +476,12 @@ TEST(SchedulerStrategyFactoryTest, CreateStreamStrategyWithConfig) {
 TEST(ISchedulerStrategyTest, InitializeAndResetAreNoOps) {
   BatchSchedulerStrategy strategy;
 
-  // These should not crash
-  strategy.initialize(nullptr);
+  // These should not crash (R4.2: initialize takes the compiled snapshot)
+  Graph graph;
+  graph.addNode(std::make_shared<MockNode>("solo"));
+  auto compiled = CompiledGraph::compile(graph);
+  ASSERT_TRUE(compiled.isOk()) << compiled.errorMessage();
+  strategy.initialize(compiled.value());
   strategy.reset();
 }
 

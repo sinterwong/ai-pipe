@@ -17,10 +17,10 @@
 #ifndef AI_PIPE_INTERNAL_EXECUTION_ENGINE_IMPL_HPP
 #define AI_PIPE_INTERNAL_EXECUTION_ENGINE_IMPL_HPP
 
+#include "ai_pipe/compiled_graph.hpp"
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/trace.hpp"
-#include "compiled_graph.hpp"
 #include "lock_free_queue.hpp"
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>

@@ -348,12 +348,13 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   m_threadPool = std::make_unique<WorkStealingThreadPool>(m_config.num_workers);
 
-  // Initialize strategies
+  // Initialize strategies from the compiled snapshot (R4.2): they must
+  // not retain any dependency on the caller's mutable Graph.
   if (m_schedulerStrategy) {
-    m_schedulerStrategy->initialize(graph);
+    m_schedulerStrategy->initialize(*m_compiledGraph);
   }
   if (m_syncStrategy) {
-    m_syncStrategy->initialize(graph);
+    m_syncStrategy->initialize(*m_compiledGraph);
   }
 
   // Initialize node states and queues

@@ -278,7 +278,8 @@ struct SchedulingContext {
 ```cpp
 class ISyncStrategy {
 public:
-  virtual void initialize(const Graph *graph) = 0;
+  // R4.2：以引擎持有的不可变拓扑快照初始化，策略不得保留 Graph 引用
+  virtual void initialize(const CompiledGraph &graph) = 0;
   virtual void reset() = 0;
 
   // 同步组注册

@@ -25,8 +25,8 @@
 
 namespace ai_pipe {
 
-// Forward declaration
-class Graph;
+// Forward declaration; full definition in ai_pipe/compiled_graph.hpp
+class CompiledGraph;
 
 // =============================================================================
 // Scheduling Types
@@ -198,9 +198,14 @@ public:
   [[nodiscard]] virtual std::string name() const = 0;
 
   /**
-   * @brief Initialize with graph (optional)
+   * @brief Initialize from the compiled topology snapshot (optional)
+   *
+   * R4.2: strategies initialize from the engine-owned CompiledGraph
+   * (an immutable indexed snapshot holding node ownership) instead of
+   * a raw Graph pointer, so no strategy depends on the caller keeping
+   * the mutable Graph alive after engine initialization.
    */
-  virtual void initialize(const Graph *graph) { (void)graph; }
+  virtual void initialize(const CompiledGraph &graph) { (void)graph; }
 
   /**
    * @brief Reset strategy state
