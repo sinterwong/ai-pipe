@@ -11,6 +11,7 @@
  */
 
 #include "execution_engine_impl.hpp"
+#include "frame_alignment.hpp"
 #include "join_aware_sync_strategy.hpp"
 #include "logger.hpp"
 #include "scheduler_strategies.hpp"
@@ -1497,14 +1498,18 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
     bool aligned_path = true;
     switch (m_config.alignment_policy) {
     case AlignmentPolicy::StreamFrameId:
-      gathered = gatherStreamAlignedInputs(state, inputs);
+      gathered = runAlignedGather(state, inputs,
+                                  frame_alignment::StreamFrameIdPolicy{});
       break;
     case AlignmentPolicy::Timestamp:
-      gathered = gatherTimestampAlignedInputs(state, inputs);
+      gathered = runAlignedGather(
+          state, inputs,
+          frame_alignment::TimestampPolicy{m_config.alignment_tolerance});
       break;
     case AlignmentPolicy::FrameId:
       if (m_syncStrategy && m_syncStrategy->isEnabled()) {
-        gathered = gatherAlignedInputs(state, inputs);
+        gathered =
+            runAlignedGather(state, inputs, frame_alignment::FrameIdPolicy{});
       } else {
         aligned_path = false;
       }
@@ -1560,79 +1565,25 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
   return true;
 }
 
-bool ExecutionEngine::Impl::gatherAlignedInputs(NodeState &state,
-                                                PortDataMap &inputs) {
-  const std::size_t port_count = state.input_ports.size();
-  std::vector<FrameId> head_ids(port_count, 0);
-
-  for (;;) {
-    // Phase A: peek every head (discarding pending coordinated drops)
-    // and find the newest frame id among them.
-    FrameId target = 0;
-    for (std::size_t i = 0; i < port_count; ++i) {
-      auto *queue = state.input_queues[i];
-      for (;;) {
-        auto head = queue ? queue->tryPeek() : std::nullopt;
-        if (!head.has_value()) {
-          return false; // Port not ready; caller reschedules
-        }
-        const FrameId frame =
-            head.value() ? head.value()->frameId() : FrameId{0};
-        if (state.sync_tracked &&
-            frame != frame_constants::k_invalid_frame_id &&
-            m_syncStrategy->shouldDrop(state.name, frame)) {
-          (void)queue->tryPop();
-          recordSyncDrop(state, state.input_ports[i], frame,
-                         "coordinated sync drop");
-          continue;
-        }
-        head_ids[i] = frame;
-        if (frame > target) {
-          target = frame;
-        }
-        break;
-      }
-    }
-
-    // Phase B: all heads aligned (or wildcard 0)? Pop and deliver.
-    bool aligned = true;
-    for (std::size_t i = 0; i < port_count; ++i) {
-      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
-          head_ids[i] != target) {
-        aligned = false;
-        break;
-      }
-    }
-
-    if (aligned) {
-      for (std::size_t i = 0; i < port_count; ++i) {
+template <typename Policy>
+bool ExecutionEngine::Impl::runAlignedGather(NodeState &state,
+                                             PortDataMap &inputs,
+                                             const Policy &policy) {
+  return frame_alignment::gatherAligned(
+      state.input_ports.size(), policy,
+      [&](std::size_t i) { return peekAlignmentHead(state, i); },
+      [&](std::size_t i) {
         auto data = state.input_queues[i]->tryPop();
         if (!data.has_value()) {
-          return false; // Should not happen under single-consumer contract
+          return false;
         }
         recordDequeue(data.value());
         inputs[state.input_ports[i]] = std::move(data.value());
-      }
-      return true;
-    }
-
-    // Phase C: discard lagging heads - their partner frames were lost
-    // on a sibling branch, so they can never be paired.
-    for (std::size_t i = 0; i < port_count; ++i) {
-      if (head_ids[i] != frame_constants::k_invalid_frame_id &&
-          head_ids[i] < target) {
-        (void)state.input_queues[i]->tryPop();
-        recordSyncDrop(state, state.input_ports[i], head_ids[i],
-                       "frame alignment drop");
-        if (state.sync_tracked) {
-          (void)m_syncStrategy->reportDrop(state.name, head_ids[i],
-                                           "frame alignment");
-        }
-      }
-    }
-    // Loop: re-peek with fresh heads (each pass discards >= 1 frame, so
-    // this terminates once queues stabilize or a port runs dry).
-  }
+        return true;
+      },
+      [&](std::size_t i, const PortDataPtr &head, const char *reason) {
+        dropStaleHead(state, i, head ? *head : PortData{}, reason);
+      });
 }
 
 std::optional<PortDataPtr>
@@ -1703,24 +1654,22 @@ bool ExecutionEngine::Impl::degradeJoinGather(NodeState &state,
     }
   }
 
+  // Pairing predicate delegated to the alignment policies (R4.3): this
+  // used to be the fourth hand-rolled copy of the per-policy rule.
   auto pairs_with_reference = [&](const PortData &head) {
     if (!reference) {
       return true; // All wildcards
     }
     switch (m_config.alignment_policy) {
     case AlignmentPolicy::StreamFrameId:
-      return !head.hasFrameId() || (head.stream_id == reference->stream_id &&
-                                    head.id == reference->id);
-    case AlignmentPolicy::Timestamp: {
-      const auto diff = head.timestamp >= reference->timestamp
-                            ? head.timestamp - reference->timestamp
-                            : reference->timestamp - head.timestamp;
-      return diff <= m_config.alignment_tolerance;
-    }
+      return frame_alignment::StreamFrameIdPolicy::pairsWith(head, *reference);
+    case AlignmentPolicy::Timestamp:
+      return frame_alignment::TimestampPolicy{m_config.alignment_tolerance}
+          .pairsWith(head, *reference);
     case AlignmentPolicy::FrameId:
       break;
     }
-    return !head.hasFrameId() || head.id == reference->id;
+    return frame_alignment::FrameIdPolicy::pairsWith(head, *reference);
   };
 
   m_statistics.total_join_timeouts.fetch_add(1, std::memory_order_relaxed);
@@ -1832,155 +1781,6 @@ void ExecutionEngine::Impl::joinTimeoutWatchdogLoop() {
                                          std::memory_order_relaxed);
       state->degrade_pending.store(true, std::memory_order_release);
       scheduleNodeExecution(*state);
-    }
-  }
-}
-
-bool ExecutionEngine::Impl::gatherStreamAlignedInputs(NodeState &state,
-                                                      PortDataMap &inputs) {
-  const std::size_t port_count = state.input_ports.size();
-  std::vector<PortDataPtr> heads(port_count);
-
-  for (;;) {
-    // Phase A: peek every head (discarding pending coordinated drops).
-    for (std::size_t i = 0; i < port_count; ++i) {
-      auto head = peekAlignmentHead(state, i);
-      if (!head.has_value()) {
-        return false; // Port not ready; caller reschedules
-      }
-      heads[i] = std::move(head.value());
-    }
-
-    // Phase B: aligned when every non-wildcard head carries the same
-    // (stream, frame). Wildcard = unassigned id, matches anything.
-    bool have_key = false;
-    StreamId key_stream = frame_constants::k_default_stream_id;
-    FrameId key_frame = frame_constants::k_invalid_frame_id;
-    bool aligned = true;
-    for (std::size_t i = 0; i < port_count; ++i) {
-      const auto &head = heads[i];
-      if (!head || !head->hasFrameId()) {
-        continue;
-      }
-      if (!have_key) {
-        have_key = true;
-        key_stream = head->stream_id;
-        key_frame = head->id;
-      } else if (head->stream_id != key_stream || head->id != key_frame) {
-        aligned = false;
-        break;
-      }
-    }
-
-    if (aligned) {
-      for (std::size_t i = 0; i < port_count; ++i) {
-        auto data = state.input_queues[i]->tryPop();
-        if (!data.has_value()) {
-          return false; // Should not happen under single-consumer contract
-        }
-        recordDequeue(data.value());
-        inputs[state.input_ports[i]] = std::move(data.value());
-      }
-      return true;
-    }
-
-    // Phase C: discard heads that can never be paired. A FIFO port's
-    // entry timestamps never decrease, so a head strictly older than
-    // the newest head has lost its partner on the newest port. When no
-    // head is strictly older (identical timestamps), fall back to
-    // dropping the smallest (stream, frame) heads - deterministic and
-    // guarantees progress, since misaligned heads cannot all be equal.
-    Timestamp newest_ts{};
-    for (std::size_t i = 0; i < port_count; ++i) {
-      if (heads[i] && heads[i]->hasFrameId() &&
-          heads[i]->timestamp > newest_ts) {
-        newest_ts = heads[i]->timestamp;
-      }
-    }
-
-    bool dropped_by_time = false;
-    for (std::size_t i = 0; i < port_count; ++i) {
-      if (heads[i] && heads[i]->hasFrameId() &&
-          heads[i]->timestamp < newest_ts) {
-        dropStaleHead(state, i, *heads[i], "stream alignment drop");
-        dropped_by_time = true;
-      }
-    }
-
-    if (!dropped_by_time) {
-      std::size_t min_index = port_count;
-      for (std::size_t i = 0; i < port_count; ++i) {
-        if (!heads[i] || !heads[i]->hasFrameId()) {
-          continue;
-        }
-        if (min_index == port_count ||
-            std::make_pair(heads[i]->stream_id, heads[i]->id) <
-                std::make_pair(heads[min_index]->stream_id,
-                               heads[min_index]->id)) {
-          min_index = i;
-        }
-      }
-      for (std::size_t i = 0; i < port_count; ++i) {
-        if (heads[i] && heads[i]->hasFrameId() &&
-            heads[i]->stream_id == heads[min_index]->stream_id &&
-            heads[i]->id == heads[min_index]->id) {
-          dropStaleHead(state, i, *heads[i], "stream alignment drop");
-        }
-      }
-    }
-    // Loop: each pass discards >= 1 frame, so this terminates once
-    // queues stabilize or a port runs dry.
-  }
-}
-
-bool ExecutionEngine::Impl::gatherTimestampAlignedInputs(NodeState &state,
-                                                         PortDataMap &inputs) {
-  const std::size_t port_count = state.input_ports.size();
-  std::vector<PortDataPtr> heads(port_count);
-
-  for (;;) {
-    for (std::size_t i = 0; i < port_count; ++i) {
-      auto head = peekAlignmentHead(state, i);
-      if (!head.has_value()) {
-        return false; // Port not ready; caller reschedules
-      }
-      heads[i] = std::move(head.value());
-    }
-
-    // Null packets cannot be timestamp-matched; treat them as wildcards
-    // the same way unassigned frame ids behave under id alignment.
-    Timestamp min_ts = Timestamp::max();
-    Timestamp max_ts = Timestamp::min();
-    for (const auto &head : heads) {
-      if (!head) {
-        continue;
-      }
-      min_ts = std::min(min_ts, head->timestamp);
-      max_ts = std::max(max_ts, head->timestamp);
-    }
-
-    if (min_ts > max_ts || max_ts - min_ts <= m_config.alignment_tolerance) {
-      for (std::size_t i = 0; i < port_count; ++i) {
-        auto data = state.input_queues[i]->tryPop();
-        if (!data.has_value()) {
-          return false; // Should not happen under single-consumer contract
-        }
-        recordDequeue(data.value());
-        inputs[state.input_ports[i]] = std::move(data.value());
-      }
-      return true;
-    }
-
-    // Per-port timestamps are non-decreasing (stamped in arrival
-    // order), so a head lagging the newest head by more than the
-    // tolerance can never pair with anything the newest port will
-    // produce. At least one head satisfies this (min_ts), so every
-    // pass makes progress.
-    for (std::size_t i = 0; i < port_count; ++i) {
-      if (heads[i] &&
-          max_ts - heads[i]->timestamp > m_config.alignment_tolerance) {
-        dropStaleHead(state, i, *heads[i], "timestamp alignment drop");
-      }
     }
   }
 }

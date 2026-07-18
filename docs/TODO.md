@@ -270,7 +270,7 @@
   策略/同步测试迁移为 compile 后传快照。提交 `refactor!: strategies
   initialize from the CompiledGraph snapshot (R4.2)`。
 
-- [ ] **R4.3 对齐 gather 骨架统一 + 拆出 alignment 组件**：
+- [x] **R4.3 对齐 gather 骨架统一 + 拆出 alignment 组件**：
   `gatherAlignedInputs`/`gatherStreamAlignedInputs`/
   `gatherTimestampAlignedInputs` 共享同一循环骨架（peek 全部 → 判对齐
   → 弹配对 / 丢滞留 → 循环），`degradeJoinGather` 里还有第四份配对谓词。
@@ -278,6 +278,14 @@
   execution_engine_impl.cpp 拆出 internal alignment 组件（如
   `src/frame_alignment.hpp`），现有 alignment/join-timeout 测试全绿为
   验收线。
+  ——已完成：新内部组件 src/frame_alignment.hpp——统一骨架
+  `gatherAligned(policy, peek, pop, drop)` + 三个策略结构
+  （aligned/forEachStale/pairsWith，滞留选择带进度保证注释）；引擎三个
+  gather 收敛为单个 `runAlignedGather<Policy>` 绑定环境，
+  `degradeJoinGather` 的第四份配对谓词改走 `Policy::pairsWith`。
+  验收：alignment/join-timeout/sync/stream 过滤集 194/194 全绿，
+  全量门禁绿。提交 `refactor: unify the aligned-gather skeleton into
+  frame_alignment.hpp (R4.3)`。
 
 - [ ] **R4.4 wait() 轮询改阻塞**：`Pipeline::Impl::wait()` 是 10ms
   sleep 轮询；引擎已有 completion CV，暴露一个阻塞等待接口

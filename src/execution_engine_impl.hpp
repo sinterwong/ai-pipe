@@ -218,41 +218,18 @@ private:
   bool gatherNodeInputs(NodeState &state, PortDataMap &inputs);
 
   /**
-   * @brief Gather inputs for a multi-input node with frame alignment
+   * @brief Aligned gather for multi-input nodes (R4.3)
    *
-   * Peeks every port head, discards frames that lag behind the newest
-   * head (they can never be paired - their partner was dropped on a
-   * sibling branch), and pops only when all heads carry the same frame
-   * id. Unassigned ids (0) act as wildcards. Returns false when any
-   * port has no poppable data yet (transient; caller reschedules).
+   * Binds the engine environment (coordinated-drop-consuming peek,
+   * pop-and-deliver, stale-drop accounting) to the unified skeleton in
+   * frame_alignment.hpp. The per-policy pairing/discard rules live in
+   * the policy structs there (FrameIdPolicy / StreamFrameIdPolicy /
+   * TimestampPolicy). Returns false when any port has no poppable data
+   * yet (transient; caller reschedules).
    */
-  bool gatherAlignedInputs(NodeState &state, PortDataMap &inputs);
-
-  /**
-   * @brief (stream, frame) aligned gather for AlignmentPolicy::StreamFrameId
-   *
-   * Heads pair only when every port head carries the same
-   * (stream_id, frame_id). When heads disagree, the head(s) that can
-   * never be paired are discarded: any head strictly older (by entry
-   * timestamp) than the newest head - a FIFO port never rewinds in
-   * time, so its partner can no longer arrive. If no head is strictly
-   * older (identical timestamps), the smallest (stream, frame) heads
-   * are dropped as a deterministic tie-break. Unassigned ids (0) act
-   * as wildcards, matching the FrameId policy.
-   */
-  bool gatherStreamAlignedInputs(NodeState &state, PortDataMap &inputs);
-
-  /**
-   * @brief Timestamp-tolerance gather for AlignmentPolicy::Timestamp
-   *
-   * Heads pair when (max_ts - min_ts) <= alignment_tolerance across
-   * all port heads. Otherwise every head with
-   * ts < max_ts - tolerance is discarded: per-port timestamps are
-   * non-decreasing (stamped at ingress in arrival order), so such a
-   * head can never fall within tolerance of the newest port's future
-   * frames. Frame ids are ignored by this policy.
-   */
-  bool gatherTimestampAlignedInputs(NodeState &state, PortDataMap &inputs);
+  template <typename Policy>
+  bool runAlignedGather(NodeState &state, PortDataMap &inputs,
+                        const Policy &policy);
 
   /**
    * @brief Peek a port head, consuming pending coordinated sync drops
