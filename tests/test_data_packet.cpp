@@ -2,8 +2,13 @@
  * @file test_data_packet.cpp
  * @author Sinter Wong (sintercver@gmail.com)
  * @brief Tests for DataPacket flat storage and TypedParam
- * @version 0.1
+ * @version 0.2
  * @date 2026-07-04
+ *
+ * v0.2 (R2.2): the exception-throwing accessors (getParam,
+ * getOptionalParam, TypedParam::get/tryGet) were removed with the
+ * exception dual-track; param<T>() / TypedParam::read are the only
+ * read paths and every test asserts Result semantics.
  *
  * @copyright Copyright (c) 2026
  */
@@ -24,9 +29,9 @@ TEST(DataPacketTest, SetAndGetRoundTrip) {
   packet.setParam("name", std::string("frame"));
   packet.setParam("ratio", 0.5);
 
-  EXPECT_EQ(packet.getParam<int>("count"), 42);
-  EXPECT_EQ(packet.getParam<std::string>("name"), "frame");
-  EXPECT_DOUBLE_EQ(packet.getParam<double>("ratio"), 0.5);
+  EXPECT_EQ(packet.param<int>("count").value(), 42);
+  EXPECT_EQ(packet.param<std::string>("name").value(), "frame");
+  EXPECT_DOUBLE_EQ(packet.param<double>("ratio").value(), 0.5);
   EXPECT_EQ(packet.paramCount(), 3u);
 }
 
@@ -35,7 +40,7 @@ TEST(DataPacketTest, SetOverwritesExistingKey) {
   packet.setParam("value", 1);
   packet.setParam("value", 2);
 
-  EXPECT_EQ(packet.getParam<int>("value"), 2);
+  EXPECT_EQ(packet.param<int>("value").value(), 2);
   EXPECT_EQ(packet.paramCount(), 1u);
 }
 
@@ -44,30 +49,33 @@ TEST(DataPacketTest, OverwriteMayChangeType) {
   packet.setParam("value", 1);
   packet.setParam("value", std::string("now a string"));
 
-  EXPECT_EQ(packet.getParam<std::string>("value"), "now a string");
+  EXPECT_EQ(packet.param<std::string>("value").value(), "now a string");
   EXPECT_FALSE(packet.has<int>("value"));
 }
 
-TEST(DataPacketTest, MissingKeyThrows) {
+TEST(DataPacketTest, MissingKeyIsError) {
   DataPacket packet;
-  EXPECT_THROW((void)packet.getParam<int>("absent"), std::runtime_error);
+  auto missing = packet.param<int>("absent");
+  ASSERT_FALSE(missing.isOk());
+  EXPECT_EQ(missing.errorCode(), ErrorCode::InvalidArgument);
 }
 
-TEST(DataPacketTest, TypeMismatchThrows) {
+TEST(DataPacketTest, TypeMismatchIsError) {
   DataPacket packet;
   packet.setParam("count", 42);
-  EXPECT_THROW((void)packet.getParam<std::string>("count"), std::runtime_error);
+  auto mismatch = packet.param<std::string>("count");
+  ASSERT_FALSE(mismatch.isOk());
+  EXPECT_EQ(mismatch.errorCode(), ErrorCode::InvalidArgument);
 }
 
-TEST(DataPacketTest, OptionalParamSemantics) {
+TEST(DataPacketTest, ValueOrProvidesFallback) {
   DataPacket packet;
   packet.setParam("present", 7);
 
-  EXPECT_EQ(packet.getOptionalParam<int>("present").value_or(-1), 7);
-  EXPECT_FALSE(packet.getOptionalParam<int>("absent").has_value());
-  // Present but wrong type still throws (explicit contract)
-  EXPECT_THROW((void)packet.getOptionalParam<std::string>("present"),
-               std::runtime_error);
+  EXPECT_EQ(packet.param<int>("present").valueOr(-1), 7);
+  EXPECT_EQ(packet.param<int>("absent").valueOr(-1), -1);
+  // Present but wrong type is an error, so the fallback applies
+  EXPECT_EQ(packet.param<double>("present").valueOr(-2.0), -2.0);
 }
 
 TEST(DataPacketTest, ResultStyleParamAccess) {
@@ -115,7 +123,7 @@ TEST(DataPacketTest, SharedPtrPayload) {
   auto payload = std::make_shared<int>(99);
   packet.setParam("buffer", payload);
 
-  auto out = packet.getParam<std::shared_ptr<int>>("buffer");
+  auto out = packet.param<std::shared_ptr<int>>("buffer").value();
   EXPECT_EQ(*out, 99);
   EXPECT_EQ(payload.use_count(), 3); // local + packet copy + out
 }
@@ -141,17 +149,17 @@ TEST(TypedParamTest, TypedAccess) {
   k_count.set(packet, 5);
   k_label.set(packet, "hello");
 
-  EXPECT_EQ(k_count.get(packet), 5);
-  EXPECT_EQ(k_label.get(packet), "hello");
+  EXPECT_EQ(k_count.read(packet).value(), 5);
+  EXPECT_EQ(k_label.read(packet).value(), "hello");
   EXPECT_TRUE(k_count.in(packet));
   EXPECT_EQ(k_count.key(), "count");
 }
 
-TEST(TypedParamTest, TryGetOnMissing) {
+TEST(TypedParamTest, ReadOnMissingIsError) {
   const TypedParam<int> k_missing{"missing"};
   DataPacket packet;
 
-  EXPECT_FALSE(k_missing.tryGet(packet).has_value());
+  EXPECT_FALSE(k_missing.read(packet).isOk());
   EXPECT_FALSE(k_missing.in(packet));
 }
 
@@ -181,11 +189,12 @@ TEST(OwnershipModelTest, MutableCopyIsIndependent) {
   ASSERT_NE(copy, nullptr);
   EXPECT_EQ(copy->id, 42u);
   EXPECT_EQ(copy->stream_id, 3u);
-  EXPECT_EQ(copy->getParam<int>("value"), 10);
+  EXPECT_EQ(copy->param<int>("value").value(), 10);
 
   copy->setParam("value", 99);
-  EXPECT_EQ(copy->getParam<int>("value"), 99);
-  EXPECT_EQ(received->getParam<int>("value"), 10) << "original must be intact";
+  EXPECT_EQ(copy->param<int>("value").value(), 99);
+  EXPECT_EQ(received->param<int>("value").value(), 10)
+      << "original must be intact";
 }
 
 TEST(OwnershipModelTest, MutableCopyOfNullIsNull) {

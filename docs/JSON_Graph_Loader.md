@@ -113,7 +113,7 @@ Config values map to typed `PortData` params, matching what
 Nulls, nested objects/arrays, mixed-type arrays, and empty arrays are
 rejected — node configs are flat parameter bags by design. Note the
 integer/double distinction is exact: a node reading
-`getParam<double>("x")` will not find `"x": 1` (an integer); write
+`param<double>("x")` will not find `"x": 1` (an integer); write
 `1.0` in the document or read `int64_t` in the node.
 
 ### `edges` (optional array)

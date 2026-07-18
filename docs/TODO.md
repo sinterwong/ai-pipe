@@ -122,12 +122,20 @@
   `common_utils` 归零。提交 `refactor: move DataPacket to the ai_pipe
   root namespace (R2.1)`。
 
-- [ ] **R2.2 移除异常双轨，统一 Result**：删除
+- [x] **R2.2 移除异常双轨，统一 Result**：删除
   `DataPacket::getParam`/`getOptionalParam` 的抛异常路径与
   `CancellationToken::throwIfCancelled`，`param<T>()`/`TypedParam::read`
   成为唯一取参通路（`TypedParam::get/tryGet` 随之改签名或删除）。
   节点侧 `process()` 抛异常仍由引擎捕获转 Error——那是防御边界，不属于
   双轨。全库及测试、docs/Node_Development_Guide.md 同步迁移。
+  ——已移除：getParam/getOptionalParam/TypedParam::get/tryGet/
+  throwIfCancelled 全部删除；`ScopedNodeExecution::checkCancellation`
+  改为查询式 `cancellationRequested()`。测试迁移为 Result 断言
+  （valueOr 默认值语义补测试），loader/registry/benchmark 调用点、
+  README、Framework_Design §3.2、Node_Development_Guide §2、
+  Migration_Guide 同步。process() 抛异常仍是引擎防御边界（文档明确）。
+  提交 `refactor!: remove the exception dual-track, Result is the only
+  error channel (R2.2)`。
 
 - [ ] **R2.3 日志通路统一**：公共 API 有 `ILoggerAdapter`
   （context.hpp），但引擎/门面的 `LOG_*_S` 全走私有 logger 单例；

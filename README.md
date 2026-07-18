@@ -111,9 +111,9 @@ public:
     void process(const ai_pipe::PortDataMap& inputs,
                  ai_pipe::PortDataMap& outputs,
                  std::shared_ptr<ai_pipe::PipelineContext> context) override {
-        // Read input
+        // Read input (Result-based access: no exceptions)
         auto input = inputs.at("image");
-        auto raw = input->getParam<std::vector<uint8_t>>("raw_data");
+        auto raw = input->param<std::vector<uint8_t>>("raw_data").value();
 
         // Process...
         auto result = std::make_shared<ai_pipe::PortData>();
@@ -274,7 +274,7 @@ if (result.errorCode() == ai_pipe::ErrorCode::ExecutionTimeout) {
 - **Service Registry**: Type-indexed service locator via `setService<Interface>()` / `getService<Interface>()`.
 - **Configuration Store**: Thread-safe key-value configuration with `setConfig<T>()` / `getConfig<T>()`.
 - **Execution Metrics**: Automatic per-node timing, success rate tracking, and aggregated `ExecutionMetrics`.
-- **Cooperative Cancellation**: `CancellationToken` with `throwIfCancelled()` support for clean shutdown.
+- **Cooperative Cancellation**: `CancellationToken` polled at engine scheduling points; long-running nodes check `isCancellationRequested()` for clean shutdown.
 - **Logger Adapter**: Bridge to external logging systems (glog, spdlog) via `ILoggerAdapter` interface.
 - **Progress Reporting**: Per-node `ProgressReporter` with callback support.
 

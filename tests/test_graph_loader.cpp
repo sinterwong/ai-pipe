@@ -137,16 +137,16 @@ TEST(GraphLoaderTest, ConfigValuesArriveTyped) {
       result.value().getNode("cfg"));
   ASSERT_NE(node, nullptr);
   const PortData &config = node->config();
-  EXPECT_DOUBLE_EQ(config.getParam<double>("threshold"), 0.75);
-  EXPECT_EQ(config.getParam<std::int64_t>("iterations"), 3);
-  EXPECT_EQ(config.getParam<std::string>("label"), "person");
-  EXPECT_TRUE(config.getParam<bool>("enabled"));
+  EXPECT_DOUBLE_EQ(config.param<double>("threshold").value(), 0.75);
+  EXPECT_EQ(config.param<std::int64_t>("iterations").value(), 3);
+  EXPECT_EQ(config.param<std::string>("label").value(), "person");
+  EXPECT_TRUE(config.param<bool>("enabled").value());
   // Mixed int/float numeric array promotes to double
-  EXPECT_EQ(config.getParam<std::vector<double>>("scales"),
+  EXPECT_EQ(config.param<std::vector<double>>("scales").value(),
             (std::vector<double>{0.5, 1.0, 2.0}));
-  EXPECT_EQ(config.getParam<std::vector<std::int64_t>>("steps"),
+  EXPECT_EQ(config.param<std::vector<std::int64_t>>("steps").value(),
             (std::vector<std::int64_t>{1, 2, 3}));
-  EXPECT_EQ(config.getParam<std::vector<std::string>>("classes"),
+  EXPECT_EQ(config.param<std::vector<std::string>>("classes").value(),
             (std::vector<std::string>{"car", "bus"}));
 }
 

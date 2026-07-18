@@ -120,11 +120,9 @@ public:
 
 ```cpp
 struct DataPacket {
-  DataPacketId id;                          // uint64_t 唯一标识
-  std::map<std::string, std::any> params;   // 类型擦除的键值参数表
+  DataPacketId id;                          // uint64_t 唯一标识（兼作 FrameId）
 
-  template <typename T> T getParam(const std::string &key) const;
-  template <typename T> std::optional<T> getOptionalParam(const std::string &key) const;
+  template <typename T> Result<T> param(const std::string &key) const;
   template <typename T> void setParam(const std::string &key, T value);
   bool has(const std::string &key) const;
 };
@@ -132,9 +130,11 @@ struct DataPacket {
 
 **设计要点**：
 
-- 使用 `std::any` 实现类型擦除，单一容器承载任意类型参数
+- 使用 `std::any` 实现类型擦除，扁平 vector 存储承载任意类型参数
 - 通过 `shared_ptr<DataPacket>` 传递，零拷贝在节点间共享数据
-- `getParam<T>()` 在类型不匹配时抛出详细异常，便于调试
+- `param<T>()` 是唯一取参通路（R2.2）：缺键/类型不匹配返回
+  `InvalidArgument` 错误值，不抛异常；带默认值用 `.valueOr(v)`；
+  声明式访问用 `TypedParam<T>::read`
 
 ### 3.3 图结构 — `Graph`
 
@@ -799,14 +799,15 @@ public:
     // 使用 RAII 辅助管理指标收集
     ScopedNodeExecution scope(ctx, getName());
 
-    // 检查取消
-    scope.checkCancellation();
+    // 检查取消（协作式，R2.2 起为查询而非抛异常）
+    if (scope.cancellationRequested()) return;
 
     // 获取共享资源
     auto model = ctx->getResource<MyModel>("model");
 
-    // 读取输入
-    auto frame = inputs.at("input")->getParam<cv::Mat>("frame");
+    // 读取输入（唯一取参通路：Result）
+    auto frame = inputs.at("input")->param<cv::Mat>("frame");
+    if (!frame) return;
 
     // 推理
     auto result = model->infer(frame);
