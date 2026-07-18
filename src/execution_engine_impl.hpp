@@ -27,6 +27,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <thread>
 #include <vector>
 
@@ -85,6 +86,10 @@ public:
     // apply the configured degradation instead of waiting.
     std::atomic<std::chrono::steady_clock::rep> join_wait_since_ticks{0};
     std::atomic<bool> degrade_pending{false};
+
+    // True while a deferred reschedule entry for this node is armed in
+    // the engine defer timer (R3.2); deduplicates timer entries.
+    std::atomic<bool> defer_pending{false};
 
     [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
       return std::chrono::steady_clock::time_point{
@@ -272,6 +277,21 @@ private:
   void joinTimeoutWatchdogLoop();
 
   /**
+   * @brief Engine-level deferred reschedule (R3.2)
+   *
+   * Generalizes the watchdog idea into a timer honoring the
+   * scheduler's DeferToNextCycle decisions: a deferred node (e.g.
+   * min_interval rate limiting) arms a timer entry, and a lazily
+   * started timer thread re-runs tryScheduleNode() when the delay
+   * expires. Without this, a rate-limited tail frame was stranded
+   * until the next data event happened to re-evaluate the node -
+   * possibly forever.
+   */
+  void scheduleDeferredRetry(NodeState &state, std::chrono::milliseconds delay);
+  void stopDeferTimer();
+  void deferTimerLoop();
+
+  /**
    * @brief Emit a trace event if a sink is installed (F7)
    *
    * Frame identity is taken from `packet` when non-null. Costs one
@@ -453,6 +473,21 @@ private:
   std::mutex m_watchdogMutex;
   std::condition_variable m_watchdogCV;
   bool m_watchdogStop{false};
+
+  // Deferred reschedule timer (see scheduleDeferredRetry); the thread
+  // starts lazily on the first deferred decision.
+  struct DeferEntry {
+    std::chrono::steady_clock::time_point due;
+    CompiledGraph::NodeIndex index{CompiledGraph::k_invalid_index};
+    bool operator>(const DeferEntry &other) const { return due > other.due; }
+  };
+  std::thread m_deferTimer;
+  std::mutex m_deferMutex;
+  std::condition_variable m_deferCV;
+  bool m_deferStop{false};
+  bool m_deferRunning{false};
+  std::priority_queue<DeferEntry, std::vector<DeferEntry>, std::greater<>>
+      m_deferQueue;
 
   // Nodes that completed setup(), in setup order; drives teardown.
   std::vector<NodePtr> m_setUpNodes;

@@ -182,13 +182,20 @@
   `DirectTokenCancelStopsScheduling`。提交 `feat: wire CancellationToken
   into the engine stop protocol (R3.1)`。
 
-- [ ] **R3.2 DeferToNextCycle 的 delay 是死数据**：`tryScheduleNode`
+- [x] **R3.2 DeferToNextCycle 的 delay 是死数据**：`tryScheduleNode`
   只响应 `ScheduleNow`，没有定时器消费 defer——`min_execution_interval`
   限流触发后节点只能等下一个数据事件重新评估，尾帧可能无限滞留。
   裁决方向：泛化 join 看门狗为引擎级定时唤醒（timer 驱动的延迟
   reschedule），使 Defer(delay) 语义成真；或从
   `ScheduleDecision`/`ScheduleResult` 删除 Defer 与 min_interval 配置。
   补测试：限流下尾帧最终被执行。
+  ——已按裁决接线：引擎级 defer 定时器（懒启动线程 + 最小堆 +
+  per-node defer_pending 去重），`tryScheduleNode` 消费
+  DeferToNextCycle 并按 retry_delay 定时重评估；顺带修复
+  StreamSchedulerStrategy 的限流检查位置（原先排在就绪返回之后，输入
+  就绪时永远够不到——min_interval 实际从未限过流）。测试
+  `PipelineStreamingTest.RateLimitedTailFrameEventuallyExecutes`。
+  提交 `feat: engine defer timer makes DeferToNextCycle real (R3.2)`。
 
 - [ ] **R3.3 HybridSchedulerStrategy 名不副实**：注释宣称 "per-node
   configuration of scheduling behavior"，实现无一行 per-node 配置，

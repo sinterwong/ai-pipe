@@ -248,7 +248,7 @@ public:
 | `ScheduleNow` | 立即调度执行 |
 | `WaitForInputs` | 等待更多输入就绪 |
 | `SkipExecution` | 跳过本轮执行 |
-| `DeferToNextCycle` | 延迟到下一调度周期（可附带重试延迟） |
+| `DeferToNextCycle` | 延迟 `retry_delay` 后由引擎 defer 定时器重新评估（R3.2 起为真实语义：限流的尾帧无需等待新数据事件） |
 
 **调度上下文** (`SchedulingContext`)：
 

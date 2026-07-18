@@ -198,6 +198,8 @@ ExecutionEngine::Impl::~Impl() {
   // it must stop before either is torn down.
   stopJoinTimeoutWatchdog();
 
+  stopDeferTimer();
+
   // Always shut down the thread pool first, regardless of engine state.
   // Worker threads may still be executing tasks that access members
   // (m_nodeStates, m_activeTasks, m_stopFlag, callbacks, etc.) via the
@@ -322,6 +324,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   // Re-initialization with a new graph: release the previous nodes.
   stopJoinTimeoutWatchdog();
+  stopDeferTimer();
   teardownNodes();
 
   // Compile the graph up front: rejects empty graphs and cycles, and
@@ -526,6 +529,7 @@ void ExecutionEngine::Impl::reset() {
   LOG_INFO_S << "ExecutionEngine: Resetting.";
 
   stopExecutionSync();
+  stopDeferTimer();
 
   std::lock_guard<std::mutex> lock(m_engineMutex);
 
@@ -1212,6 +1216,92 @@ void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
 
   if (result.decision == ScheduleDecision::ScheduleNow) {
     scheduleNodeExecution(state);
+  } else if (result.decision == ScheduleDecision::DeferToNextCycle) {
+    scheduleDeferredRetry(
+        state, result.retry_delay.value_or(std::chrono::milliseconds{1}));
+  }
+}
+
+void ExecutionEngine::Impl::scheduleDeferredRetry(
+    NodeState &state, std::chrono::milliseconds delay) {
+  if (m_stopFlag.load(std::memory_order_acquire)) {
+    return;
+  }
+  // One armed retry per node: extra defers while one is pending would
+  // only duplicate the wakeup (the retry re-evaluates the strategy and
+  // re-defers if still rate limited).
+  if (state.defer_pending.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+
+  const auto due =
+      std::chrono::steady_clock::now() +
+      std::chrono::milliseconds(std::max<std::int64_t>(1, delay.count()));
+  {
+    std::lock_guard<std::mutex> lock(m_deferMutex);
+    m_deferQueue.push(DeferEntry{due, state.index});
+    if (!m_deferRunning) {
+      m_deferStop = false;
+      m_deferRunning = true;
+      m_deferTimer = std::thread([this] { deferTimerLoop(); });
+    }
+  }
+  m_deferCV.notify_all();
+}
+
+void ExecutionEngine::Impl::deferTimerLoop() {
+  std::unique_lock<std::mutex> lock(m_deferMutex);
+  for (;;) {
+    if (m_deferStop) {
+      return;
+    }
+    if (m_deferQueue.empty()) {
+      m_deferCV.wait(lock,
+                     [this] { return m_deferStop || !m_deferQueue.empty(); });
+      continue;
+    }
+    const auto due = m_deferQueue.top().due;
+    if (std::chrono::steady_clock::now() < due) {
+      // Plain timed wait: spurious wakes and newly armed earlier
+      // entries simply re-enter the loop and re-pick the nearest due.
+      m_deferCV.wait_until(lock, due);
+      continue;
+    }
+    const auto index = m_deferQueue.top().index;
+    m_deferQueue.pop();
+    lock.unlock();
+    if (NodeState *state = m_statesByIndex[index]) {
+      state->defer_pending.store(false, std::memory_order_release);
+      tryScheduleNode(index);
+    }
+    lock.lock();
+  }
+}
+
+void ExecutionEngine::Impl::stopDeferTimer() {
+  std::thread worker;
+  {
+    std::lock_guard<std::mutex> lock(m_deferMutex);
+    if (!m_deferRunning) {
+      return;
+    }
+    m_deferStop = true;
+    while (!m_deferQueue.empty()) {
+      m_deferQueue.pop();
+    }
+    worker = std::move(m_deferTimer);
+    m_deferRunning = false;
+  }
+  m_deferCV.notify_all();
+  if (worker.joinable()) {
+    worker.join();
+  }
+  // Re-arm capability for a later execution: clear the per-node flags
+  // whose timer entries were just discarded.
+  for (NodeState *state : m_statesByIndex) {
+    if (state) {
+      state->defer_pending.store(false, std::memory_order_relaxed);
+    }
   }
 }
 

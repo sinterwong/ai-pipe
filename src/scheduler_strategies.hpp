@@ -131,6 +131,25 @@ public:
 
   [[nodiscard]] ScheduleResult
   shouldSchedule(const SchedulingContext &context) const override {
+    // Rate limiting gates every data-ready path below (R3.2): a node
+    // that executed too recently defers instead of scheduling, and the
+    // engine's defer timer re-evaluates it once the interval elapses.
+    // (This check previously sat below the ready-input returns, where
+    // it was unreachable exactly when inputs were ready - min_interval
+    // never limited anything.)
+    if (m_config.min_interval.count() > 0 && context.execution_count > 0 &&
+        hasReadyWork(context)) {
+      const auto elapsed =
+          std::chrono::steady_clock::now() - context.last_execution_time;
+      if (elapsed < m_config.min_interval) {
+        const auto remaining =
+            m_config.min_interval -
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
+        return ScheduleResult::defer(
+            std::max(remaining, std::chrono::milliseconds{1}), "rate limited");
+      }
+    }
+
     // Source nodes with initial input can be scheduled
     if (context.is_source_node && context.has_initial_input) {
       return ScheduleResult::scheduleNow("source node with input ready");
@@ -144,18 +163,6 @@ public:
     } else {
       if (context.allInputsReady()) {
         return ScheduleResult::scheduleNow("all inputs ready");
-      }
-    }
-
-    // Rate limiting check
-    if (m_config.min_interval.count() > 0 && context.execution_count > 0) {
-      auto elapsed =
-          std::chrono::steady_clock::now() - context.last_execution_time;
-      if (elapsed < m_config.min_interval) {
-        auto remaining =
-            m_config.min_interval -
-            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
-        return ScheduleResult::defer(remaining, "rate limited");
       }
     }
 
@@ -195,6 +202,18 @@ public:
   [[nodiscard]] const StreamSchedulerConfig &config() const { return m_config; }
 
 private:
+  /** @brief Would the ready-input paths schedule this node right now? */
+  [[nodiscard]] bool hasReadyWork(const SchedulingContext &context) const {
+    if (context.is_source_node && context.has_initial_input) {
+      return true;
+    }
+    if (m_config.allow_partial_inputs) {
+      return context.hasReadyInput() &&
+             context.inputReadinessRatio() >= m_config.min_input_ratio;
+    }
+    return context.allInputsReady();
+  }
+
   StreamSchedulerConfig m_config;
 };
 

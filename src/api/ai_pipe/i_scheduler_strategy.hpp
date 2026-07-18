@@ -36,10 +36,16 @@ class Graph;
  * @brief Result of a scheduling decision
  */
 enum class ScheduleDecision {
-  ScheduleNow,     ///< Node should be scheduled immediately
-  WaitForInputs,   ///< Wait for more inputs before scheduling
-  SkipExecution,   ///< Skip this execution cycle
-  DeferToNextCycle ///< Defer to the next scheduling cycle
+  ScheduleNow,   ///< Node should be scheduled immediately
+  WaitForInputs, ///< Wait for more inputs before scheduling
+  SkipExecution, ///< Skip this execution cycle
+  /**
+   * Defer scheduling by ScheduleResult::retry_delay (R3.2): the engine
+   * arms its defer timer and re-runs the scheduling decision when the
+   * delay expires, so a deferred node is re-evaluated even if no
+   * further data event arrives.
+   */
+  DeferToNextCycle
 };
 
 /**

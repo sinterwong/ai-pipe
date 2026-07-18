@@ -1092,6 +1092,40 @@ TEST_F(PipelineStreamingTest, NodeExceptionIsPerFrameNotPipelineFatal) {
   EXPECT_EQ(error_count.load(), 1);
 }
 
+TEST_F(PipelineStreamingTest, RateLimitedTailFrameEventuallyExecutes) {
+  auto sink = std::make_shared<SinkNode>("sink");
+
+  Graph graph;
+  graph.addNode(sink);
+
+  StreamSchedulerConfig sched_config;
+  sched_config.auto_reschedule = true;
+  sched_config.min_interval = 100ms;
+
+  auto pipeline =
+      Pipeline::create()
+          .withGraph(std::move(graph))
+          .withMode(ExecutionMode::STREAM)
+          .withWorkers(1)
+          .withSchedulerStrategy(
+              std::make_unique<StreamSchedulerStrategy>(sched_config))
+          .build()
+          .value();
+
+  ASSERT_TRUE(pipeline.start().isOk());
+  ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(1)).isOk());
+  ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(2)).isOk());
+
+  // Regression (R3.2): the first frame executes immediately; the second
+  // lands inside the min_interval window and is deferred. With no
+  // further data events, only the engine's defer timer can reschedule
+  // it - previously DeferToNextCycle had no consumer and the tail frame
+  // was stranded forever.
+  EXPECT_TRUE(waitFor([&] { return sink->processCount() >= 2; }, 3000ms));
+
+  pipeline.stop(false);
+}
+
 TEST_F(PipelineStreamingTest, StartFailsInBatchMode) {
   auto source = std::make_shared<SourceNode>("source");
   auto sink = std::make_shared<SinkNode>("sink");
