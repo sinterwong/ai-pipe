@@ -26,7 +26,7 @@ The framework provides two primary execution modes — **Batch** for single-pass
 - **DAG-Based Execution**: Model complex processing pipelines as directed acyclic graphs with automatic topological scheduling and parallel execution of independent branches.
 - **Dual Execution Modes**: Batch mode for one-shot processing and Streaming mode for continuous data flow with configurable backpressure and frame dropping.
 - **Strategy Pattern Architecture**: Pluggable `ISchedulerStrategy` and `ISyncStrategy` interfaces for custom scheduling and multi-stream synchronization.
-- **Lock-Free Data Structures**: High-performance MPMC queue based on Vyukov's algorithm with cache-line aligned slots and integrated drop policies, targeting <100ns per operation.
+- **Lock-Free Core Queue Paths**: High-performance MPMC queue based on Vyukov's algorithm with cache-line aligned slots and integrated drop policies, targeting <100ns per operation. The core push/pop paths are lock-free; `tryPeek` and producer-side evictions (DropHead/KeepLatest) are serialized by a small head mutex to keep peek-vs-evict race-free.
 - **Work-Stealing Thread Pool**: Per-worker local queues with LIFO execution for cache locality and FIFO stealing for fairness.
 - **Unified Error Handling**: `Result<T>` monadic type replaces mixed bool/exception patterns with zero-overhead success path and rich error context (code + message + node name).
 - **Zero Third-Party Dependencies**: Built entirely on C++20 standard library (requires compiler support for `<atomic>`, `<shared_mutex>`, `<any>`, `<optional>`, etc.).

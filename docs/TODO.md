@@ -151,10 +151,14 @@
   `PublicSink*`。提交 `feat: public control surface for framework
   logging (R2.3)`。
 
-- [ ] **R2.4 "Lock-Free" 宣称精确化**：`tryPeek` 与生产者侧驱逐共用
+- [x] **R2.4 "Lock-Free" 宣称精确化**：`tryPeek` 与生产者侧驱逐共用
   `m_headMutex`（lock_free_queue.hpp），多输入 join 的对齐 gather 每次
   peek 都拿锁。实现注释已诚实，README 与 Framework_Design 的措辞对齐
   事实（"核心 push/pop 无锁；peek/驱逐路径互斥保护"）。
+  ——已对齐：README 特性条目改为 "Lock-Free Core Queue Paths" 并注明
+  peek/驱逐互斥；Framework_Design §7.1 增补精确边界段（含 join gather
+  每次 peek 拿锁的代价说明）。纯文档改动。提交 `docs: state the exact
+  lock-free boundary of the MPMC queue (R2.4)`。
 
 ## R3. 装饰性 API 清算（接线或删除——公共接口不留摆设）
 

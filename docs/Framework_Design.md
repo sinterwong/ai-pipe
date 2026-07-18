@@ -539,6 +539,12 @@ auto stream_pipe = makeStreamPipeline(std::move(graph), 4, 16);
 - **宽松内存序**：非同步路径使用 `relaxed`，仅在同步点使用 `acquire/release`
 - **集成丢弃策略**：`DropHead`（CAS 推进 head）、`DropTail`（拒绝新入）、`KeepLatest`
 
+**"Lock-Free" 的精确边界（R2.4）**：核心 push/pop 路径无锁（Vyukov CAS
+槽位所有权）；`tryPeek` 与生产者侧驱逐（DropHead/KeepLatest 的
+`evictOne`）共用一把 `m_headMutex`——非占有式 peek 读的是驱逐正在搬出的
+同一个 head 槽位，必须互斥。因此多输入 join 的对齐 gather 每次 peek 都
+拿一次锁；消费者 tryPop 保持无锁（pop-vs-pop 由 CAS 序号保证安全）。
+
 **KeepLatest 并发语义**（F3，完整契约见 `pushKeepLatest` 注释）：push 恒成功，
 背压完全表现为驱逐（逐条计数并回调）。"至多保留 N 帧"对单生产者严格成立；
 P 个并发生产者下 evict-then-push 非原子，竞争窗口内 size 可短暂达到
