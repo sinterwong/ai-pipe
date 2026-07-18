@@ -230,11 +230,16 @@
   提交 `fix: wire enable_sync_coordination; sane partial-inputs default
   (R3.4)`。
 
-- [ ] **R3.5 EOS 常量语义定案（依赖 R6.1 设计）**：
+- [x] **R3.5 EOS 常量语义定案（依赖 R6.1 设计）**：
   `k_end_of_stream_frame_id` 目前只在 sync_coordinator 里当哨兵最大值
   用，框架没有 EOS 协议。若 R6.1 落地流内 EOS，则该常量获得真实语义；
   若裁决不做，则从 frame_constants 中移除对外暴露，避免暗示不存在的
   能力。本条目跟踪最终清理动作。
+  ——按裁决本轮只做现状标注（EOS 设计未启动，不删常量）：
+  frame_metadata.hpp 在常量与 isEndOfStream()/createEndOfStream() 处
+  明确写出「无 EOS 协议、目前仅作 watermark 哨兵、真实语义待 R6.1
+  或届时移除」。最终清理动作转由 R6.1 落地时收尾。提交 `docs: mark
+  the EOS constant as protocol-less pending R6.1 (R3.5)`。
 
 ## R4. 架构冗余清算
 

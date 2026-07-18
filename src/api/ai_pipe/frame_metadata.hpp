@@ -58,7 +58,20 @@ namespace frame_constants {
 /// Invalid frame ID marker
 constexpr FrameId k_invalid_frame_id = 0;
 
-/// End-of-stream frame ID marker
+/**
+ * End-of-stream frame ID marker.
+ *
+ * Status note (R3.5): the framework has NO in-stream EOS protocol yet -
+ * no node or engine path emits, propagates, or reacts to this id as an
+ * end-of-stream signal. Today it only serves as the sentinel maximum in
+ * the sync coordinator's watermark computation, and
+ * IFrameMetadata::isEndOfStream()/createEndOfStream() merely tag a
+ * value that nothing downstream consumes. Real semantics (source-side
+ * EOS declaration, join/EOS merge rules, flush propagation, sink
+ * completion notification) are the subject of the R6.1 design; this
+ * constant either gains those semantics there or is removed from the
+ * public surface when R6.1 is decided against.
+ */
 constexpr FrameId k_end_of_stream_frame_id =
     std::numeric_limits<FrameId>::max();
 
@@ -143,6 +156,9 @@ public:
 
   /**
    * @brief Check if this is an end-of-stream marker
+   *
+   * Note: no engine path consumes this today - see the R3.5 status
+   * note at frame_constants::k_end_of_stream_frame_id.
    */
   [[nodiscard]] virtual bool isEndOfStream() const {
     return frameId() == frame_constants::k_end_of_stream_frame_id;
@@ -353,6 +369,9 @@ public:
 
   /**
    * @brief Create end-of-stream marker
+   *
+   * Note: no engine path consumes this today - see the R3.5 status
+   * note at frame_constants::k_end_of_stream_frame_id.
    */
   static BasicFrameMetadata
   createEndOfStream(StreamId stream_id = frame_constants::k_default_stream_id) {
