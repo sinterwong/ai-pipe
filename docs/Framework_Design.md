@@ -131,7 +131,7 @@ struct DataPacket {
 
 - 使用 `std::any` 实现类型擦除，扁平 vector 存储承载任意类型参数
 - 通过 `shared_ptr<DataPacket>` 传递，零拷贝在节点间共享数据
-- `param<T>()` 是唯一取参通路（R2.2）：缺键/类型不匹配返回
+- `param<T>()` 是唯一取参通路：缺键/类型不匹配返回
   `InvalidArgument` 错误值，不抛异常；带默认值用 `.valueOr(v)`；
   声明式访问用 `TypedParam<T>::read`
 
@@ -226,8 +226,8 @@ public:
   virtual bool onNodeComplete(const std::shared_ptr<ILogicNode> &node,
                               bool success, const PortDataMap &outputs) = 0;
 
-  // 检查整体执行是否完成（R4.5：快照为复用 vector，批模式每个任务
-  // 完成都会调用，避免每次构造 unordered_map 的堆分配）
+  // 检查整体执行是否完成。快照为复用 vector：批模式每个任务完成
+  // 都会调用，避免每次构造 unordered_map 的堆分配
   virtual CompletionStatus checkCompletion(
       std::size_t active_node_count,
       std::size_t pending_node_count,
@@ -248,7 +248,7 @@ public:
 | `ScheduleNow` | 立即调度执行 |
 | `WaitForInputs` | 等待更多输入就绪 |
 | `SkipExecution` | 跳过本轮执行 |
-| `DeferToNextCycle` | 延迟 `retry_delay` 后由引擎 defer 定时器重新评估（R3.2 起为真实语义：限流的尾帧无需等待新数据事件） |
+| `DeferToNextCycle` | 延迟 `retry_delay` 后由引擎 defer 定时器重新评估（限流的尾帧无需等待新数据事件） |
 
 **调度上下文** (`SchedulingContext`)：
 
@@ -279,7 +279,7 @@ struct SchedulingContext {
 ```cpp
 class ISyncStrategy {
 public:
-  // R4.2：以引擎持有的不可变拓扑快照初始化，策略不得保留 Graph 引用
+  // 以引擎持有的不可变拓扑快照初始化，策略不得保留 Graph 引用
   virtual void initialize(const CompiledGraph &graph) = 0;
   virtual void reset() = 0;
 
@@ -509,7 +509,7 @@ public:
 
 可通过继承 `IPipelineObserver` 或使用内置的 `CallbackObserver` 链式注册回调。
 
-**错误分级契约（R1.2）**：节点异常按执行模式分级。批模式下节点异常是
+**错误分级契约**：节点异常按执行模式分级。批模式下节点异常是
 pipeline-fatal——执行中止，`PipelineState` 进入 `ERROR`，需 `reset()`
 恢复。流式模式下节点异常是 per-frame 事件——出错帧被消费丢弃，节点回到
 服务，管线保持 `RUNNING` 并继续接受 `pushInput`；错误通过
@@ -538,7 +538,7 @@ auto stream_pipe = makeStreamPipeline(std::move(graph), 4, 16);
 - **宽松内存序**：非同步路径使用 `relaxed`，仅在同步点使用 `acquire/release`
 - **集成丢弃策略**：`DropHead`（CAS 推进 head）、`DropTail`（拒绝新入）、`KeepLatest`
 
-**"Lock-Free" 的精确边界（R2.4）**：核心 push/pop 路径无锁（Vyukov CAS
+**"Lock-Free" 的精确边界**：核心 push/pop 路径无锁（Vyukov CAS
 槽位所有权）；`tryPeek` 与生产者侧驱逐（DropHead/KeepLatest 的
 `evictOne`）共用一把 `m_headMutex`——非占有式 peek 读的是驱逐正在搬出的
 同一个 head 槽位，必须互斥。因此多输入 join 的对齐 gather 每次 peek 都
@@ -749,7 +749,7 @@ public:
 ctx->setLoggerAdapter(std::make_shared<SpdlogAdapter>());
 ```
 
-### 10.2 框架自身日志的公共控制面（R2.3）
+### 10.2 框架自身日志的公共控制面
 
 引擎/门面内部走进程级私有 logger（`LOG_*_S`，logger.hpp 已私有化）。
 链接方通过公共头 `ai_pipe/engine_log.hpp` 控制这条通路，无需触碰私有头：
@@ -824,7 +824,7 @@ public:
     // 使用 RAII 辅助管理指标收集
     ScopedNodeExecution scope(ctx, getName());
 
-    // 检查取消（协作式，R2.2 起为查询而非抛异常）
+    // 检查取消（协作式：查询后自行返回，不抛异常）
     if (scope.cancellationRequested()) return;
 
     // 获取共享资源

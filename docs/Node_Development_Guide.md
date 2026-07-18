@@ -48,7 +48,7 @@ public:
 - 确需"修改输入"：`auto copy = ai_pipe::mutableCopy(packet);`（显式 COW）。
 - **不要**缓存收到的包并在 `process()` 返回后异步修改。
 
-### 参数访问（R2.2 起单通路：Result）
+### 参数访问（单通路：Result）
 
 ```cpp
 // 唯一取参通路：全程无异常
@@ -64,9 +64,9 @@ static inline const ai_pipe::TypedParam<cv::Mat>
 auto mat = k_image.read(*packet);   // Result<cv::Mat>
 ```
 
-历史上的抛异常层（`getParam`/`getOptionalParam`/`TypedParam::get/tryGet`）
-已随异常双轨一并移除。节点 `process()` 内部**抛异常仍然合法**——那是
-引擎的防御边界（转为 `NodeException`），不是取参 API 的错误通道。
+早期的抛异常接口（`getParam`/`getOptionalParam`/`TypedParam::get/tryGet`）
+已移除。节点 `process()` 内部**抛异常仍然合法**——那是引擎的防御边界
+（转为 `NodeException`），不是取参 API 的错误通道。
 
 ### 帧标识
 
@@ -123,7 +123,7 @@ auto node = ai_pipe::NodeRegistry::instance()
 ## 6. 上下文（PipelineContext）
 
 - 资源/服务：`ctx->setResource` / `ctx->getService<T>()`（线程安全）。
-- 取消（R3.1 起为真实语义）：`Pipeline::cancel()` 与 `run(timeout)` 超时
+- 取消：`Pipeline::cancel()` 与 `run(timeout)` 超时
   都会触发 context 的 `CancellationToken`；引擎在调度点将其与 stopFlag
   等效对待——已取消后不再调度新节点。**长任务节点应在内部循环里协作式
   检查** `ctx->isCancellationRequested()`（或

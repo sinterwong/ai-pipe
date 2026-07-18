@@ -51,7 +51,7 @@ context.ready_input_ports.empty()    →  !context.hasReadyInput()
 ### 4. `DataPacket` 存储私有化
 
 直接访问 `.params` 成员的代码改用访问器：`param<T>()`（返回
-`Result<T>`，R2.2 起唯一取参通路）/`setParam/has/paramCount/paramKeys`。
+`Result<T>`，唯一取参通路）/`setParam/has/paramCount/paramKeys`。
 
 ---
 
