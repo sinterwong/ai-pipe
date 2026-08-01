@@ -788,25 +788,67 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 
 ### 11.2 公共头文件 vs 内部头文件
 
-| 用户可包含头文件 |
-|---|
-| `ai_pipe.hpp`（统一入口）|
-| `version.hpp` |
-| `enum.hpp` |
-| `edge.hpp` |
-| `graph.hpp` |
-| `data_packet.hpp` 
-| `data_types.hpp` 
-| `i_logic_node.hpp` 
-| `i_scheduler_strategy.hpp` 
-| `i_sync_strategy.hpp`|
-| `execution_engine.hpp`|
-| `execution_types.hpp` |
-| `frame_metadata.hpp` |
-| `context.hpp` |
-| `pipeline.hpp`|
+源码树中公共头文件位于 `src/api/ai_pipe/`，安装后为
+`<prefix>/include/ai_pipe/`；`src/` 下其余头文件为内部实现，不安装。
+
+| 用户可包含头文件 | 说明 |
+|---|---|
+| `ai_pipe.hpp` | 统一入口，包含下列全部 |
+| `version.hpp` | 版本宏 |
+| `enum.hpp` | 基础枚举 |
+| `error.hpp` | `Result<T>` / `Error` |
+| `edge.hpp` | 边定义 |
+| `graph.hpp` | 图构建 |
+| `compiled_graph.hpp` | 编译后拓扑快照（策略 `initialize()` 入参）|
+| `graph_loader.hpp` | JSON 构图（`AI_PIPE_WITH_JSON`）|
+| `node_registry.hpp` | 节点类型注册 |
+| `plugin.hpp` | 动态节点插件 |
+| `data_packet.hpp` | 数据包 |
+| `data_types.hpp` | 端口数据类型 |
+| `i_logic_node.hpp` | 节点接口 |
+| `i_scheduler_strategy.hpp` | 调度策略接口 |
+| `i_sync_strategy.hpp` | 同步策略接口 |
+| `strategies.hpp` | 内置策略的配置结构体与工厂 |
+| `execution_engine.hpp` | 引擎 |
+| `execution_types.hpp` | `ExecutionMode`、`PipelineOptions` 相关类型 |
+| `frame_metadata.hpp` | 帧元数据 |
+| `trace.hpp` | 逐帧 span 事件 |
+| `engine_log.hpp` | 日志钩子 |
+| `context.hpp` | 管线上下文 |
+| `pipeline.hpp` | 高层 API |
 
 用户只需 `#include "ai_pipe/ai_pipe.hpp"` 即可获得完整公共 API。
+
+### 11.3 内置策略的定制
+
+`ISchedulerStrategy` / `ISyncStrategy` 是公共接口，但具体实现类
+（`BatchSchedulerStrategy`、`StreamSchedulerStrategy`、`NoSyncStrategy`、
+`JoinAwareSyncStrategy`）保持私有——它们的布局因此不进入 1.0 的 ABI
+承诺。消费者通过 `ai_pipe/strategies.hpp` 的工厂取得接口指针：
+
+```cpp
+#include "ai_pipe/strategies.hpp"
+
+StreamSchedulerConfig cfg;
+cfg.min_interval = std::chrono::milliseconds{33};  // 约 30fps 限速
+cfg.allow_partial_inputs = true;
+cfg.min_input_ratio = 0.5;
+
+auto pipeline = Pipeline::create()
+                    .withGraph(std::move(graph))
+                    .withOptions(PipelineOptions::stream())
+                    .withSchedulerStrategy(createStreamScheduler(cfg))
+                    .withSyncStrategy(createJoinAwareSyncStrategy())
+                    .build();
+```
+
+可用工厂：`createBatchScheduler()`、`createStreamScheduler(config)`、
+`createSchedulerStrategy(mode, config)`、`createNoSyncStrategy()`、
+`createJoinAwareSyncStrategy()`。不传策略时引擎按 `PipelineOptions`
+自行安装等价默认值，行为与默认构造的 `StreamSchedulerConfig` 一致。
+
+需要内置策略之外的行为，仍是直接实现 `ISchedulerStrategy` /
+`ISyncStrategy`——工厂只负责配置与组合已有实现。
 
 ---
 

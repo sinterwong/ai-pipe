@@ -34,6 +34,9 @@
 #include "ai_pipe/i_scheduler_strategy.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
 
+// Built-in Strategy Configuration and Factories
+#include "ai_pipe/strategies.hpp"
+
 // Execution Engine
 #include "ai_pipe/execution_engine.hpp"
 
