@@ -452,7 +452,7 @@ ai-pipe/
 ├── cmake/                # CMake modules
 ├── docs/                 # Documentation
 ├── scripts/              # Build & CI scripts
-├── assets/               # Project assets
+├── assets/               # Project assets (logo; not installed)
 └── README.md
 ```
 
