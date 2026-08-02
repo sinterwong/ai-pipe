@@ -74,6 +74,9 @@ enum class ErrorCode : std::uint16_t {
   NodeNotFound = 304,
   PortNotFound = 305,
   NoDownstreamConnection = 306,
+  /// Port already carries an end-of-stream latch (R6.1): pushing data
+  /// after EOS would reorder it past the marker, so it is rejected.
+  EndOfStreamSignaled = 307,
 
   // --- Node-level ---
   NodeException = 400,
@@ -134,6 +137,8 @@ inline const char *errorCodeToString(ErrorCode code) {
     return "PortNotFound";
   case ErrorCode::NoDownstreamConnection:
     return "NoDownstreamConnection";
+  case ErrorCode::EndOfStreamSignaled:
+    return "EndOfStreamSignaled";
   case ErrorCode::NodeException:
     return "NodeException";
   case ErrorCode::NodeUnknownException:

@@ -119,6 +119,10 @@ void ExecutionEngine::setDropCallback(
   m_impl->setDropCallback(std::move(callback));
 }
 
+void ExecutionEngine::setEndOfStreamCallback(std::function<void()> callback) {
+  m_impl->setEndOfStreamCallback(std::move(callback));
+}
+
 // -------------------------------------------------------------------------
 // Streaming Interface Forwarding
 // -------------------------------------------------------------------------
@@ -143,6 +147,25 @@ Result<PushStatus> ExecutionEngine::pushInput(const std::string &source_node,
 Result<PushStatus> ExecutionEngine::pushInput(const std::string &source_node,
                                               PortDataPtr data) {
   return m_impl->pushInput(source_node, std::move(data));
+}
+
+Result<void> ExecutionEngine::signalEndOfStream(const std::string &source_node,
+                                                const std::string &port_name) {
+  return m_impl->signalEndOfStream(source_node, port_name);
+}
+
+Result<void>
+ExecutionEngine::signalEndOfStream(const std::string &source_node) {
+  return m_impl->signalEndOfStream(source_node, "");
+}
+
+Result<void>
+ExecutionEngine::waitForEndOfStream(std::chrono::milliseconds timeout) {
+  return m_impl->waitForEndOfStream(timeout);
+}
+
+bool ExecutionEngine::isEndOfStreamReached() const {
+  return m_impl->isEndOfStreamReached();
 }
 
 // -------------------------------------------------------------------------
@@ -551,6 +574,10 @@ void ExecutionEngine::Impl::reset() {
     state->exec_state.store(NodeExecutionState::WAITING,
                             std::memory_order_relaxed);
     state->execution_count.store(0, std::memory_order_relaxed);
+    // EOS is terminal within a run; reset() is what begins a new one, so
+    // the latches must go or every port would still read as closed.
+    state->eos_mask.store(0, std::memory_order_relaxed);
+    state->eos_propagated.store(false, std::memory_order_relaxed);
 
     for (auto &[port_name, queue] : state->lock_free_queues) {
       if (queue) {
@@ -573,6 +600,8 @@ void ExecutionEngine::Impl::reset() {
   m_activeTasks.store(0, std::memory_order_relaxed);
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_streamingMode.store(false, std::memory_order_relaxed);
+  m_sinksAtEos.store(0, std::memory_order_relaxed);
+  m_endOfStreamReached.store(false, std::memory_order_relaxed);
   m_engineState.store(EngineState::IDLE, std::memory_order_relaxed);
   m_statistics.reset();
 
@@ -617,6 +646,31 @@ void ExecutionEngine::Impl::setDropCallback(
         callback) {
   std::lock_guard<std::mutex> lock(m_callbackMutex);
   m_dropCallback = std::move(callback);
+}
+
+void ExecutionEngine::Impl::setEndOfStreamCallback(
+    std::function<void()> callback) {
+  std::lock_guard<std::mutex> lock(m_callbackMutex);
+  m_endOfStreamCallback = std::move(callback);
+}
+
+void ExecutionEngine::Impl::invokeEndOfStreamCallback() {
+  std::function<void()> callback;
+  {
+    std::lock_guard<std::mutex> lock(m_callbackMutex);
+    callback = m_endOfStreamCallback;
+  }
+  if (!callback) {
+    return;
+  }
+  try {
+    callback();
+  } catch (const std::exception &e) {
+    LOG_ERROR_S << "ExecutionEngine: EndOfStream callback threw: " << e.what();
+  } catch (...) {
+    LOG_ERROR_S
+        << "ExecutionEngine: EndOfStream callback threw unknown exception";
+  }
 }
 
 void ExecutionEngine::Impl::invokeResultCallback(const PortDataMap &results) {
@@ -800,6 +854,18 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   }
 
   if (isInputPort(node, actual_port)) {
+    // Data after EOS would sit behind a marker that already declared the
+    // port finished (R6.1). Reject rather than silently reorder it.
+    for (std::size_t i = 0; i < state->input_ports.size(); ++i) {
+      if (state->input_ports[i] == actual_port) {
+        if (portEosLatched(*state, i)) {
+          return Result<PushStatus>::err(
+              ErrorCode::EndOfStreamSignaled,
+              "Port is at end of stream: " + actual_port, source_node);
+        }
+        break;
+      }
+    }
     stampIncomingFrame(data);
     if (!pushToQueue(*state, actual_port, std::move(data))) {
       return Result<PushStatus>::err(
@@ -1042,6 +1108,15 @@ void ExecutionEngine::Impl::initializeNodeStates() {
     state->index = i;
     m_statesByIndex[i] = std::move(state);
   }
+
+  // Fixed for the graph's lifetime; recordSinkEndOfStream() compares
+  // against it to decide when EOS has reached the whole pipeline.
+  m_sinkCount = 0;
+  for (CompiledGraph::NodeIndex i = 0; i < node_count; ++i) {
+    if (m_compiledGraph->isSink(i)) {
+      ++m_sinkCount;
+    }
+  }
 }
 
 void ExecutionEngine::Impl::initializeQueues() {
@@ -1205,13 +1280,28 @@ void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
     return;
   }
 
+  // Every input port drained (R6.1): no scheduling decision can produce
+  // work here, and with expected_input_count at 0 the strategy would
+  // happily schedule an execution whose gather can only fail - a spin.
+  // EOS handling owns the node from here.
+  if (allInputPortsDrained(state)) {
+    checkNodeEndOfStream(state, m_currentContext.load());
+    return;
+  }
+
   // No per-node lock: concurrent attempts may both evaluate the strategy,
   // but only one will win the WAITING->READY CAS in scheduleNodeExecution.
   SchedulingContext context;
   context.node = state.node;
-  context.expected_input_count =
-      static_cast<std::uint32_t>(state.input_ports.size());
+  // A drained port (R6.1) is no longer an expected input: counting it
+  // would leave allInputsReady() permanently false and the node would
+  // never be scheduled again, stranding the data on its live ports.
+  context.expected_input_count = 0;
   for (std::size_t i = 0; i < state.input_queues.size(); ++i) {
+    if (portDrained(state, i)) {
+      continue;
+    }
+    context.expected_input_count++;
     if (state.input_queues[i] && !state.input_queues[i]->empty()) {
       context.ready_input_count++;
       if (i < 64) {
@@ -1405,11 +1495,16 @@ void ExecutionEngine::Impl::executeNodeTask(
                   << " inputs transiently unavailable, rescheduling.";
       state.exec_state.store(NodeExecutionState::WAITING,
                              std::memory_order_release);
+      // The gather can also come back empty because every input port
+      // drained (R6.1). Give EOS the first look: rescheduling instead
+      // would just re-run a gather that can never succeed again.
       // Reschedule BEFORE decrementing: scheduleNodeExecution() increments
       // m_activeTasks, so this ordering prevents the counter from
       // transiently dipping to zero while data is still queued, which
       // would wake execute(wait_for_completion=true) waiters too early.
-      tryScheduleNode(index);
+      if (!checkNodeEndOfStream(state, context)) {
+        tryScheduleNode(index);
+      }
       m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
       checkCompletionAndNotify();
       return;
@@ -1486,6 +1581,12 @@ void ExecutionEngine::Impl::executeNodeTask(
     handleNodeFailure(state, process_result.error());
   }
 
+  // This execution may have drained the last packet behind an EOS latch
+  // that was set while the node was busy. checkNodeEndOfStream() refuses
+  // to touch a READY/EXECUTING node, so this is the retry point that
+  // guarantees EOS is never missed. It is a no-op unless EOS is due.
+  checkNodeEndOfStream(state, context);
+
   m_activeTasks.fetch_sub(1, std::memory_order_acq_rel);
   LOG_TRACE_S << "ExecutionEngine: Node " << state.name
               << " task finished. Active tasks: "
@@ -1555,7 +1656,17 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
     }
   }
 
+  // A node with no input ports gathers an empty set successfully - that
+  // is how input-less sources run. Only a node that *has* ports and has
+  // seen them all drain (R6.1) has nothing left to deliver.
+  bool any_open_port = state.input_ports.empty();
   for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
+    // A drained port (R6.1) contributes nothing and must not block the
+    // gather; the node runs on whatever its still-open ports deliver.
+    if (portDrained(state, i)) {
+      continue;
+    }
+    any_open_port = true;
     auto *queue = state.input_queues[i];
     for (;;) {
       auto data = queue ? queue->tryPop() : std::nullopt;
@@ -1578,7 +1689,9 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
     }
   }
 
-  return true;
+  // Every port drained: there is nothing to deliver, and the EOS path
+  // (not the scheduler) owns the node from here.
+  return any_open_port;
 }
 
 template <typename Policy>
@@ -1599,7 +1712,10 @@ bool ExecutionEngine::Impl::runAlignedGather(NodeState &state,
       },
       [&](std::size_t i, const PortDataPtr &head, const char *reason) {
         dropStaleHead(state, i, head ? *head : PortData{}, reason);
-      });
+      },
+      // A drained port (R6.1) leaves the pairing set: its partner frames
+      // can never arrive, so waiting on it would deadlock the join.
+      [&](std::size_t i) { return portDrained(state, i); });
 }
 
 std::optional<PortDataPtr>
@@ -1963,6 +2079,278 @@ void ExecutionEngine::Impl::handleNodeFailure(NodeState &state,
   stopExecutionAsync();
 }
 
+// -------------------------------------------------------------------------
+// Impl: End of stream (R6.1) - see docs/design/eos_flush.md
+// -------------------------------------------------------------------------
+
+bool ExecutionEngine::Impl::portEosLatched(const NodeState &state,
+                                           std::size_t port_index) {
+  if (port_index >= k_max_eos_ports) {
+    return false;
+  }
+  return (state.eos_mask.load(std::memory_order_acquire) &
+          (std::uint64_t{1} << port_index)) != 0;
+}
+
+bool ExecutionEngine::Impl::portDrained(const NodeState &state,
+                                        std::size_t port_index) {
+  if (!portEosLatched(state, port_index)) {
+    return false;
+  }
+  // Ordering: the latch is loaded with acquire above, so a producer that
+  // enqueued before latching is visible here. Queued data therefore
+  // always wins over the latch, which is what makes the marker behave
+  // as if it were in band.
+  const auto *queue = port_index < state.input_queues.size()
+                          ? state.input_queues[port_index]
+                          : nullptr;
+  return queue == nullptr || queue->empty();
+}
+
+bool ExecutionEngine::Impl::allInputPortsDrained(const NodeState &state) {
+  if (state.input_ports.empty()) {
+    return false; // Nothing to close; see the header contract.
+  }
+  for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
+    if (!portDrained(state, i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ExecutionEngine::Impl::hasPartiallyDrainedInputs(const NodeState &state) {
+  bool any_drained = false;
+  bool any_open = false;
+  for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
+    if (portDrained(state, i)) {
+      any_drained = true;
+    } else {
+      any_open = true;
+    }
+  }
+  return any_drained && any_open;
+}
+
+void ExecutionEngine::Impl::latchPortEos(
+    NodeState &state, std::size_t port_index,
+    const std::shared_ptr<PipelineContext> &context) {
+  if (port_index >= k_max_eos_ports) {
+    LOG_WARNING_S << "ExecutionEngine: EOS latch ignored for " << state.name
+                  << " port index " << port_index << " (max " << k_max_eos_ports
+                  << ")";
+    return;
+  }
+  state.eos_mask.fetch_or(std::uint64_t{1} << port_index,
+                          std::memory_order_acq_rel);
+  checkNodeEndOfStream(state, context);
+}
+
+bool ExecutionEngine::Impl::checkNodeEndOfStream(
+    NodeState &state, const std::shared_ptr<PipelineContext> &context) {
+  if (!m_streamingMode.load(std::memory_order_acquire) ||
+      m_stopFlag.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (state.eos_propagated.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (!allInputPortsDrained(state)) {
+    return false;
+  }
+
+  // Claim the node through its own state machine so the flush hook can
+  // never run alongside process(). A node that is READY or EXECUTING is
+  // left alone: executeNodeTask re-checks EOS when it finishes, which is
+  // what eventually picks this up.
+  NodeExecutionState expected = NodeExecutionState::WAITING;
+  if (!state.exec_state.compare_exchange_strong(
+          expected, NodeExecutionState::EXECUTING, std::memory_order_acq_rel)) {
+    expected = NodeExecutionState::COMPLETED;
+    if (!state.exec_state.compare_exchange_strong(expected,
+                                                  NodeExecutionState::EXECUTING,
+                                                  std::memory_order_acq_rel)) {
+      return false;
+    }
+  }
+
+  // Exactly-once: several paths race to detect EOS, but only the thread
+  // that flips this flag runs the hook. Losers restore the state they
+  // claimed and leave.
+  if (state.eos_propagated.exchange(true, std::memory_order_acq_rel)) {
+    state.exec_state.store(NodeExecutionState::WAITING,
+                           std::memory_order_release);
+    return false;
+  }
+
+  LOG_DEBUG_S << "ExecutionEngine: Node " << state.name
+              << " reached end of stream; flushing.";
+
+  // Flush hook. A throwing hook is a node failure for reporting
+  // purposes, but must not abort propagation - otherwise one bad flush
+  // strands every downstream node waiting for an EOS that never comes.
+  PortDataMap outputs;
+  const auto flush_start = std::chrono::steady_clock::now();
+  try {
+    state.node->onEndOfStream(outputs, context);
+  } catch (const std::exception &e) {
+    outputs.clear();
+    m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
+    LOG_ERROR_S << "ExecutionEngine: onEndOfStream() threw in node "
+                << state.name << ": " << e.what();
+    invokeErrorCallback(std::string("onEndOfStream: ") + e.what(), state.name);
+  } catch (...) {
+    outputs.clear();
+    m_statistics.failed_executions.fetch_add(1, std::memory_order_relaxed);
+    LOG_ERROR_S << "ExecutionEngine: onEndOfStream() threw unknown exception "
+                   "in node "
+                << state.name;
+    invokeErrorCallback("onEndOfStream: unknown exception", state.name);
+  }
+
+  emitTrace(TracePhase::Execute, state.name, "end-of-stream flush",
+            primaryFrame(outputs), flush_start,
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - flush_start));
+
+  // Flush output travels the same road as a process() result.
+  if (!outputs.empty()) {
+    if (m_compiledGraph->isSink(state.index)) {
+      m_statistics.total_output_frames.fetch_add(1, std::memory_order_relaxed);
+      collectResults(state.node, outputs);
+    }
+    propagateOutputs(state, outputs);
+  }
+
+  state.exec_state.store(NodeExecutionState::COMPLETED,
+                         std::memory_order_release);
+
+  // Cascade: close every downstream port this node feeds, then let the
+  // check recurse into those nodes. Depth is bounded by graph depth.
+  for (const auto &edge : m_compiledGraph->outEdges(state.index)) {
+    NodeState *dest = stateByIndex(edge.dest_node);
+    if (!dest) {
+      continue;
+    }
+    latchPortEos(*dest, edge.dest_port_index, context);
+  }
+
+  if (m_compiledGraph->isSink(state.index)) {
+    recordSinkEndOfStream();
+  }
+
+  notifyCompletionWaiters();
+  return true;
+}
+
+void ExecutionEngine::Impl::recordSinkEndOfStream() {
+  const auto reached = m_sinksAtEos.fetch_add(1, std::memory_order_acq_rel) + 1;
+  if (m_sinkCount == 0 || reached < m_sinkCount) {
+    return;
+  }
+  if (m_endOfStreamReached.exchange(true, std::memory_order_acq_rel)) {
+    return;
+  }
+  LOG_INFO_S << "ExecutionEngine: end of stream reached at all " << m_sinkCount
+             << " sink(s).";
+  notifyCompletionWaiters();
+  invokeEndOfStreamCallback();
+}
+
+Result<void>
+ExecutionEngine::Impl::signalEndOfStream(const std::string &source_node,
+                                         const std::string &port_name) {
+  if (!isStreaming()) {
+    return Result<void>::err(ErrorCode::NotStreaming,
+                             "signalEndOfStream requires streaming mode");
+  }
+
+  NodeState *state = stateByName(source_node);
+  if (!state) {
+    return Result<void>::err(Error::nodeNotFound(source_node));
+  }
+
+  if (state->input_ports.empty()) {
+    return Result<void>::err(ErrorCode::PortNotFound,
+                             "Node has no input port to close: " + source_node,
+                             source_node);
+  }
+
+  std::string actual_port =
+      port_name.empty() ? state->input_ports.front() : port_name;
+
+  std::size_t port_index = state->input_ports.size();
+  for (std::size_t i = 0; i < state->input_ports.size(); ++i) {
+    if (state->input_ports[i] == actual_port) {
+      port_index = i;
+      break;
+    }
+  }
+  if (port_index == state->input_ports.size()) {
+    return Result<void>::err(Error::portNotFound(actual_port, source_node));
+  }
+  if (port_index >= k_max_eos_ports) {
+    return Result<void>::err(ErrorCode::InvalidArgument,
+                             "Port index beyond the end-of-stream limit on: " +
+                                 source_node,
+                             source_node);
+  }
+
+  const auto bit = std::uint64_t{1} << port_index;
+  if ((state->eos_mask.fetch_or(bit, std::memory_order_acq_rel) & bit) != 0) {
+    return Result<void>::err(ErrorCode::EndOfStreamSignaled,
+                             "Port already at end of stream: " + actual_port,
+                             source_node);
+  }
+
+  LOG_DEBUG_S << "ExecutionEngine: end of stream signaled on " << source_node
+              << ":" << actual_port;
+
+  auto context = m_currentContext.load();
+  // Queued data still has to drain first; if the port is already empty
+  // this settles EOS immediately, otherwise the post-execution check
+  // picks it up once the queue empties.
+  if (!checkNodeEndOfStream(*state, context)) {
+    tryScheduleNode(state->index);
+  }
+  notifyCompletionWaiters();
+  return Result<void>::ok();
+}
+
+Result<void>
+ExecutionEngine::Impl::waitForEndOfStream(std::chrono::milliseconds timeout) {
+  if (m_endOfStreamReached.load(std::memory_order_acquire)) {
+    return Result<void>::ok();
+  }
+  if (!isStreaming()) {
+    return Result<void>::err(ErrorCode::NotStreaming,
+                             "waitForEndOfStream requires streaming mode");
+  }
+
+  auto reached = [this] {
+    return m_endOfStreamReached.load(std::memory_order_acquire) ||
+           m_stopFlag.load(std::memory_order_acquire);
+  };
+
+  std::unique_lock<std::mutex> lock(m_completionMutex);
+  if (timeout.count() <= 0) {
+    m_completionCV.wait(lock, reached);
+  } else if (!m_completionCV.wait_for(lock, timeout, reached)) {
+    return Result<void>::err(ErrorCode::ExecutionTimeout,
+                             "Timed out waiting for end of stream");
+  }
+
+  if (!m_endOfStreamReached.load(std::memory_order_acquire)) {
+    return Result<void>::err(ErrorCode::ExecutionStopped,
+                             "Engine stopped before end of stream");
+  }
+  return Result<void>::ok();
+}
+
+bool ExecutionEngine::Impl::isEndOfStreamReached() const {
+  return m_endOfStreamReached.load(std::memory_order_acquire);
+}
+
 void ExecutionEngine::Impl::checkCompletionAndNotify() {
   if (m_streamingMode.load(std::memory_order_acquire)) {
     // Notify on every completion (not only at zero active tasks):
@@ -2099,6 +2487,9 @@ void ExecutionEngine::Impl::resetInternalState() {
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_activeTasks.store(0, std::memory_order_relaxed);
   m_nextFrameId.store(1, std::memory_order_relaxed);
+  // EOS is terminal for one run; reset() is what starts a new one.
+  m_sinksAtEos.store(0, std::memory_order_relaxed);
+  m_endOfStreamReached.store(false, std::memory_order_relaxed);
   {
     std::lock_guard<std::mutex> lock(m_streamStampMutex);
     m_nextStreamFrameId.clear();
@@ -2116,6 +2507,8 @@ void ExecutionEngine::Impl::resetInternalState() {
       state->execution_count.store(0, std::memory_order_relaxed);
       state->join_wait_since_ticks.store(0, std::memory_order_relaxed);
       state->degrade_pending.store(false, std::memory_order_relaxed);
+      state->eos_mask.store(0, std::memory_order_relaxed);
+      state->eos_propagated.store(false, std::memory_order_relaxed);
       state->stats.reset();
 
       for (auto &[port, queue] : state->lock_free_queues) {

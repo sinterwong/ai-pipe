@@ -60,6 +60,48 @@ public:
    */
   virtual void teardown() noexcept {}
 
+  /**
+   * @brief Flush hook: every input port has reached end of stream (R6.1)
+   *
+   * Called at most once per run, after the last packet on the node's
+   * last open input port has been processed and before EOS propagates
+   * to the node's downstream ports. This is where a node with internal
+   * buffering (batch accumulator, temporal smoother, sliding window)
+   * emits the residue it would otherwise strand at the end of a finite
+   * stream.
+   *
+   * Anything written to @p outputs is propagated exactly like a
+   * process() result: frame identity is inherited, packets are enqueued
+   * downstream, and a sink's outputs are collected as pipeline results.
+   * Leave @p outputs empty when there is nothing to flush.
+   *
+   * The engine guarantees this never runs concurrently with process()
+   * on the same node, so it may touch the node's internal state freely.
+   *
+   * Throwing is treated as a node failure (reported through the error
+   * callback and statistics) but does NOT stop EOS from propagating -
+   * a flush bug must not strand the rest of the graph waiting for an
+   * end of stream that never arrives.
+   *
+   * Default: no-op, so existing nodes are unaffected.
+   *
+   * @param outputs Sink for any final packets this node wants to emit
+   * @param context The pipeline context for this run
+   *
+   * The by-value shared_ptr matches process() and setup(): overriders
+   * may keep the context, and a node interface where one hook took a
+   * reference and its neighbours took values would be a trap.
+   *
+   * @see docs/design/eos_flush.md
+   */
+  virtual void
+  onEndOfStream(PortDataMap &outputs,
+                // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                std::shared_ptr<PipelineContext> context) {
+    (void)outputs;
+    (void)context;
+  }
+
   virtual std::vector<std::string> getExpectedInputPorts() const { return {}; }
 
   virtual std::vector<std::string> getExpectedOutputPorts() const { return {}; }

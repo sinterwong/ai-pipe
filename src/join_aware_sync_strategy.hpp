@@ -34,6 +34,7 @@
 
 #include "ai_pipe/compiled_graph.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
+#include "ai_pipe/strategies.hpp"
 #include "sync_coordinator.hpp"
 #include <algorithm>
 #include <deque>
@@ -511,13 +512,6 @@ private:
 
   mutable std::mutex m_mutex;
 };
-
-/**
- * @brief Factory function to create JoinAwareSyncStrategy
- */
-inline std::unique_ptr<ISyncStrategy> createJoinAwareSyncStrategy() {
-  return std::make_unique<JoinAwareSyncStrategy>();
-}
 
 } // namespace ai_pipe
 

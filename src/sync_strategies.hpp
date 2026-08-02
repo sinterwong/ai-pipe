@@ -5,14 +5,15 @@
  * @version 1.0
  * @date 2025-12-24
  *
- * This file provides built-in sync strategy implementations that
- * do not depend on any internal headers.
+ * Built-in sync strategy implementations. These classes are private:
+ * consumers reach them through the factories in ai_pipe/strategies.hpp,
+ * so their layout is not part of the installed ABI.
  *
  * Strategies provided:
  * - NoSyncStrategy: No synchronization (for batch processing)
  *
- *
- * is automatically used when sync coordination is enabled.
+ * The fork-join-aware counterpart lives in join_aware_sync_strategy.hpp
+ * and is what stream mode installs when sync coordination is enabled.
  *
  * @copyright Copyright (c) 2025
  */
@@ -21,6 +22,7 @@
 #define AI_PIPE_SYNC_STRATEGIES_HPP
 
 #include "ai_pipe/i_sync_strategy.hpp"
+#include "ai_pipe/strategies.hpp"
 
 namespace ai_pipe {
 
@@ -74,19 +76,6 @@ public:
     return std::make_unique<NoSyncStrategy>();
   }
 };
-
-// =============================================================================
-// Factory Functions
-// =============================================================================
-
-/**
- * @brief Create a no-op sync strategy
- *
- * Use this for batch processing where synchronization is not needed.
- */
-inline std::unique_ptr<ISyncStrategy> createNoSyncStrategy() {
-  return std::make_unique<NoSyncStrategy>();
-}
 
 } // namespace ai_pipe
 

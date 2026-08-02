@@ -61,16 +61,21 @@ constexpr FrameId k_invalid_frame_id = 0;
 /**
  * End-of-stream frame ID marker.
  *
- * Status note (R3.5): the framework has NO in-stream EOS protocol yet -
- * no node or engine path emits, propagates, or reacts to this id as an
- * end-of-stream signal. Today it only serves as the sentinel maximum in
- * the sync coordinator's watermark computation, and
- * IFrameMetadata::isEndOfStream()/createEndOfStream() merely tag a
- * value that nothing downstream consumes. Real semantics (source-side
- * EOS declaration, join/EOS merge rules, flush propagation, sink
- * completion notification) are the subject of the R6.1 design; this
- * constant either gains those semantics there or is removed from the
- * public surface when R6.1 is decided against.
+ * Scope note (settled by R6.1): this id is NOT how the engine signals
+ * end of stream. The engine-level protocol is a per-input-port EOS
+ * latch (Pipeline::signalEndOfStream / ILogicNode::onEndOfStream), not
+ * a packet id - an in-band marker packet would be silently eaten by the
+ * queue drop policies it has to survive. See docs/design/eos_flush.md
+ * §4 for why that alternative was rejected.
+ *
+ * The constant therefore retains exactly two uses:
+ *
+ * 1. The sentinel maximum in the sync coordinator's watermark
+ *    computation (engine-internal).
+ * 2. A payload-level "last frame" tag that nodes may set and read
+ *    themselves, via IFrameMetadata::isEndOfStream() /
+ *    createEndOfStream(). The engine does not interpret it: stamping a
+ *    packet with this id does not trigger flush or EOS propagation.
  */
 constexpr FrameId k_end_of_stream_frame_id =
     std::numeric_limits<FrameId>::max();
@@ -155,10 +160,12 @@ public:
   }
 
   /**
-   * @brief Check if this is an end-of-stream marker
+   * @brief Check if this is a payload-level end-of-stream tag
    *
-   * Note: no engine path consumes this today - see the R3.5 status
-   * note at frame_constants::k_end_of_stream_frame_id.
+   * This is a node-to-node convention, not the engine's EOS protocol:
+   * the engine never inspects it. For real end-of-stream handling use
+   * Pipeline::signalEndOfStream() and ILogicNode::onEndOfStream() - see
+   * the scope note at frame_constants::k_end_of_stream_frame_id.
    */
   [[nodiscard]] virtual bool isEndOfStream() const {
     return frameId() == frame_constants::k_end_of_stream_frame_id;
@@ -368,10 +375,11 @@ public:
   }
 
   /**
-   * @brief Create end-of-stream marker
+   * @brief Create a payload-level end-of-stream tag
    *
-   * Note: no engine path consumes this today - see the R3.5 status
-   * note at frame_constants::k_end_of_stream_frame_id.
+   * A node-to-node convention the engine does not interpret; the
+   * engine's own protocol is Pipeline::signalEndOfStream(). See the
+   * scope note at frame_constants::k_end_of_stream_frame_id.
    */
   static BasicFrameMetadata
   createEndOfStream(StreamId stream_id = frame_constants::k_default_stream_id) {

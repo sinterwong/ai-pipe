@@ -116,6 +116,14 @@ public:
   virtual void onFrameDropped(const std::string &, std::uint64_t,
                               const std::string &) {}
 
+  /**
+   * @brief End of stream has reached every sink (R6.1)
+   *
+   * Fired once per run, after the last sink's flush hook. The pipeline
+   * is still running at this point - see Pipeline::signalEndOfStream().
+   */
+  virtual void onEndOfStream() {}
+
 protected:
   /**
    * @brief Legacy signature for backward compatibility.
@@ -248,6 +256,56 @@ public:
   [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
                                              const std::string &port_name,
                                              PortDataPtr data);
+
+  /**
+   * @brief Declare that no more data will arrive on an input port (R6.1)
+   *
+   * The graceful counterpart to stop(): stop() tears the pipeline down,
+   * whereas this says "this input is finished" and lets the remaining
+   * data flow through. Queued packets are still processed; when the port
+   * drains (and every other input port of the node has too) the node's
+   * ILogicNode::onEndOfStream() flush hook runs, its output is
+   * propagated, and EOS is latched on the node's downstream ports. EOS
+   * thus walks the graph in topological order and reaches sinks last.
+   *
+   * A join forwards EOS only once ALL of its input ports have finished,
+   * so "downstream saw EOS" means every upstream path is done.
+   *
+   * Streaming mode only. Pushing to a port after closing it returns
+   * ErrorCode::EndOfStreamSignaled.
+   *
+   * Typical finite-source shutdown:
+   * @code
+   *   pipeline.signalEndOfStream("decoder");
+   *   pipeline.waitForEndOfStream();
+   *   pipeline.stop();
+   * @endcode
+   *
+   * @param node_name Node whose input port is closing
+   * @param port_name Input port; empty selects the node's first
+   *
+   * @see docs/design/eos_flush.md
+   */
+  Result<void> signalEndOfStream(const std::string &node_name);
+  Result<void> signalEndOfStream(const std::string &node_name,
+                                 const std::string &port_name);
+
+  /**
+   * @brief Block until EOS has reached every sink
+   *
+   * Returns Ok once the pipeline has produced everything it ever will.
+   * Does not stop the pipeline - that stays the caller's decision.
+   *
+   * @param timeout Maximum wait; <= 0 waits indefinitely
+   * @return Ok on EOS, ExecutionTimeout on expiry, NotStreaming if the
+   *         pipeline is not streaming, ExecutionStopped if it was
+   *         stopped before EOS arrived
+   */
+  Result<void> waitForEndOfStream(
+      std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
+
+  /** @brief Has EOS reached every sink? */
+  [[nodiscard]] bool isEndOfStreamReached() const;
 
   [[nodiscard]] bool isStreaming() const;
   [[nodiscard]] std::size_t queueDepth(const std::string &node_name) const;

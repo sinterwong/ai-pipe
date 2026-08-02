@@ -122,8 +122,4 @@ if(BUILD_AI_PIPE_BENCHMARKS)
 endif()
 
 message(STATUS "================================")
-message(STATUS "Installing resources...")
-add_subdirectory(assets)
-
-message(STATUS "================================")
 message(STATUS "CMake configuration completed successfully!")

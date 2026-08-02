@@ -5,9 +5,10 @@
  * @version 1.0
  * @date 2025-12-24
  *
- * This file provides built-in scheduler strategy implementations that
- * do not depend on any internal headers. Users can include this file
- * to access standard strategies or use them as examples for custom ones.
+ * Built-in scheduler strategy implementations. These classes are
+ * private: consumers reach them through the factories in
+ * ai_pipe/strategies.hpp, which also owns StreamSchedulerConfig. Keeping
+ * the classes here means their layout is not part of the installed ABI.
  *
  * Strategies provided:
  * - BatchSchedulerStrategy: Traditional batch processing
@@ -21,6 +22,7 @@
 
 #include "ai_pipe/execution_types.hpp"
 #include "ai_pipe/i_scheduler_strategy.hpp"
+#include "ai_pipe/strategies.hpp"
 
 namespace ai_pipe {
 
@@ -102,27 +104,6 @@ public:
 // =============================================================================
 // Stream Scheduler Strategy
 // =============================================================================
-
-/**
- * @brief Configuration for stream scheduling
- */
-struct StreamSchedulerConfig {
-  /**
-   * Allow a multi-input node to schedule before every port has data.
-   * min_input_ratio is consulted only when this is true: a node
-   * schedules once ready_inputs/expected_inputs >= min_input_ratio and
-   * at least one input is ready. The default of 0.0 means "any ready
-   * input schedules" - raising the ratio raises the bar. (R3.4: the
-   * previous default of 1.0 made enabling partial inputs a no-op
-   * unless the ratio was also lowered.)
-   */
-  bool allow_partial_inputs = false;
-  double min_input_ratio = 0.0;
-
-  bool auto_reschedule = true; ///< Automatically reschedule on completion
-  std::chrono::milliseconds min_interval{
-      0}; ///< Minimum interval between executions
-};
 
 /**
  * @brief Continuous streaming scheduler
@@ -224,25 +205,6 @@ private:
 
   StreamSchedulerConfig m_config;
 };
-
-// =============================================================================
-// Factory Functions
-// =============================================================================
-
-/**
- * @brief Create a scheduler strategy for the given execution mode
- */
-inline std::unique_ptr<ISchedulerStrategy>
-createSchedulerStrategy(ExecutionMode mode,
-                        const StreamSchedulerConfig &stream_config = {}) {
-  switch (mode) {
-  case ExecutionMode::BATCH:
-    return std::make_unique<BatchSchedulerStrategy>();
-  case ExecutionMode::STREAM:
-    return std::make_unique<StreamSchedulerStrategy>(stream_config);
-  }
-  return std::make_unique<BatchSchedulerStrategy>();
-}
 
 } // namespace ai_pipe
 

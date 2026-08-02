@@ -647,6 +647,45 @@ auto eos  = FrameMetadataFactory::createEndOfStream();       // 流结束标记
 端口中**最老的配对集**（按当前 `AlignmentPolicy` 语义），超时精度为 ±一个
 节拍。降级次数计入 `EngineStatistics::total_join_timeouts`。
 
+### 8.4 流内 EOS / flush 协议（R6.1）
+
+有限输入（播完的视频文件、读到尾的数据集）需要一种"这一路播完了"的
+表达。`stopStreaming(wait_for_drain)` 是**外部整体停机**，替代不了它：
+它不区分"数据处理完了"与"被强行叫停"，也不给带内部缓冲的节点吐出残留
+的机会。
+
+**协议**（仅流模式）：
+
+```cpp
+pipeline.signalEndOfStream("decoder");   // 此路输入到此为止
+pipeline.waitForEndOfStream();           // 阻塞至所有 sink 收到 EOS
+pipeline.stop();                         // 停机由调用方决定
+```
+
+标记形态是**每输入端口的 EOS 闩**，不是入队的 marker packet——marker
+会被队列丢弃策略静默吃掉（`DropHead`/`KeepLatest` 淘汰队头，`DropTail`
+满时拒绝入队），闩独立于队列存储因而免疫，也不占容量。排序语义仍是
+in-band 的：端口只有在**闩已置位且队列已空**时才算到达 EOS，已入队数据
+永远先于 EOS 被处理。EOS 之后再 `pushInput` 返回
+`ErrorCode::EndOfStreamSignaled`。
+
+| 关注点 | 规则 |
+|------|------|
+| flush | 节点全部输入端口排空时调用 `ILogicNode::onEndOfStream(outputs, context)`（默认空实现），其输出与 `process()` 结果同路传播；引擎保证它不与 `process()` 并发 |
+| join 合流 | **合取**：全部输入端口 EOS 才向下游传播。"下游收到 EOS" 因此严格等价于"上游所有路径都不会再有数据" |
+| 与对齐协调 | 已排空端口**退出配对集合**（贡献 wildcard 空头，不参与 pop），并从调度器的 `expected_input_count` 中剔除；否则一路播完会永久阻塞 join |
+| 与丢弃协调 | 闩不进队列，丢弃策略、协同丢弃、watermark 计算均不受影响 |
+| sink 完成 | 所有 sink 到达 EOS 后唤醒 `waitForEndOfStream()` 并触发 `IPipelineObserver::onEndOfStream()`；引擎**不**自动停机 |
+| flush 抛异常 | 计为节点失败并上报，但**不阻断** EOS 传播——一个节点的 flush bug 不该让整条管线永远等不到结束 |
+
+EOS 是本次 run 的终态；`reset()` 清除全部闩以开始新的一轮。
+
+`k_end_of_stream_frame_id` **不**是引擎级标记：它保留 sync coordinator
+的 watermark 哨兵用途，以及节点自定义的载荷级"最后一帧"标签
+（`IFrameMetadata::isEndOfStream()`），引擎不解释后者。
+
+完整设计（含被否决的 in-band packet 方案）见 `docs/design/eos_flush.md`。
+
 ---
 
 ## 9. 统计与监控
@@ -788,25 +827,67 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 
 ### 11.2 公共头文件 vs 内部头文件
 
-| 用户可包含头文件 |
-|---|
-| `ai_pipe.hpp`（统一入口）|
-| `version.hpp` |
-| `enum.hpp` |
-| `edge.hpp` |
-| `graph.hpp` |
-| `data_packet.hpp` 
-| `data_types.hpp` 
-| `i_logic_node.hpp` 
-| `i_scheduler_strategy.hpp` 
-| `i_sync_strategy.hpp`|
-| `execution_engine.hpp`|
-| `execution_types.hpp` |
-| `frame_metadata.hpp` |
-| `context.hpp` |
-| `pipeline.hpp`|
+源码树中公共头文件位于 `src/api/ai_pipe/`，安装后为
+`<prefix>/include/ai_pipe/`；`src/` 下其余头文件为内部实现，不安装。
+
+| 用户可包含头文件 | 说明 |
+|---|---|
+| `ai_pipe.hpp` | 统一入口，包含下列全部 |
+| `version.hpp` | 版本宏 |
+| `enum.hpp` | 基础枚举 |
+| `error.hpp` | `Result<T>` / `Error` |
+| `edge.hpp` | 边定义 |
+| `graph.hpp` | 图构建 |
+| `compiled_graph.hpp` | 编译后拓扑快照（策略 `initialize()` 入参）|
+| `graph_loader.hpp` | JSON 构图（`AI_PIPE_WITH_JSON`）|
+| `node_registry.hpp` | 节点类型注册 |
+| `plugin.hpp` | 动态节点插件 |
+| `data_packet.hpp` | 数据包 |
+| `data_types.hpp` | 端口数据类型 |
+| `i_logic_node.hpp` | 节点接口 |
+| `i_scheduler_strategy.hpp` | 调度策略接口 |
+| `i_sync_strategy.hpp` | 同步策略接口 |
+| `strategies.hpp` | 内置策略的配置结构体与工厂 |
+| `execution_engine.hpp` | 引擎 |
+| `execution_types.hpp` | `ExecutionMode`、`PipelineOptions` 相关类型 |
+| `frame_metadata.hpp` | 帧元数据 |
+| `trace.hpp` | 逐帧 span 事件 |
+| `engine_log.hpp` | 日志钩子 |
+| `context.hpp` | 管线上下文 |
+| `pipeline.hpp` | 高层 API |
 
 用户只需 `#include "ai_pipe/ai_pipe.hpp"` 即可获得完整公共 API。
+
+### 11.3 内置策略的定制
+
+`ISchedulerStrategy` / `ISyncStrategy` 是公共接口，但具体实现类
+（`BatchSchedulerStrategy`、`StreamSchedulerStrategy`、`NoSyncStrategy`、
+`JoinAwareSyncStrategy`）保持私有——它们的布局因此不进入 1.0 的 ABI
+承诺。消费者通过 `ai_pipe/strategies.hpp` 的工厂取得接口指针：
+
+```cpp
+#include "ai_pipe/strategies.hpp"
+
+StreamSchedulerConfig cfg;
+cfg.min_interval = std::chrono::milliseconds{33};  // 约 30fps 限速
+cfg.allow_partial_inputs = true;
+cfg.min_input_ratio = 0.5;
+
+auto pipeline = Pipeline::create()
+                    .withGraph(std::move(graph))
+                    .withOptions(PipelineOptions::stream())
+                    .withSchedulerStrategy(createStreamScheduler(cfg))
+                    .withSyncStrategy(createJoinAwareSyncStrategy())
+                    .build();
+```
+
+可用工厂：`createBatchScheduler()`、`createStreamScheduler(config)`、
+`createSchedulerStrategy(mode, config)`、`createNoSyncStrategy()`、
+`createJoinAwareSyncStrategy()`。不传策略时引擎按 `PipelineOptions`
+自行安装等价默认值，行为与默认构造的 `StreamSchedulerConfig` 一致。
+
+需要内置策略之外的行为，仍是直接实现 `ISchedulerStrategy` /
+`ISyncStrategy`——工厂只负责配置与组合已有实现。
 
 ---
 

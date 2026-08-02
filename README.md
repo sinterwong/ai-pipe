@@ -441,17 +441,25 @@ auto stream_opts = ai_pipe::PipelineOptions::stream(4, 16);  // 4 workers, queue
 
 ```
 ai-pipe/
-├── include/ai_pipe/     # Public API headers
-├── src/                  # Internal implementation (PIMPL)
+├── src/
+│   ├── api/ai_pipe/      # Public API headers (installed to include/ai_pipe/)
+│   └── *.cpp, *.hpp      # Internal implementation (PIMPL), not installed
 ├── tests/                # Unit tests (GTest)
 ├── benchmarks/           # Performance benchmarks (Google Benchmark)
 ├── examples/             # Usage examples
+├── platforms/            # Per-platform toolchain files
+├── 3rdparty/             # Vendored headers (nlohmann/json, optional)
 ├── cmake/                # CMake modules
-├── docs/                  # Documentation
+├── docs/                 # Documentation
 ├── scripts/              # Build & CI scripts
-├── assets/               # Project assets
+├── assets/               # Project assets (logo; not installed)
 └── README.md
 ```
+
+Public headers live under `src/api/ai_pipe/` in the source tree and are
+installed to `<prefix>/include/ai_pipe/`, so both the build-tree and
+install-tree include interfaces are `#include "ai_pipe/…"`. Everything
+else under `src/` is private and never installed.
 
 ---
 

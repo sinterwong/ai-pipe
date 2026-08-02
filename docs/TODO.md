@@ -7,8 +7,8 @@
 ## R5. 验证与冻结
 
 - [ ] **R5.1 真实业务负载验证**：至少一个生产场景 7×24 长期运行。实施中
-  撞到的能力墙按需拉动 R6 对应条目（预计首先是 R6.1 EOS 与 R6.3 内存
-  策略）。
+  撞到的能力墙按需拉动 R6 对应条目（R6.1 EOS 已完成，预计下一个是
+  R6.3 内存策略）。
 
 - [ ] **R5.2 ABI/SemVer 政策文档**：1.0 冻结前明确公共头文件清单、ABI
   兼容承诺与弃用流程。
@@ -23,13 +23,18 @@
 每项动手前先在 docs/design/ 写设计短文（目标、非目标、与现有语义的
 冲突分析），实际优先级以 R5.1 真实负载的需求为准。
 
-- [ ] **R6.1 流内 EOS / flush 协议**：源无法宣告流结束、无 flush 传播、
-  下游不知道"不会再有帧"；`stopStreaming(wait_for_drain)` 是外部整体
-  停机，替代不了流内 EOS，处理有限输入（视频文件）时是硬缺口。设计
-  要点：EOS 标记如何过 join（多输入端口的合流语义）、如何与对齐/丢弃
-  协调、sink 完成通知。落地后收尾 `k_end_of_stream_frame_id` 的语义
-  （目前仅是 sync_coordinator 的 watermark 哨兵，头文件已注明；若最终
-  不做流内 EOS，则从 frame_constants 移除对外暴露）。
+- [x] **R6.1 流内 EOS / flush 协议** —— 设计见
+  `docs/design/eos_flush.md`；实现见 commit "feat: add the in-stream
+  end-of-stream / flush protocol"。落地为**每输入端口 EOS 闩**而非
+  in-band marker packet：marker 会被队列丢弃策略静默吃掉
+  （DropHead/KeepLatest 淘汰队头、DropTail 满时拒绝入队），闩独立于
+  队列存储因而免疫。新增 `Pipeline::signalEndOfStream()` /
+  `waitForEndOfStream()`、`ILogicNode::onEndOfStream()` flush 钩子、
+  `IPipelineObserver::onEndOfStream()`。join 合流取合取语义（全部输入
+  端口 EOS 才向下游传播）；已排空端口退出对齐配对集合与调度器的
+  expected_input_count，否则一路播完会永久阻塞 join。
+  `k_end_of_stream_frame_id` 的语义已收尾：**不**作为引擎级标记，保留
+  watermark 哨兵 + 节点自定义载荷级标记两个用途，头文件注释改写。
 
 - [ ] **R6.2 编译期类型安全的节点层**：数据面目前全是 `std::any` +
   字符串键（DataPacket 参数、context 资源），`portPayloadType` 仅是
@@ -55,7 +60,8 @@
 
 - [ ] **R6.6 示例体系**：examples/ 目前仅一个 dummy.cpp。至少补齐：
   ① 多路摄像头 + 推理 + 对齐 join 的流式示例；② 视频文件批/流处理
-  示例（依赖 R6.1）；③ TypedNode + JSON 构图 + 插件的组合示例。
+  示例（R6.1 已完成，不再受阻）；③ TypedNode + JSON 构图 + 插件的
+  组合示例。
   示例纳入 CI 编译。
 
 ## 已知问题

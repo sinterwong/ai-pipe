@@ -246,22 +246,40 @@ struct TimestampPolicy {
  *                   deliver it into the caller's input map
  * @param drop       (std::size_t port, const PortDataPtr &head,
  *                   const char *reason); discard an unpairable head
+ * @param closed     (std::size_t port) -> bool; the port has reached
+ *                   end of stream and drained (R6.1). Closed ports
+ *                   leave the pairing set entirely: they contribute a
+ *                   null head, which every policy treats as a wildcard,
+ *                   and are not popped from. Without this, one branch
+ *                   finishing would block the join forever waiting for
+ *                   a partner that can no longer arrive.
  *
- * @return true when a full aligned set was delivered; false when some
- *         port has no poppable data yet (transient; caller reschedules)
+ * @return true when an aligned set was delivered across the still-open
+ *         ports; false when some open port has no poppable data yet
+ *         (transient; caller reschedules) or every port is closed
  *
  * Termination: each pass either delivers, returns on a dry port, or
  * discards >= 1 frame (policy progress guarantee), so the loop ends
  * once queues stabilize or run dry.
  */
-template <typename Policy, typename PeekFn, typename PopFn, typename DropFn>
+template <typename Policy, typename PeekFn, typename PopFn, typename DropFn,
+          typename ClosedFn>
 bool gatherAligned(std::size_t port_count, const Policy &policy, PeekFn &&peek,
-                   PopFn &&pop, DropFn &&drop) {
+                   PopFn &&pop, DropFn &&drop, ClosedFn &&closed) {
   std::vector<PortDataPtr> heads(port_count);
+  std::vector<bool> is_closed(port_count, false);
 
   for (;;) {
-    // Phase A: peek every head; any dry port aborts the attempt.
+    // Phase A: peek every open head; any dry open port aborts the
+    // attempt. Closed ports stay null (wildcard) and are never popped.
+    std::size_t open_ports = 0;
     for (std::size_t i = 0; i < port_count; ++i) {
+      is_closed[i] = closed(i);
+      if (is_closed[i]) {
+        heads[i] = nullptr;
+        continue;
+      }
+      ++open_ports;
       auto head = peek(i);
       if (!head.has_value()) {
         return false;
@@ -269,9 +287,18 @@ bool gatherAligned(std::size_t port_count, const Policy &policy, PeekFn &&peek,
       heads[i] = std::move(head.value());
     }
 
+    // Every port closed: nothing left to pair, and the caller's EOS
+    // path owns the node from here.
+    if (open_ports == 0) {
+      return false;
+    }
+
     // Phase B: aligned? Pop and deliver the whole set.
     if (policy.aligned(heads)) {
       for (std::size_t i = 0; i < port_count; ++i) {
+        if (is_closed[i]) {
+          continue;
+        }
         if (!pop(i)) {
           return false; // Should not happen under single-consumer contract
         }
