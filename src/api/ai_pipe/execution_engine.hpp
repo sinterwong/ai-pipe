@@ -145,6 +145,12 @@ public:
                          const std::string &reason)>
           callback);
 
+  /**
+   * @brief Called once end of stream has reached every sink (R6.1)
+   * @see signalEndOfStream
+   */
+  void setEndOfStreamCallback(std::function<void()> callback);
+
   // -------------------------------------------------------------------------
   // Streaming Interface
   // -------------------------------------------------------------------------
@@ -174,6 +180,56 @@ public:
 
   [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
                                              PortDataPtr data);
+
+  // -------------------------------------------------------------------------
+  // End of stream (R6.1) - see docs/design/eos_flush.md
+  // -------------------------------------------------------------------------
+
+  /**
+   * @brief Declare that no more data will arrive on an input port
+   *
+   * Latches end-of-stream on the port. Already-queued packets are still
+   * processed; once the port drains, and once every other input port of
+   * the node has likewise drained, the engine calls the node's
+   * onEndOfStream() flush hook, propagates its output, and latches EOS
+   * on the node's downstream ports. EOS therefore walks the graph in
+   * topological order and reaches the sinks last.
+   *
+   * The latch lives beside the queue rather than inside it, so it can
+   * never be evicted by a drop policy or blocked by a full queue.
+   *
+   * Streaming mode only, and only for nodes that have at least one
+   * input port (a node with no inputs has nothing to close).
+   *
+   * @param source_node Node whose input port is closing
+   * @param port_name   Input port; empty selects the node's first
+   * @return Ok, or Error with:
+   *   - NotStreaming: engine is not streaming
+   *   - NodeNotFound / PortNotFound: unknown node, or no input port
+   *   - EndOfStreamSignaled: the port was already closed
+   */
+  Result<void> signalEndOfStream(const std::string &source_node,
+                                 const std::string &port_name);
+
+  Result<void> signalEndOfStream(const std::string &source_node);
+
+  /**
+   * @brief Block until EOS has reached every sink
+   *
+   * Returns Ok once the last sink has run its flush hook, meaning the
+   * pipeline has produced everything it ever will. Does NOT stop the
+   * engine - reading final statistics and deciding when to shut down
+   * stay with the caller. The usual shutdown is
+   * signalEndOfStream() -> waitForEndOfStream() -> stopStreaming().
+   *
+   * @param timeout Maximum wait; <= 0 waits indefinitely
+   * @return Ok on EOS, ExecutionTimeout on expiry, or NotStreaming
+   */
+  Result<void> waitForEndOfStream(
+      std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
+
+  /** @brief Has EOS reached every sink? */
+  [[nodiscard]] bool isEndOfStreamReached() const;
 
   // -------------------------------------------------------------------------
   // State & Monitoring

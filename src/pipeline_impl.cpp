@@ -190,6 +190,8 @@ void Pipeline::Impl::setupEngineCallbacks() {
                                    const std::string &reason) {
     notifyFrameDropped(node_name, frame_id, reason);
   });
+
+  m_engine->setEndOfStreamCallback([this]() { notifyEndOfStream(); });
 }
 
 // -------------------------------------------------------------------------
@@ -416,6 +418,28 @@ Result<PushStatus> Pipeline::Impl::pushInput(const std::string &source_node,
 
 bool Pipeline::Impl::isStreaming() const {
   return m_engine && m_engine->isStreaming();
+}
+
+Result<void> Pipeline::Impl::signalEndOfStream(const std::string &node_name,
+                                               const std::string &port_name) {
+  if (!m_engine) {
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             "Engine not initialized");
+  }
+  return m_engine->signalEndOfStream(node_name, port_name);
+}
+
+Result<void>
+Pipeline::Impl::waitForEndOfStream(std::chrono::milliseconds timeout) {
+  if (!m_engine) {
+    return Result<void>::err(ErrorCode::NotInitialized,
+                             "Engine not initialized");
+  }
+  return m_engine->waitForEndOfStream(timeout);
+}
+
+bool Pipeline::Impl::isEndOfStreamReached() const {
+  return m_engine && m_engine->isEndOfStreamReached();
 }
 
 std::size_t Pipeline::Impl::queueDepth(const std::string &node_name) const {
@@ -713,6 +737,19 @@ void Pipeline::Impl::notifyFrameDropped(const std::string &node_name,
   }
 }
 
+void Pipeline::Impl::notifyEndOfStream() {
+  std::lock_guard<std::mutex> lock(m_observersMutex);
+  for (auto &observer : m_observers) {
+    if (observer) {
+      try {
+        observer->onEndOfStream();
+      } catch (const std::exception &e) {
+        LOG_ERROR_S << "Pipeline: Observer exception: " << e.what();
+      }
+    }
+  }
+}
+
 // =============================================================================
 // Pipeline Public Interface Implementation
 // =============================================================================
@@ -764,6 +801,23 @@ Result<PushStatus> Pipeline::pushInput(const std::string &source_node,
                                        const std::string &port_name,
                                        PortDataPtr data) {
   return m_impl->pushInput(source_node, port_name, std::move(data));
+}
+
+Result<void> Pipeline::signalEndOfStream(const std::string &node_name) {
+  return m_impl->signalEndOfStream(node_name, "");
+}
+
+Result<void> Pipeline::signalEndOfStream(const std::string &node_name,
+                                         const std::string &port_name) {
+  return m_impl->signalEndOfStream(node_name, port_name);
+}
+
+Result<void> Pipeline::waitForEndOfStream(std::chrono::milliseconds timeout) {
+  return m_impl->waitForEndOfStream(timeout);
+}
+
+bool Pipeline::isEndOfStreamReached() const {
+  return m_impl->isEndOfStreamReached();
 }
 
 bool Pipeline::isStreaming() const { return m_impl->isStreaming(); }

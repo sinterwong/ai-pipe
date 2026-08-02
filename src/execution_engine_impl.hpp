@@ -38,6 +38,9 @@ public:
   using NodePtr = std::shared_ptr<ILogicNode>;
   using LockFreeQueueType = LockFreeNodeQueue<PortDataPtr>;
 
+  /// Input ports per node addressable by the EOS bitmask (R6.1).
+  static constexpr std::size_t k_max_eos_ports = 64;
+
   struct NodeState {
     NodePtr node;
     std::string name;
@@ -90,6 +93,24 @@ public:
     // True while a deferred reschedule entry for this node is armed in
     // the engine defer timer (R3.2); deduplicates timer entries.
     std::atomic<bool> defer_pending{false};
+
+    // End-of-stream latches (R6.1), one bit per input port, indexed the
+    // same as input_ports/input_queues. A bit means "no more data will
+    // arrive on this port"; the port is fully drained once the bit is
+    // set AND its queue is empty. Kept outside the queue so a drop
+    // policy can never evict the marker and a full queue can never
+    // block it - see docs/design/eos_flush.md §4.
+    //
+    // A bitmask (rather than one flag per port) keeps the drained check
+    // to a single relaxed load on the gather path. 64 input ports on one
+    // node is the cap; signalEndOfStream rejects beyond it, and
+    // ready_port_mask in SchedulingContext already sets this precedent.
+    std::atomic<std::uint64_t> eos_mask{0};
+
+    // Set once the node's flush hook has run and EOS has been latched
+    // on its downstream ports; makes EOS handling exactly-once even
+    // though several paths race to detect it.
+    std::atomic<bool> eos_propagated{false};
 
     [[nodiscard]] std::chrono::steady_clock::time_point lastExecution() const {
       return std::chrono::steady_clock::time_point{
@@ -144,6 +165,7 @@ public:
   void setDropCallback(std::function<void(const std::string &, std::uint64_t,
                                           const std::string &)>
                            callback);
+  void setEndOfStreamCallback(std::function<void()> callback);
 
   Result<void> startStreaming(std::shared_ptr<PipelineContext> context);
   void stopStreaming(bool wait_for_drain);
@@ -163,6 +185,11 @@ public:
 
   Result<PushStatus> pushInput(const std::string &source_node,
                                PortDataPtr data);
+
+  Result<void> signalEndOfStream(const std::string &source_node,
+                                 const std::string &port_name);
+  Result<void> waitForEndOfStream(std::chrono::milliseconds timeout);
+  [[nodiscard]] bool isEndOfStreamReached() const;
 
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
   [[nodiscard]] std::size_t queueDepth(const std::string &node_name,
@@ -325,6 +352,7 @@ private:
                            const std::string &node_name);
   void invokeDropCallback(const std::string &node_name, std::uint64_t frame_id,
                           const std::string &reason);
+  void invokeEndOfStreamCallback();
 
   /**
    * @brief Account a successful queue pop
@@ -348,6 +376,49 @@ private:
 
   void handleNodeSuccess(NodeState &state, const PortDataMap &outputs);
   void handleNodeFailure(NodeState &state, const Error &error);
+
+  // --- End of stream (R6.1) ---
+
+  /** @brief Is this port's EOS latch set? */
+  [[nodiscard]] static bool portEosLatched(const NodeState &state,
+                                           std::size_t port_index);
+
+  /** @brief Latch set AND queue empty: no more data will ever arrive */
+  [[nodiscard]] static bool portDrained(const NodeState &state,
+                                        std::size_t port_index);
+
+  /**
+   * @brief Have all of the node's input ports drained?
+   *
+   * False for a node with no input ports: EOS is a per-port property,
+   * so a node with nothing to close can never reach it.
+   */
+  [[nodiscard]] static bool allInputPortsDrained(const NodeState &state);
+
+  /** @brief Any port drained while at least one is still open */
+  [[nodiscard]] static bool hasPartiallyDrainedInputs(const NodeState &state);
+
+  /**
+   * @brief Run EOS handling for a node if it is due, exactly once
+   *
+   * Claims the node through its exec_state (so the flush hook can never
+   * run concurrently with process()), invokes onEndOfStream(),
+   * propagates whatever it emitted, then latches EOS on every
+   * downstream port and cascades the check into those nodes.
+   *
+   * @return true if this call performed the node's EOS handling; false
+   *         when EOS is not due, already done, or the node is busy (a
+   *         busy node is re-checked when its execution finishes)
+   */
+  bool checkNodeEndOfStream(NodeState &state,
+                            const std::shared_ptr<PipelineContext> &context);
+
+  /** @brief Latch EOS on a node's input port; cascades the EOS check */
+  void latchPortEos(NodeState &state, std::size_t port_index,
+                    const std::shared_ptr<PipelineContext> &context);
+
+  /** @brief Account a sink reaching EOS; fires the notification on the last */
+  void recordSinkEndOfStream();
 
   void checkCompletionAndNotify();
 
@@ -509,6 +580,14 @@ private:
   std::atomic<bool> m_stopFlag{false};
   std::atomic<bool> m_streamingMode{false};
 
+  // End-of-stream tracking (R6.1). m_sinkCount is fixed at initialize;
+  // m_sinksAtEos counts sinks that have completed EOS handling, and
+  // m_endOfStreamReached latches when the two meet. Waiters ride
+  // m_completionCV, which every EOS transition notifies.
+  std::size_t m_sinkCount{0};
+  std::atomic<std::size_t> m_sinksAtEos{0};
+  std::atomic<bool> m_endOfStreamReached{false};
+
   mutable std::mutex m_engineMutex;
   std::mutex m_completionMutex;
   std::condition_variable m_completionCV;
@@ -524,6 +603,7 @@ private:
   std::function<void(const std::string &, const std::string &)> m_errorCallback;
   std::function<void(const std::string &, std::uint64_t, const std::string &)>
       m_dropCallback;
+  std::function<void()> m_endOfStreamCallback;
 
   EngineStatistics m_statistics;
 };

@@ -95,6 +95,35 @@ void teardown() noexcept override { m_model.reset(); }
 - `teardown()` 在 `reset()`/引擎析构时逆序调用，此时保证无在途任务。
   **不得抛异常。**
 
+### 3.1 流结束时的 flush — `onEndOfStream()`（R6.1）
+
+**攒批、时域平滑、滑窗聚合等带内部缓冲的节点必须实现这个钩子**，否则
+处理有限输入（播完的视频文件）时，最后不足一批的数据会永久留在节点
+内部：
+
+```cpp
+void process(const PortDataMap &in, PortDataMap &out,
+             std::shared_ptr<PipelineContext>) override {
+  m_pending.push_back(in.at("input"));
+  if (m_pending.size() == k_batch) out["output"] = runBatch();
+}
+
+void onEndOfStream(PortDataMap &out,
+                   std::shared_ptr<PipelineContext>) override {
+  if (!m_pending.empty()) out["output"] = runBatch();  // 残留批次
+}
+```
+
+- 每轮运行**至多调用一次**，在该节点全部输入端口排空之后、EOS 向下游
+  传播之前。
+- 引擎保证它**不与 `process()` 并发**，可以自由访问节点内部状态。
+- 写入 `outputs` 的包与 `process()` 的输出同路传播（继承帧身份、入下游
+  队列、sink 则计入结果）；无残留就留空。
+- 抛异常会被记为节点失败并上报，但**不阻断** EOS 传播。
+
+由外部通过 `Pipeline::signalEndOfStream(node, port)` 触发；详见
+`docs/design/eos_flush.md`。
+
 ## 4. 端口类型声明（可选但推荐）
 
 ```cpp

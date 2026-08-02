@@ -78,6 +78,11 @@ public:
                                const std::string &port_name, PortDataPtr data);
 
   [[nodiscard]] bool isStreaming() const;
+
+  Result<void> signalEndOfStream(const std::string &node_name,
+                                 const std::string &port_name);
+  Result<void> waitForEndOfStream(std::chrono::milliseconds timeout);
+  [[nodiscard]] bool isEndOfStreamReached() const;
   [[nodiscard]] std::size_t queueDepth(const std::string &node_name) const;
   [[nodiscard]] bool hasQueueCapacity(const std::string &node_name) const;
   Result<void> waitForDrain(std::size_t max_depth,
@@ -133,6 +138,7 @@ private:
   void notifyExecutionFailed(const Error &error);
   void notifyFrameDropped(const std::string &node_name, std::uint64_t frame_id,
                           const std::string &reason);
+  void notifyEndOfStream();
 
 private:
   std::unique_ptr<Graph> m_graph;
