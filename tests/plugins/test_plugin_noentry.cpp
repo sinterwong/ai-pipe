@@ -16,8 +16,7 @@ class OrphanPluginNode : public ai_pipe::ILogicNode {
 public:
   explicit OrphanPluginNode(const std::string &name) : ILogicNode(name) {}
 
-  void process(const ai_pipe::PortDataMap &,
-               ai_pipe::PortDataMap &,
+  void process(const ai_pipe::PortDataMap &, ai_pipe::PortDataMap &,
                std::shared_ptr<ai_pipe::PipelineContext>) override {}
 };
 
