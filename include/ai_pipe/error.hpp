@@ -1,24 +1,3 @@
-/**
- * @file error.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Unified error handling: ErrorCode, Error, and Result<T>
- * @version 1.0
- * @date 2026-02-12
- *
- * This file provides the foundational error handling types for the AI Pipe
- * framework. It replaces the previous mix of bool returns, exceptions, and
- * ad-hoc error structs with a single, consistent Result<T> type.
- *
- * Design principles:
- *   - Result<T> for all synchronous API returns
- *   - Observer pattern (IPipelineObserver) for async event notifications
- *   - Zero-overhead on success path (no heap allocation)
- *   - Rich error context (code + message + optional node name)
- *   - Supports move-only types (e.g., Pipeline)
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_ERROR_HPP
 #define AI_PIPE_ERROR_HPP
 
@@ -30,12 +9,10 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Error Code Enumeration
-// =============================================================================
 
 /**
- * @brief Categorized error codes for the AI Pipe framework
+ * @brief Categorized error codes for the AI Pipe framework.
  *
  * Error codes are grouped by domain:
  *   0xx - General
@@ -46,11 +23,11 @@ namespace ai_pipe {
  *   5xx - Plugin loading
  */
 enum class ErrorCode : std::uint16_t {
-  // --- General ---
+  // General
   Ok = 0,
   InternalError = 1,
 
-  // --- Configuration / Initialization ---
+  // Configuration / Initialization
   InvalidArgument = 100,
   InvalidState = 101,
   NotInitialized = 102,
@@ -59,14 +36,14 @@ enum class ErrorCode : std::uint16_t {
   GraphEmpty = 105,
   InvalidConfiguration = 106,
 
-  // --- Execution ---
+  // Execution
   AlreadyRunning = 200,
   ExecutionFailed = 201,
   ExecutionTimeout = 202,
   ExecutionStopped = 203,
   ExecutionAborted = 204,
 
-  // --- Queue / Streaming ---
+  // Queue / Streaming
   StreamingNotSupported = 300,
   NotStreaming = 301,
   QueueRejected = 302,
@@ -74,16 +51,15 @@ enum class ErrorCode : std::uint16_t {
   NodeNotFound = 304,
   PortNotFound = 305,
   NoDownstreamConnection = 306,
-  /// Port already carries an end-of-stream latch (R6.1): pushing data
-  /// after EOS would reorder it past the marker, so it is rejected.
+  /// Port already carries an end-of-stream latch; later data is rejected.
   EndOfStreamSignaled = 307,
 
-  // --- Node-level ---
+  // Node-level
   NodeException = 400,
   NodeUnknownException = 401,
   InputUnavailable = 402,
 
-  // --- Plugin loading ---
+  // Plugin loading
   PluginLoadFailed = 500,
   PluginSymbolMissing = 501,
   PluginVersionMismatch = 502,
@@ -91,7 +67,7 @@ enum class ErrorCode : std::uint16_t {
 };
 
 /**
- * @brief Convert error code to human-readable string
+ * @brief Convert error code to human-readable string.
  */
 inline const char *errorCodeToString(ErrorCode code) {
   switch (code) {
@@ -157,12 +133,10 @@ inline const char *errorCodeToString(ErrorCode code) {
   return "Unknown";
 }
 
-// =============================================================================
 // Error Type
-// =============================================================================
 
 /**
- * @brief Rich error type carrying code, message, and optional context
+ * @brief Rich error type carrying code, message, and optional context.
  *
  * Error is designed to be lightweight and copyable. The message string
  * is only allocated when there is actually an error, so the success
@@ -181,7 +155,7 @@ public:
       : m_code(code), m_message(std::move(message)),
         m_nodeName(std::move(node_name)) {}
 
-  // --- Accessors ---
+  // Accessors
 
   [[nodiscard]] ErrorCode code() const noexcept { return m_code; }
 
@@ -197,7 +171,7 @@ public:
 
   explicit operator bool() const noexcept { return !isOk(); }
 
-  // --- Formatted output ---
+  // Formatted output
 
   [[nodiscard]] std::string toString() const {
     std::string result = errorCodeToString(m_code);
@@ -210,7 +184,7 @@ public:
     return result;
   }
 
-  // --- Comparison ---
+  // Comparison
 
   [[nodiscard]] bool operator==(ErrorCode code) const noexcept {
     return m_code == code;
@@ -220,7 +194,7 @@ public:
     return m_code != code;
   }
 
-  // --- Convenience factories ---
+  // Convenience factories
 
   static Error ok() { return Error{}; }
 
@@ -266,19 +240,10 @@ private:
   std::string m_nodeName;
 };
 
-// =============================================================================
 // Result<T> - Primary (non-void specialization)
-// =============================================================================
 
 /**
- * @brief A Result type that holds either a value of type T or an Error.
- *
- * This is the unified return type for all fallible synchronous operations
- * in the AI Pipe framework. It replaces the previous mix of:
- *   - bool returns (initialize, execute, startStreaming, ...)
- *   - ExecutionResult with embedded success flag
- *   - QueuePushResult with Status enum
- *   - Exceptions thrown from build()
+ * Holds either a value of type `T` or an `Error`.
  *
  * Usage:
  * @code
@@ -303,13 +268,13 @@ template <typename T> class Result {
                 "Result<Error> is not supported; use Result<void>");
 
 public:
-  // --- Success constructors ---
+  // Success constructors
 
   Result(T value) : m_hasValue(true) { new (&m_value) T(std::move(value)); }
 
   static Result ok(T value) { return Result(std::move(value)); }
 
-  // --- Error constructors ---
+  // Error constructors
 
   Result(Error error) : m_hasValue(false) {
     new (&m_error) Error(std::move(error));
@@ -326,11 +291,11 @@ public:
     return Result(Error(code, std::move(message), std::move(node_name)));
   }
 
-  // --- Destructor ---
+  // Destructor
 
   ~Result() { destroy(); }
 
-  // --- Copy ---
+  // Copy
 
   Result(const Result &other) : m_hasValue(other.m_hasValue) {
     if (m_hasValue) {
@@ -353,7 +318,7 @@ public:
     return *this;
   }
 
-  // --- Move ---
+  // Move
 
   Result(Result &&other) noexcept(std::is_nothrow_move_constructible_v<T>)
       : m_hasValue(other.m_hasValue) {
@@ -378,7 +343,7 @@ public:
     return *this;
   }
 
-  // --- Query ---
+  // Query
 
   [[nodiscard]] bool isOk() const noexcept { return m_hasValue; }
 
@@ -386,7 +351,7 @@ public:
 
   explicit operator bool() const noexcept { return m_hasValue; }
 
-  // --- Value access ---
+  // Value access
 
   [[nodiscard]] T &value() & {
     assert(m_hasValue && "Result::value() called on error");
@@ -417,7 +382,7 @@ public:
     return default_value;
   }
 
-  // --- Error access ---
+  // Error access
 
   [[nodiscard]] const Error &error() const & {
     assert(!m_hasValue && "Result::error() called on success");
@@ -429,7 +394,7 @@ public:
     return m_error;
   }
 
-  // --- Convenience ---
+  // Convenience
 
   [[nodiscard]] ErrorCode errorCode() const noexcept {
     if (!m_hasValue) {
@@ -461,12 +426,10 @@ private:
   };
 };
 
-// =============================================================================
 // Result<void> - Specialization for operations with no return value
-// =============================================================================
 
 /**
- * @brief Specialization of Result for void operations (init, start, stop...)
+ * @brief Specialization of Result for void operations (init, start, stop...).
  *
  * Usage:
  * @code
@@ -478,13 +441,13 @@ private:
  */
 template <> class Result<void> {
 public:
-  // --- Success ---
+  // Success
 
   Result() : m_error(ErrorCode::Ok) {}
 
   static Result ok() { return Result(); }
 
-  // --- Error ---
+  // Error
 
   Result(Error error) : m_error(std::move(error)) {}
 
@@ -499,7 +462,7 @@ public:
     return Result(Error(code, std::move(message), std::move(node_name)));
   }
 
-  // --- Query ---
+  // Query
 
   [[nodiscard]] bool isOk() const noexcept { return m_error.isOk(); }
 
@@ -507,7 +470,7 @@ public:
 
   explicit operator bool() const noexcept { return isOk(); }
 
-  // --- Error access ---
+  // Error access
 
   [[nodiscard]] const Error &error() const & { return m_error; }
 
@@ -526,11 +489,9 @@ private:
   Error m_error;
 };
 
-// =============================================================================
 // Convenience alias
-// =============================================================================
 
-/** @brief Result type for void-returning operations */
+/** @brief Result type for void-returning operations. */
 using VoidResult = Result<void>;
 
 } // namespace ai_pipe

@@ -1,11 +1,3 @@
-/**
- * @file benchmark_nodes.hpp
- * @brief Reusable test node implementations for benchmarking
- *
- * This file provides various test node implementations that simulate
- * different workload patterns for accurate performance measurement.
- */
-
 #ifndef BENCHMARK_NODES_HPP
 #define BENCHMARK_NODES_HPP
 
@@ -23,13 +15,9 @@
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // Benchmark Payload
-// =============================================================================
 
-/**
- * @brief Configurable payload for benchmark testing
- */
+// Configurable payload for benchmark testing
 struct BenchmarkPayload {
   std::uint64_t frame_id{0};
   std::chrono::steady_clock::time_point timestamp;
@@ -45,13 +33,9 @@ struct BenchmarkPayload {
         data(size_bytes, 0xAB) {}
 };
 
-// =============================================================================
 // Passthrough Node - Minimal Overhead
-// =============================================================================
 
-/**
- * @brief Zero-overhead passthrough node for measuring framework overhead
- */
+// Zero-overhead passthrough node for measuring framework overhead
 class PassthroughNode : public ILogicNode {
 public:
   explicit PassthroughNode(const std::string &name,
@@ -87,13 +71,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Delay Node - IO-Bound Simulation
-// =============================================================================
 
-/**
- * @brief Node that simulates IO-bound operations with configurable delay
- */
+// Node that simulates IO-bound operations with configurable delay
 class DelayNode : public ILogicNode {
 public:
   explicit DelayNode(const std::string &name, std::chrono::microseconds delay,
@@ -136,13 +116,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Compute Node - CPU-Bound Simulation
-// =============================================================================
 
-/**
- * @brief Node that simulates CPU-intensive operations
- */
+// Node that simulates CPU-intensive operations
 class ComputeNode : public ILogicNode {
 public:
   explicit ComputeNode(const std::string &name, std::size_t iterations = 10000,
@@ -192,13 +168,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Memory Node - Memory Bandwidth Testing
-// =============================================================================
 
-/**
- * @brief Node that simulates memory-intensive operations
- */
+// Node that simulates memory-intensive operations
 class MemoryNode : public ILogicNode {
 public:
   explicit MemoryNode(const std::string &name,
@@ -247,13 +219,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Fan-Out Node - Fork Point Simulation
-// =============================================================================
 
-/**
- * @brief Node that splits input to multiple outputs (fork point)
- */
+// Node that splits input to multiple outputs (fork point)
 class FanOutNode : public ILogicNode {
 public:
   explicit FanOutNode(const std::string &name, std::size_t output_count,
@@ -293,13 +261,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Aggregator Node - Join Point Simulation
-// =============================================================================
 
-/**
- * @brief Node that joins multiple inputs (join point)
- */
+// Node that joins multiple inputs (join point)
 class AggregatorNode : public ILogicNode {
 public:
   explicit AggregatorNode(const std::string &name, std::size_t input_count,
@@ -341,13 +305,9 @@ private:
   std::atomic<std::uint64_t> m_execution_count{0};
 };
 
-// =============================================================================
 // Source Node - Data Generator
-// =============================================================================
 
-/**
- * @brief Source node that generates benchmark data
- */
+// Source node that generates benchmark data
 class SourceNode : public ILogicNode {
 public:
   explicit SourceNode(const std::string &name, std::size_t payload_size = 1024,
@@ -384,13 +344,9 @@ private:
   std::atomic<std::uint64_t> m_frame_counter{0};
 };
 
-// =============================================================================
 // Sink Node - Data Consumer with Latency Tracking
-// =============================================================================
 
-/**
- * @brief Sink node that consumes data and tracks latency
- */
+// Sink node that consumes data and tracks latency
 class SinkNode : public ILogicNode {
 public:
   explicit SinkNode(const std::string &name,
@@ -479,13 +435,9 @@ private:
   std::vector<std::int64_t> m_latencies;
 };
 
-// =============================================================================
 // Variable Latency Node - Realistic Simulation
-// =============================================================================
 
-/**
- * @brief Node with variable latency for realistic simulation
- */
+// Node with variable latency for realistic simulation
 class VariableLatencyNode : public ILogicNode {
 public:
   explicit VariableLatencyNode(const std::string &name,

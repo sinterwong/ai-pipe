@@ -1,25 +1,16 @@
-/**
- * @file ai_pipe_version.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Library version macros (single source of truth for CMake and code)
- * @version 0.1
- * @date 2022-04-23
- *
- * @copyright Copyright (c) 2022
- *
- */
-
 #pragma once
 
-// for cmake
+/** Library semantic-version major component. */
 #define AI_PIPE_VER_MAJOR 0
+/** Library semantic-version minor component. */
 #define AI_PIPE_VER_MINOR 5
+/** Library semantic-version patch component. */
 #define AI_PIPE_VER_PATCH 0
 
+/** Numeric version encoded as `major * 10000 + minor * 100 + patch`. */
 #define AI_PIPE_VERSION                                                        \
   (AI_PIPE_VER_MAJOR * 10000 + AI_PIPE_VER_MINOR * 100 + AI_PIPE_VER_PATCH)
 
-// for source code
 #define AI_PIPE_STR(s) #s
 // Stringification: the arguments must stay bare tokens, parentheses
 // would end up inside the produced literal.

@@ -827,7 +827,7 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 
 ### 11.2 公共头文件 vs 内部头文件
 
-源码树中公共头文件位于 `src/api/ai_pipe/`，安装后为
+源码树中公共头文件位于 `include/ai_pipe/`，安装后为
 `<prefix>/include/ai_pipe/`；`src/` 下其余头文件为内部实现，不安装。
 
 | 用户可包含头文件 | 说明 |

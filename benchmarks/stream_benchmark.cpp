@@ -1,11 +1,3 @@
-/**
- * @file stream_benchmark.cpp
- * @brief Benchmark tests for streaming execution mode
- *
- * This file contains performance tests for streaming scenarios,
- * measuring sustained throughput, latency, and backpressure handling.
- */
-
 #include "benchmark_utils.hpp"
 #include <atomic>
 #include <benchmark/benchmark.h>
@@ -13,13 +5,9 @@
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // Sustained Throughput Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure sustained streaming throughput
- */
+// Measure sustained streaming throughput
 static void BM_Stream_SustainedThroughput(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t depth = 4;
@@ -30,14 +18,12 @@ static void BM_Stream_SustainedThroughput(::benchmark::State &state) {
   auto engine = createBenchmarkStreamEngine(workers, queue_capacity, true);
   engine->initialize(topology.graph.get(), workers);
 
-  // Get sink for tracking
   auto sink = std::dynamic_pointer_cast<SinkNode>(topology.nodes.back());
 
   for (auto _ : state) {
     sink->reset();
     engine->startStreaming();
 
-    // Push frames
     for (std::size_t i = 0; i < frames_per_iter; ++i) {
       auto packet = std::make_shared<PortData>();
       packet->id = i;
@@ -45,7 +31,6 @@ static void BM_Stream_SustainedThroughput(::benchmark::State &state) {
       (void)engine->pushInput(topology.source_node, "output", packet);
     }
 
-    // Wait for drain
     engine->waitForDrain(0, std::chrono::milliseconds{5000});
     engine->stopStreaming(true);
     engine->reset();
@@ -69,13 +54,9 @@ BENCHMARK(BM_Stream_SustainedThroughput)
     ->Unit(::benchmark::kMillisecond)
     ->MinTime(3.0);
 
-// =============================================================================
 // Queue Capacity Impact
-// =============================================================================
 
-/**
- * @brief Measure impact of queue capacity on throughput
- */
+// Measure impact of queue capacity on throughput
 static void BM_Stream_QueueCapacity(::benchmark::State &state) {
   const auto queue_capacity = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -127,13 +108,9 @@ BENCHMARK(BM_Stream_QueueCapacity)
     ->Apply(QueueCapacityArgs)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // End-to-End Latency
-// =============================================================================
 
-/**
- * @brief Measure end-to-end latency distribution
- */
+// Measure end-to-end latency distribution
 static void BM_Stream_EndToEndLatency(::benchmark::State &state) {
   const auto depth = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -181,13 +158,9 @@ BENCHMARK(BM_Stream_EndToEndLatency)
     ->Args({16})
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Backpressure Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure behavior under backpressure (producer faster than consumer)
- */
+// Measure behavior under backpressure (producer faster than consumer)
 static void BM_Stream_Backpressure(::benchmark::State &state) {
   const auto consumer_delay_us = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -242,13 +215,9 @@ BENCHMARK(BM_Stream_Backpressure)
     ->Unit(::benchmark::kMillisecond)
     ->MinTime(2.0);
 
-// =============================================================================
 // Multi-Producer Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure performance with multiple concurrent producers
- */
+// Measure performance with multiple concurrent producers
 static void BM_Stream_MultiProducer(::benchmark::State &state) {
   const auto producer_count = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 8;
@@ -309,13 +278,9 @@ BENCHMARK(BM_Stream_MultiProducer)
     ->Args({8})
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Variable Rate Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure streaming at various target frame rates
- */
+// Measure streaming at various target frame rates
 static void BM_Stream_VariableRate(::benchmark::State &state) {
   const auto target_fps = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -376,13 +341,9 @@ BENCHMARK(BM_Stream_VariableRate)
     ->Unit(::benchmark::kMillisecond)
     ->MinTime(2.0);
 
-// =============================================================================
 // Fork-Join Streaming
-// =============================================================================
 
-/**
- * @brief Measure fork-join streaming with synchronization
- */
+// Measure fork-join streaming with synchronization
 static void BM_Stream_ForkJoin_Sync(::benchmark::State &state) {
   const auto branches = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 8;
@@ -429,13 +390,9 @@ BENCHMARK(BM_Stream_ForkJoin_Sync)
     ->Args({8})
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Long Running Stability
-// =============================================================================
 
-/**
- * @brief Measure stability over long running streaming
- */
+// Measure stability over long running streaming
 static void BM_Stream_LongRunning(::benchmark::State &state) {
   const auto duration_seconds = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -492,13 +449,9 @@ BENCHMARK(BM_Stream_LongRunning)
     ->Unit(::benchmark::kSecond)
     ->Iterations(1);
 
-// =============================================================================
 // Start/Stop Overhead
-// =============================================================================
 
-/**
- * @brief Measure streaming start/stop overhead
- */
+// Measure streaming start/stop overhead
 static void BM_Stream_StartStopOverhead(::benchmark::State &state) {
   const std::size_t workers = 4;
   const std::size_t depth = 4;
@@ -530,13 +483,9 @@ BENCHMARK(BM_Stream_StartStopOverhead)
     ->Unit(::benchmark::kMillisecond)
     ->MinTime(2.0);
 
-// =============================================================================
 // Queue Depth Under Load
-// =============================================================================
 
-/**
- * @brief Measure queue depth behavior under varying load
- */
+// Measure queue depth behavior under varying load
 static void BM_Stream_QueueDepthUnderLoad(::benchmark::State &state) {
   const auto load_factor = state.range(0) / 10.0; // 0.5, 1.0, 1.5, 2.0, 3.0
   const std::size_t workers = 4;

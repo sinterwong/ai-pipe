@@ -1,13 +1,3 @@
-/**
- * @file graph.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Mutable DAG construction API implementation
- * @version 0.1
- * @date 2025-05-16
- *
- * @copyright Copyright (c) 2025
- *
- */
 #include "ai_pipe/graph.hpp"
 #include "logger.hpp"
 #include <algorithm>
@@ -27,7 +17,6 @@ bool Graph::addNode(const std::shared_ptr<ILogicNode> &node) {
   m_nodes.push_back(node);
   m_nodeMap[node->getName()] = node;
 
-  // init adj and indegree
   m_adjListOut[node] = {};
   m_adjListIn[node] = {};
   m_inDegree[node] = 0;
@@ -135,7 +124,6 @@ bool Graph::addEdge(const std::string &source_node_name,
   m_edges.emplace_back(
       Edge{source_node, source_port_name, dest_node, dest_port_name});
 
-  // update adj
   m_adjListOut[source_node].push_back(dest_node);
   m_adjListIn[dest_node].push_back(source_node);
   m_inDegree[dest_node]++;

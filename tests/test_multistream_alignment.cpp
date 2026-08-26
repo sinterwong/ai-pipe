@@ -1,17 +1,3 @@
-/**
- * @file test_multistream_alignment.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Multi-stream join alignment tests (F5)
- *
- * Covers the two alignment policies added for multi-stream pipelines:
- *   - StreamFrameId: (stream_id, frame_id) composite pairing with
- *     per-stream engine stamping
- *   - Timestamp: header-timestamp pairing within a configurable
- *     tolerance (wires the TimestampFrameMetadata semantics into the
- *     engine's aligned-gather path)
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
@@ -29,7 +15,7 @@ struct SeenFrame {
   Timestamp timestamp;
 };
 
-/// Join node recording the (stream, frame, ts) of both inputs per execution
+// Join node recording the (stream, frame, ts) of both inputs per execution
 class StreamRecordingJoin : public ILogicNode {
 public:
   explicit StreamRecordingJoin(const std::string &name) : ILogicNode(name) {}

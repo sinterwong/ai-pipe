@@ -1,14 +1,3 @@
-/**
- * @file helper_nodes.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Reusable test node implementations (pass-through, source, sink,
- * failable, join, slow)
- * @version 0.1
- * @date 2026-01-21
- *
- * @copyright Copyright (c) 2026
- *
- */
 #ifndef AI_PIPE_UNIT_TEST_HELPER_NODES
 #define AI_PIPE_UNIT_TEST_HELPER_NODES
 

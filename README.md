@@ -441,8 +441,8 @@ auto stream_opts = ai_pipe::PipelineOptions::stream(4, 16);  // 4 workers, queue
 
 ```
 ai-pipe/
+├── include/ai_pipe/      # Public API headers
 ├── src/
-│   ├── api/ai_pipe/      # Public API headers (installed to include/ai_pipe/)
 │   └── *.cpp, *.hpp      # Internal implementation (PIMPL), not installed
 ├── tests/                # Unit tests (GTest)
 ├── benchmarks/           # Performance benchmarks (Google Benchmark)
@@ -456,10 +456,10 @@ ai-pipe/
 └── README.md
 ```
 
-Public headers live under `src/api/ai_pipe/` in the source tree and are
-installed to `<prefix>/include/ai_pipe/`, so both the build-tree and
-install-tree include interfaces are `#include "ai_pipe/…"`. Everything
-else under `src/` is private and never installed.
+Public headers live under `include/ai_pipe/` and are installed to
+`<prefix>/include/ai_pipe/`, so both the build-tree and install-tree include
+interfaces are `#include "ai_pipe/…"`. Everything under `src/` is private and
+never installed.
 
 ---
 
@@ -486,6 +486,19 @@ ctest --output-on-failure
 # Run benchmarks
 ./benchmarks/ai_pipe_benchmark
 ```
+
+Top-level builds run a clang-format 21 check before compiling the library.
+The check is disabled by default when AI Pipe is included as a subproject.
+Use the dedicated targets to check or update all first-party C++ sources:
+
+```bash
+cmake --build . --target ai_pipe_format_check
+cmake --build . --target ai_pipe_format
+```
+
+If clang-format 21 is not on `PATH`, set
+`AI_PIPE_CLANG_FORMAT_EXECUTABLE` to its executable. Pass
+`-DAI_PIPE_FORMAT_CHECK_ON_BUILD=OFF` to disable the default-build check.
 
 ---
 

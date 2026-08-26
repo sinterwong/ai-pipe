@@ -1,17 +1,3 @@
-/**
- * @file test_lockfree_drop_strategy.cpp
- * @brief Unit tests for LockFreeNodeQueue drop strategy correctness
- *
- * These tests verify that the lock-free queue drop strategies:
- * - Never silently lose data (pushed + dropped = total input)
- * - Properly account for every eviction
- * - Work correctly under concurrent producer/consumer pressure
- * - Achieve expected throughput in backpressure scenarios
- *
- * Regression tests for the forcePush data loss bug where the non-atomic
- * evict+push operation allowed slot stealing, causing silent frame loss.
- */
-
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
@@ -30,9 +16,7 @@ using namespace std::chrono_literals;
 
 namespace ai_pipe_unit_test::lockfree_drop {
 
-// =============================================================================
 // Helper: SlowProcessNode — configurable delay for backpressure simulation
-// =============================================================================
 
 class SlowProcessNode : public ILogicNode {
 public:
@@ -67,9 +51,7 @@ private:
   std::atomic<int> m_processCount{0};
 };
 
-// =============================================================================
 // Test Fixture
-// =============================================================================
 
 class LockFreeDropStrategyTest : public ::testing::Test {
 protected:
@@ -81,9 +63,7 @@ protected:
   }
 };
 
-// =============================================================================
 // 1. Basic DropHead: No Data Loss (Single-Threaded)
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, DropHead_SingleThread_NoDataLoss) {
   // With DropHead, every push must either be enqueued or cause an eviction.
@@ -144,10 +124,8 @@ TEST_F(LockFreeDropStrategyTest, DropHead_SingleThread_NoDataLoss) {
 }
 
 TEST_F(LockFreeDropStrategyTest, DropEvent_QueueSizeBeforeIsRealSize) {
-  // Regression (R1.6): queue_size_before used to report capacity()
-  // regardless of occupancy. With a single thread the pre-eviction size
-  // is deterministic: the queue is exactly full when an overflow push
-  // evicts.
+  // The callback must report occupancy rather than configured capacity. With a
+  // single producer, the pre-eviction size is deterministic.
   constexpr std::size_t capacity = 8;
 
   LockFreeNodeQueue<int>::Config config{
@@ -174,8 +152,7 @@ TEST_F(LockFreeDropStrategyTest, DropEvent_QueueSizeBeforeIsRealSize) {
   EXPECT_EQ(events[0].queue_size_before, capacity);
   EXPECT_EQ(events[0].queue_size_after, capacity - 1);
 
-  // KeepLatest window smaller than capacity: before-size must be the
-  // window occupancy (previously it reported capacity even here)
+  // A KeepLatest window smaller than capacity reports its actual occupancy.
   LockFreeNodeQueue<int>::Config keep_config{
       .capacity = capacity,
       .drop_policy = LockFreeDropPolicy::KeepLatest,
@@ -201,10 +178,8 @@ TEST_F(LockFreeDropStrategyTest, DropEvent_QueueSizeBeforeIsRealSize) {
   EXPECT_LT(events[0].queue_size_before, capacity);
 }
 
-// =============================================================================
 // 2. DropHead: Concurrent Producers — No Silent Loss
 //    (Regression test for the forcePush slot-stealing bug)
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, DropHead_ConcurrentProducers_NoSilentLoss) {
   // Multiple producers push simultaneously into a small queue.
@@ -267,9 +242,7 @@ TEST_F(LockFreeDropStrategyTest, DropHead_ConcurrentProducers_NoSilentLoss) {
   EXPECT_LE(remaining, capacity);
 }
 
-// =============================================================================
 // 3. DropHead: Concurrent Producers + Consumers — Full Accounting
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest,
        DropHead_ConcurrentProducersConsumers_FullAccounting) {
@@ -345,9 +318,7 @@ TEST_F(LockFreeDropStrategyTest,
   EXPECT_EQ(drop_count.load(), static_cast<int>(dropped));
 }
 
-// =============================================================================
 // 4. DropTail: Rejection accounting
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, DropTail_RejectionAccounting) {
   constexpr std::size_t capacity = 8;
@@ -384,9 +355,7 @@ TEST_F(LockFreeDropStrategyTest, DropTail_RejectionAccounting) {
   EXPECT_EQ(stats.total_dropped.load(), 0u);
 }
 
-// =============================================================================
 // 5. KeepLatest: Maintains Window Size
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, KeepLatest_MaintainsWindowSize) {
   constexpr std::size_t capacity = 16;
@@ -424,12 +393,10 @@ TEST_F(LockFreeDropStrategyTest, KeepLatest_MaintainsWindowSize) {
       << " dropped=" << dropped;
 }
 
-// =============================================================================
-// 5b. KeepLatest concurrency contract (F3)
+// 5b. KeepLatest concurrency contract
 //     Strict window for one producer; bounded, self-healing overshoot for
 //     concurrent producers. Mirrors the contract documented at
 //     pushKeepLatest().
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, KeepLatest_SingleProducer_StrictWindow) {
   // Single producer: size() <= N must hold after EVERY push, not just at
@@ -577,10 +544,8 @@ TEST_F(LockFreeDropStrategyTest,
       << " remaining=" << queue.size();
 }
 
-// =============================================================================
 // 6. forcePush: Guarantee No Data Loss
 //    (Direct regression test for the original bug)
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, ForcePush_GuaranteeNoDataLoss) {
   // Test the low-level forcePush directly under contention
@@ -644,10 +609,8 @@ TEST_F(LockFreeDropStrategyTest, ForcePush_GuaranteeNoDataLoss) {
       << " capacity=" << capacity;
 }
 
-// =============================================================================
 // 7. Streaming Backpressure: Drop Rate Within Expected Bounds
 //    (Integration test reproducing the benchmark scenario)
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, StreamingBackpressure_DropRateWithinBounds) {
   // Reproduce the benchmark scenario:
@@ -684,7 +647,6 @@ TEST_F(LockFreeDropStrategyTest, StreamingBackpressure_DropRateWithinBounds) {
   graph->addNode(sink);
   graph->addEdge(prev_node, "output", "sink", "input");
 
-  // Create streaming engine
   auto config = EngineConfig::stream(workers, queue_capacity);
   config.enable_statistics = true;
   config.enable_drop_logging = false; // Reduce noise
@@ -742,10 +704,8 @@ TEST_F(LockFreeDropStrategyTest, StreamingBackpressure_DropRateWithinBounds) {
   engine->reset();
 }
 
-// =============================================================================
 // 8. Streaming Backpressure: Equal Speed — Near-Zero Drops
 //    (When producer ~= consumer speed, drops should be minimal)
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest,
        StreamingBackpressure_EqualSpeed_MinimalDrops) {
@@ -817,9 +777,7 @@ TEST_F(LockFreeDropStrategyTest,
   engine->reset();
 }
 
-// =============================================================================
 // 9. DropHead: Queue Integrity Under Extreme Contention
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, DropHead_ExtremeContention_QueueIntegrity) {
   // Stress test: many producers, tiny queue, verify no crash or hang
@@ -885,9 +843,7 @@ TEST_F(LockFreeDropStrategyTest, DropHead_ExtremeContention_QueueIntegrity) {
   EXPECT_EQ(pushed, items_per_thread * num_producers);
 }
 
-// =============================================================================
 // 10. Statistics: total_pushed only counts successful pushes
-// =============================================================================
 
 TEST_F(LockFreeDropStrategyTest, Statistics_PushedCountsOnlySuccess) {
   constexpr std::size_t capacity = 4;

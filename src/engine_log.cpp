@@ -1,11 +1,3 @@
-/**
- * @file engine_log.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Public framework-log control surface, bridged to the private
- *        Logger singleton (R2.3 minimal plan)
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/engine_log.hpp"
 #include "logger.hpp"
 

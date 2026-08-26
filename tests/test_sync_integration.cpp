@@ -1,15 +1,3 @@
-/**
- * @file test_sync_integration.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief End-to-end frame synchronization tests (P4.3)
- *
- * Validates the Phase 4 wiring through the real engine: a fork-join
- * pipeline with an asymmetric slow branch and tiny DropHead queues is
- * flooded until frames get evicted, and the join node must still only
- * ever observe frame-aligned input pairs.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
@@ -22,7 +10,7 @@ using namespace std::chrono_literals;
 
 namespace ai_pipe_unit_test::sync_integration {
 
-/// Join node that records the frame-id pair of every processed input set
+// Join node that records the frame-id pair of every processed input set
 class RecordingJoinNode : public ILogicNode {
 public:
   explicit RecordingJoinNode(const std::string &name) : ILogicNode(name) {}

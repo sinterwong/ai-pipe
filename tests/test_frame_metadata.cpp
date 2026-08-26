@@ -7,9 +7,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // Frame Constants Tests
-// =============================================================================
 
 TEST(FrameConstantsTest, InvalidFrameId) {
   EXPECT_EQ(frame_constants::k_invalid_frame_id, 0);
@@ -28,9 +26,7 @@ TEST(FrameConstantsTest, MaxFrameDrift) {
   EXPECT_EQ(frame_constants::k_max_frame_drift, 100);
 }
 
-// =============================================================================
 // BasicFrameMetadata Tests
-// =============================================================================
 
 class BasicFrameMetadataTest : public ::testing::Test {
 protected:
@@ -182,9 +178,7 @@ TEST_F(BasicFrameMetadataTest, MoveAssignment) {
   EXPECT_EQ(moved.streamId(), 5);
 }
 
-// =============================================================================
 // TimestampFrameMetadata Tests
-// =============================================================================
 
 class TimestampFrameMetadataTest : public ::testing::Test {
 protected:
@@ -283,9 +277,7 @@ TEST_F(TimestampFrameMetadataTest, DefaultSyncTolerance) {
             std::chrono::milliseconds{33});
 }
 
-// =============================================================================
 // FrameMetadataFactory Tests
-// =============================================================================
 
 TEST(FrameMetadataFactoryTest, CreateBasic) {
   auto meta1 = FrameMetadataFactory::createBasic();
@@ -327,9 +319,7 @@ TEST(FrameMetadataFactoryTest, CreateEndOfStreamWithStreamId) {
   EXPECT_EQ(eos.streamId(), 10);
 }
 
-// =============================================================================
 // Comparison Operators Tests
-// =============================================================================
 
 TEST(FrameMetadataComparisonTest, LessThan) {
   BasicFrameMetadata a(10);
@@ -388,9 +378,7 @@ TEST(FrameMetadataComparisonTest, NotEqual) {
   EXPECT_FALSE(a != a);
 }
 
-// =============================================================================
 // IFrameMetadata Interface Tests
-// =============================================================================
 
 TEST(IFrameMetadataInterfaceTest, PolymorphicUsage) {
   std::unique_ptr<IFrameMetadata> basic =
@@ -415,9 +403,7 @@ TEST(IFrameMetadataInterfaceTest, ClonePreservesType) {
   EXPECT_EQ(cloned->streamId(), 5);
 }
 
-// =============================================================================
 // Edge Cases
-// =============================================================================
 
 TEST(FrameMetadataEdgeCasesTest, MaxFrameId) {
   // Max valid frame ID (one less than end-of-stream)
@@ -460,9 +446,7 @@ TEST(FrameMetadataEdgeCasesTest, TimestampPrecision) {
   EXPECT_LE(m1.compareTo(m2), 0);
 }
 
-// =============================================================================
 // Thread Safety Tests (Factory)
-// =============================================================================
 
 TEST(FrameMetadataThreadSafetyTest, ConcurrentFactoryCreation) {
   std::vector<FrameId> created_ids;

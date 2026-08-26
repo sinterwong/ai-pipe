@@ -1,13 +1,3 @@
-/**
- * @file context.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief PipelineContext implementation
- * @version 0.2
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- */
-
 #include "ai_pipe/context.hpp"
 #include "logger.hpp"
 #include <iomanip>
@@ -16,9 +6,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // ExecutionId Implementation
-// =============================================================================
 
 ExecutionId ExecutionId::generate() {
   static std::atomic<std::uint64_t> counter{0};
@@ -36,9 +24,7 @@ std::string ExecutionId::toString() const {
   return oss.str();
 }
 
-// =============================================================================
 // ConsoleLoggerAdapter Implementation
-// =============================================================================
 
 void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
                                const std::string &message) {
@@ -74,9 +60,7 @@ void ConsoleLoggerAdapter::log(PipeLogLevel level, const std::string &node_name,
   std::cout << oss.str() << '\n' << std::flush;
 }
 
-// =============================================================================
 // PipelineContext Implementation
-// =============================================================================
 
 PipelineContext::PipelineContext() : m_executionId{0} {}
 
@@ -105,7 +89,7 @@ PipeLogLevel toPipeLogLevel(logging::LogLevel level) {
 } // namespace
 
 void PipelineContext::attachEngineLogs(bool quiet_console) {
-  // NOTE: Logger's callback mutex is held while callbacks run, and the
+  // The logger's callback mutex is held while callbacks run, and the
   // bridge callback takes m_loggerMutex - so this function must never
   // call into the Logger while holding m_loggerMutex (lock-order
   // inversion). Registration happens outside the lock.
@@ -230,9 +214,7 @@ PipelineContext &PipelineContext::operator=(PipelineContext &&other) noexcept {
   return *this;
 }
 
-// -------------------------------------------------------------------------
 // Execution Tracking
-// -------------------------------------------------------------------------
 
 ExecutionId PipelineContext::beginExecution() {
   resetExecution();
@@ -248,9 +230,7 @@ void PipelineContext::endExecution() {
   m_isExecuting.store(false, std::memory_order_release);
 }
 
-// -------------------------------------------------------------------------
 // Node Metrics
-// -------------------------------------------------------------------------
 
 void PipelineContext::beginNodeExecution(const std::string &node_name) {
   std::lock_guard<std::mutex> lock(m_metricsMutex);
@@ -320,9 +300,7 @@ PipelineContext::nodeMetrics(const std::string &node_name) const {
   return it->second;
 }
 
-// -------------------------------------------------------------------------
 // Progress Reporting
-// -------------------------------------------------------------------------
 
 ProgressReporter &
 PipelineContext::progressReporter(const std::string &node_name) {
@@ -345,9 +323,7 @@ void PipelineContext::reportProgress(double progress,
   }
 }
 
-// -------------------------------------------------------------------------
 // Reset
-// -------------------------------------------------------------------------
 
 void PipelineContext::resetExecution() {
   // Reset cancellation
@@ -376,25 +352,21 @@ void PipelineContext::resetExecution() {
 void PipelineContext::reset() {
   resetExecution();
 
-  // Clear resources
   {
     std::unique_lock lock(m_resourceMutex);
     m_resources.clear();
   }
 
-  // Clear services
   {
     std::unique_lock lock(m_serviceMutex);
     m_services.clear();
   }
 
-  // Clear config
   {
     std::unique_lock lock(m_configMutex);
     m_config.clear();
   }
 
-  // Clear user data
   {
     std::unique_lock lock(m_userDataMutex);
     m_userData.clear();

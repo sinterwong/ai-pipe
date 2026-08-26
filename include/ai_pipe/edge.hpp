@@ -1,13 +1,3 @@
-/**
- * @file edge.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Directed edge connecting a source node port to a destination node port
- * @version 0.1
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- *
- */
 #ifndef AI_PIPE_EDGE_HPP
 #define AI_PIPE_EDGE_HPP
 
@@ -15,11 +5,13 @@
 #include <memory>
 
 namespace ai_pipe {
+
+/** A directed connection between two named node ports. */
 struct Edge {
-  std::shared_ptr<ILogicNode> source_node;
-  std::string source_port;
-  std::shared_ptr<ILogicNode> dest_node;
-  std::string dest_port;
+  std::shared_ptr<ILogicNode> source_node; ///< Keeps the source node alive.
+  std::string source_port;                 ///< Declared source output port.
+  std::shared_ptr<ILogicNode> dest_node; ///< Keeps the destination node alive.
+  std::string dest_port;                 ///< Declared destination input port.
 
   Edge(std::shared_ptr<ILogicNode> source_node, std::string source_port,
        std::shared_ptr<ILogicNode> dest_node, std::string dest_port)

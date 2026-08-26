@@ -1,15 +1,3 @@
-/**
- * @file execution_engine_impl.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Implementation of the Unified Execution Engine (PIMPL Wrapper & Impl)
- * @version 2.0
- * @date 2025-12-24
- *
- * v2.0: Unified error handling with Result<T>.
- *
- * @copyright Copyright (c) 2025
- */
-
 #include "execution_engine_impl.hpp"
 #include "frame_alignment.hpp"
 #include "join_aware_sync_strategy.hpp"
@@ -23,9 +11,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // ExecutionEngine (PIMPL Wrapper) Implementation
-// =============================================================================
 
 std::unique_ptr<ExecutionEngine>
 ExecutionEngine::create(const EngineConfig &config) {
@@ -45,9 +31,7 @@ ExecutionEngine::ExecutionEngine(ExecutionEngine &&) noexcept = default;
 ExecutionEngine &
 ExecutionEngine::operator=(ExecutionEngine &&) noexcept = default;
 
-// -------------------------------------------------------------------------
 // Strategy Forwarding
-// -------------------------------------------------------------------------
 
 Result<void>
 ExecutionEngine::setSchedulerStrategy(SchedulerStrategyPtr strategy) {
@@ -66,9 +50,7 @@ void ExecutionEngine::configureForMode(ExecutionMode mode) {
   m_impl->configureForMode(mode);
 }
 
-// -------------------------------------------------------------------------
 // Core Interface Forwarding
-// -------------------------------------------------------------------------
 
 Result<void> ExecutionEngine::initialize(Graph *graph,
                                          std::uint8_t num_workers) {
@@ -99,9 +81,7 @@ ExecutionEngine::getNodeStates() const {
   return m_impl->getNodeStates();
 }
 
-// -------------------------------------------------------------------------
 // Callback Registration Forwarding
-// -------------------------------------------------------------------------
 
 void ExecutionEngine::setPipelineResultCallback(
     std::function<void(const PortDataMap &)> callback) {
@@ -123,9 +103,7 @@ void ExecutionEngine::setEndOfStreamCallback(std::function<void()> callback) {
   m_impl->setEndOfStreamCallback(std::move(callback));
 }
 
-// -------------------------------------------------------------------------
 // Streaming Interface Forwarding
-// -------------------------------------------------------------------------
 
 Result<void>
 ExecutionEngine::startStreaming(std::shared_ptr<PipelineContext> context) {
@@ -168,9 +146,7 @@ bool ExecutionEngine::isEndOfStreamReached() const {
   return m_impl->isEndOfStreamReached();
 }
 
-// -------------------------------------------------------------------------
 // State & Monitoring Forwarding
-// -------------------------------------------------------------------------
 
 EngineStatisticsSnapshot ExecutionEngine::statistics() const {
   return m_impl->statistics();
@@ -191,9 +167,7 @@ Result<void> ExecutionEngine::waitForDrain(std::size_t max_depth,
   return m_impl->waitForDrain(max_depth, timeout);
 }
 
-// -------------------------------------------------------------------------
 // Configuration & Info Forwarding
-// -------------------------------------------------------------------------
 
 void ExecutionEngine::setNodeQueueConfig(const std::string &node_name,
                                          const QueueConfig &config) {
@@ -208,9 +182,7 @@ std::string ExecutionEngine::strategyInfo() const {
   return m_impl->strategyInfo();
 }
 
-// =============================================================================
 // ExecutionEngine::Impl Implementation (The Core Logic)
-// =============================================================================
 
 ExecutionEngine::Impl::Impl() : Impl(EngineConfig{}) {}
 
@@ -240,9 +212,7 @@ ExecutionEngine::Impl::~Impl() {
   teardownNodes();
 }
 
-// -------------------------------------------------------------------------
 // Impl: Strategy Configuration
-// -------------------------------------------------------------------------
 
 Result<void> ExecutionEngine::Impl::setSchedulerStrategy(
     std::unique_ptr<ISchedulerStrategy> strategy) {
@@ -323,10 +293,8 @@ void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
     sched_config.min_interval = m_config.min_execution_interval;
     m_schedulerStrategy =
         std::make_unique<StreamSchedulerStrategy>(sched_config);
-    // R3.4: the knob is real - streaming without cross-branch drop
-    // coordination is a valid configuration (previously the field was
-    // parsed and copied everywhere but never read; STREAM always got
-    // the JoinAware strategy).
+    // Cross-branch drop coordination is optional; the no-op strategy permits
+    // independent branch drops when it is disabled.
     if (m_config.enable_sync_coordination) {
       m_syncStrategy = std::make_unique<JoinAwareSyncStrategy>();
     } else {
@@ -337,9 +305,7 @@ void ExecutionEngine::Impl::configureForMode(ExecutionMode mode) {
   }
 }
 
-// -------------------------------------------------------------------------
 // Impl: Core Logic
-// -------------------------------------------------------------------------
 
 Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
                                                std::uint8_t num_workers) {
@@ -374,7 +340,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   m_threadPool = std::make_unique<WorkStealingThreadPool>(m_config.num_workers);
 
-  // Initialize strategies from the compiled snapshot (R4.2): they must
+  // Initialize strategies from the compiled snapshot: they must
   // not retain any dependency on the caller's mutable Graph.
   if (m_schedulerStrategy) {
     m_schedulerStrategy->initialize(*m_compiledGraph);
@@ -383,7 +349,6 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
     m_syncStrategy->initialize(*m_compiledGraph);
   }
 
-  // Initialize node states and queues
   initializeNodeStates();
   initializeQueues();
 
@@ -461,10 +426,8 @@ Result<void> ExecutionEngine::Impl::execute(
 
     LOG_TRACE_S << "ExecutionEngine: Starting execution.";
 
-    // R1.4: claim the context only after validation passed. Storing it
-    // at entry let a rejected concurrent execute() null out the running
-    // execution's context on its error path, handing later-scheduled
-    // tasks a null context.
+    // Claim the context only after validation. A rejected concurrent call must
+    // not replace or clear the active execution's context.
     m_currentContext.store(std::move(context));
 
     auto setup_result = setupNodes(m_currentContext.load());
@@ -625,9 +588,7 @@ ExecutionEngine::Impl::getNodeStates() const {
   return result;
 }
 
-// -------------------------------------------------------------------------
 // Impl: Callback Registration
-// -------------------------------------------------------------------------
 
 void ExecutionEngine::Impl::setPipelineResultCallback(
     std::function<void(const PortDataMap &)> callback) {
@@ -731,9 +692,7 @@ void ExecutionEngine::Impl::invokeDropCallback(const std::string &node_name,
   }
 }
 
-// -------------------------------------------------------------------------
 // Impl: Streaming Interface
-// -------------------------------------------------------------------------
 
 Result<void> ExecutionEngine::Impl::startStreaming(
     std::shared_ptr<PipelineContext> context) {
@@ -855,7 +814,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
 
   if (isInputPort(node, actual_port)) {
     // Data after EOS would sit behind a marker that already declared the
-    // port finished (R6.1). Reject rather than silently reorder it.
+    // port finished. Reject rather than silently reorder it.
     for (std::size_t i = 0; i < state->input_ports.size(); ++i) {
       if (state->input_ports[i] == actual_port) {
         if (portEosLatched(*state, i)) {
@@ -891,9 +850,7 @@ ExecutionEngine::Impl::pushInput(const std::string &source_node,
   return pushInput(source_node, "", std::move(data));
 }
 
-// -------------------------------------------------------------------------
 // Impl: State & Monitoring
-// -------------------------------------------------------------------------
 
 EngineStatisticsSnapshot ExecutionEngine::Impl::statistics() const {
   EngineStatisticsSnapshot snapshot(m_statistics);
@@ -1000,18 +957,14 @@ void ExecutionEngine::Impl::notifyCompletionWaiters() {
   m_completionCV.notify_all();
 }
 
-// -------------------------------------------------------------------------
 // Impl: Configuration
-// -------------------------------------------------------------------------
 
 void ExecutionEngine::Impl::setNodeQueueConfig(const std::string &node_name,
                                                const QueueConfig &config) {
   m_nodeQueueConfigs[node_name] = config;
 }
 
-// -------------------------------------------------------------------------
 // Impl: Information
-// -------------------------------------------------------------------------
 
 std::string ExecutionEngine::Impl::info() const {
   std::ostringstream oss;
@@ -1045,9 +998,7 @@ std::string ExecutionEngine::Impl::strategyInfo() const {
   return oss.str();
 }
 
-// -------------------------------------------------------------------------
 // Impl: Initialization Helpers
-// -------------------------------------------------------------------------
 
 Result<void> ExecutionEngine::Impl::setupNodes(
     const std::shared_ptr<PipelineContext> &context) {
@@ -1204,9 +1155,7 @@ void ExecutionEngine::Impl::setupDropCallbacks() {
   }
 }
 
-// -------------------------------------------------------------------------
 // Impl: Execution Helpers
-// -------------------------------------------------------------------------
 
 bool ExecutionEngine::Impl::distributeInitialInputs(
     const PortDataMap &initial_inputs) {
@@ -1280,7 +1229,7 @@ void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
     return;
   }
 
-  // Every input port drained (R6.1): no scheduling decision can produce
+  // Every input port drained: no scheduling decision can produce
   // work here, and with expected_input_count at 0 the strategy would
   // happily schedule an execution whose gather can only fail - a spin.
   // EOS handling owns the node from here.
@@ -1293,7 +1242,7 @@ void ExecutionEngine::Impl::tryScheduleNode(CompiledGraph::NodeIndex index) {
   // but only one will win the WAITING->READY CAS in scheduleNodeExecution.
   SchedulingContext context;
   context.node = state.node;
-  // A drained port (R6.1) is no longer an expected input: counting it
+  // A drained port is no longer an expected input: counting it
   // would leave allInputsReady() permanently false and the node would
   // never be scheduled again, stranding the data on its live ports.
   context.expected_input_count = 0;
@@ -1496,7 +1445,7 @@ void ExecutionEngine::Impl::executeNodeTask(
       state.exec_state.store(NodeExecutionState::WAITING,
                              std::memory_order_release);
       // The gather can also come back empty because every input port
-      // drained (R6.1). Give EOS the first look: rescheduling instead
+      // drained. Give EOS the first look: rescheduling instead
       // would just re-run a gather that can never succeed again.
       // Reschedule BEFORE decrementing: scheduleNodeExecution() increments
       // m_activeTasks, so this ordering prevents the counter from
@@ -1516,7 +1465,6 @@ void ExecutionEngine::Impl::executeNodeTask(
     return;
   }
 
-  // Process node - now returns Result<void> with rich error context
   m_statistics.total_executions.fetch_add(1, std::memory_order_relaxed);
   const auto process_start = std::chrono::steady_clock::now();
   auto process_result = processNode(state.node, inputs, outputs, context);
@@ -1658,10 +1606,10 @@ bool ExecutionEngine::Impl::gatherNodeInputs(NodeState &state,
 
   // A node with no input ports gathers an empty set successfully - that
   // is how input-less sources run. Only a node that *has* ports and has
-  // seen them all drain (R6.1) has nothing left to deliver.
+  // seen them all drain has nothing left to deliver.
   bool any_open_port = state.input_ports.empty();
   for (std::size_t i = 0; i < state.input_ports.size(); ++i) {
-    // A drained port (R6.1) contributes nothing and must not block the
+    // A drained port contributes nothing and must not block the
     // gather; the node runs on whatever its still-open ports deliver.
     if (portDrained(state, i)) {
       continue;
@@ -1713,7 +1661,7 @@ bool ExecutionEngine::Impl::runAlignedGather(NodeState &state,
       [&](std::size_t i, const PortDataPtr &head, const char *reason) {
         dropStaleHead(state, i, head ? *head : PortData{}, reason);
       },
-      // A drained port (R6.1) leaves the pairing set: its partner frames
+      // A drained port leaves the pairing set: its partner frames
       // can never arrive, so waiting on it would deadlock the join.
       [&](std::size_t i) { return portDrained(state, i); });
 }
@@ -1786,7 +1734,7 @@ bool ExecutionEngine::Impl::degradeJoinGather(NodeState &state,
     }
   }
 
-  // Pairing predicate delegated to the alignment policies (R4.3): this
+  // Pairing predicate delegated to the alignment policies: this
   // used to be the fourth hand-rolled copy of the per-policy rule.
   auto pairs_with_reference = [&](const PortData &head) {
     if (!reference) {
@@ -2042,7 +1990,6 @@ void ExecutionEngine::Impl::handleNodeSuccess(NodeState &state,
                   std::chrono::steady_clock::now() - propagate_start));
   }
 
-  // Check if node should be rescheduled
   if (m_schedulerStrategy->onNodeComplete(state.node, true, outputs)) {
     state.exec_state.store(NodeExecutionState::WAITING,
                            std::memory_order_release);
@@ -2063,12 +2010,9 @@ void ExecutionEngine::Impl::handleNodeFailure(NodeState &state,
               << " FAILED: " << error.toString();
 
   if (isStreaming()) {
-    // Streaming semantics: a node exception is a per-frame event, not a
-    // pipeline-fatal one. The failing frame was already consumed from
-    // the queues, so return the node to service for subsequent frames -
-    // previously it stayed FAILED forever and stranded its queued data.
-    // (Error visibility is preserved: statistics, logs, and the error
-    // callback fired from processNode.)
+    // A streaming node failure consumes only the current frame. Return the node
+    // to service so queued frames continue; statistics, logs, and the callback
+    // preserve failure visibility.
     state.exec_state.store(NodeExecutionState::WAITING,
                            std::memory_order_release);
     tryScheduleNode(state.index);
@@ -2079,9 +2023,7 @@ void ExecutionEngine::Impl::handleNodeFailure(NodeState &state,
   stopExecutionAsync();
 }
 
-// -------------------------------------------------------------------------
-// Impl: End of stream (R6.1) - see docs/design/eos_flush.md
-// -------------------------------------------------------------------------
+// Impl: End of stream - see docs/design/eos_flush.md
 
 bool ExecutionEngine::Impl::portEosLatched(const NodeState &state,
                                            std::size_t port_index) {
@@ -2365,7 +2307,7 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
     return;
   }
 
-  // R4.5: this runs on every task completion in batch mode, so the
+  // this runs on every task completion in batch mode, so the
   // snapshot reuses a thread-local vector of name views (sink indices
   // are already precomputed in the CompiledGraph) instead of building
   // an unordered_map with per-key string allocations each time.
@@ -2519,9 +2461,7 @@ void ExecutionEngine::Impl::resetInternalState() {
   }
 }
 
-// -------------------------------------------------------------------------
 // Impl: Queue Operations
-// -------------------------------------------------------------------------
 
 bool ExecutionEngine::Impl::pushToQueue(NodeState &state,
                                         const std::string &port_name,
@@ -2635,9 +2575,7 @@ std::size_t ExecutionEngine::Impl::getQueueSize(const NodeState &state,
   return 0;
 }
 
-// -------------------------------------------------------------------------
 // Impl: Utility
-// -------------------------------------------------------------------------
 
 void ExecutionEngine::Impl::collectResults(const NodePtr &node,
                                            const PortDataMap &outputs) {

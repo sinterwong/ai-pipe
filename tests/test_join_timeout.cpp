@@ -1,15 +1,3 @@
-/**
- * @file test_join_timeout.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Join alignment timeout degradation tests (F6)
- *
- * Validates EngineConfig::join_wait_timeout with both degradation
- * policies: PartialInputs (execute with the ports that have data) and
- * SkipFrame (discard the stuck head so later frames pair normally),
- * plus the default wait-forever behavior when the timeout is 0.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
@@ -22,7 +10,7 @@ using namespace std::chrono_literals;
 
 namespace ai_pipe_unit_test::join_timeout {
 
-/// Join node recording which ports were present in each execution
+// Join node recording which ports were present in each execution
 class PortRecordingJoin : public ILogicNode {
 public:
   explicit PortRecordingJoin(const std::string &name) : ILogicNode(name) {}

@@ -1,14 +1,3 @@
-/**
- * @file context.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Comprehensive pipeline execution context with thread-safe resource
- *        management, metrics collection, cancellation support, and more.
- * @version 0.2
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_PIPELINE_CONTEXT_HPP
 #define AI_PIPE_PIPELINE_CONTEXT_HPP
 
@@ -32,12 +21,10 @@ namespace ai_pipe {
 class PipelineContext;
 class ScopedNodeExecution;
 
-// =============================================================================
 // Supporting Types
-// =============================================================================
 
 /**
- * @brief Unique identifier for pipeline executions
+ * @brief Unique identifier for pipeline executions.
  */
 struct ExecutionId {
   std::uint64_t value{0};
@@ -54,7 +41,7 @@ struct ExecutionId {
 };
 
 /**
- * @brief Metrics for a single node execution
+ * @brief Metrics for a single node execution.
  */
 struct NodeMetrics {
   std::string node_name;
@@ -72,7 +59,7 @@ struct NodeMetrics {
 };
 
 /**
- * @brief Aggregated metrics for an entire pipeline execution
+ * @brief Aggregated metrics for an entire pipeline execution.
  */
 struct ExecutionMetrics {
   ExecutionId execution_id;
@@ -92,7 +79,7 @@ struct ExecutionMetrics {
 };
 
 /**
- * @brief Cancellation token for cooperative cancellation
+ * @brief Cancellation token for cooperative cancellation.
  */
 class CancellationToken {
 public:
@@ -101,8 +88,7 @@ public:
   void cancel() { m_cancelled.store(true, std::memory_order_release); }
   void reset() { m_cancelled.store(false, std::memory_order_release); }
 
-  // The former throwIfCancelled() was removed with the exception
-  // dual-track (R2.2): poll isCancelled() and return early instead.
+  /** Polls the cooperative cancellation flag without throwing. */
   [[nodiscard]] bool isCancelled() const {
     return m_cancelled.load(std::memory_order_acquire);
   }
@@ -112,7 +98,7 @@ private:
 };
 
 /**
- * @brief Progress reporter for long-running nodes
+ * @brief Progress reporter for long-running nodes.
  */
 class ProgressReporter {
 public:
@@ -142,12 +128,10 @@ private:
   std::string m_message;
 };
 
-// =============================================================================
 // Logger Adapter Interface
-// =============================================================================
 
 /**
- * @brief Log level enumeration (matches common logging frameworks)
+ * @brief Log level enumeration (matches common logging frameworks).
  */
 enum class PipeLogLevel {
   KTrace = 0,
@@ -158,7 +142,7 @@ enum class PipeLogLevel {
 };
 
 /**
- * @brief Abstract logger adapter interface
+ * @brief Abstract logger adapter interface.
  *
  * Implement this interface to bridge PipelineContext logging to your
  * existing logging system (glog, spdlog, etc.)
@@ -185,7 +169,7 @@ public:
   virtual ~ILoggerAdapter() = default;
 
   /**
-   * @brief Log a message
+   * @brief Log a message.
    * @param level Log level
    * @param node_name Name of the node generating the log (may be empty)
    * @param message Log message
@@ -195,19 +179,17 @@ public:
 };
 
 /**
- * @brief Null logger adapter (discards all logs)
+ * @brief Null logger adapter (discards all logs).
  */
 class NullLoggerAdapter : public ILoggerAdapter {
 public:
   void log(PipeLogLevel, const std::string &, const std::string &) override {}
 };
 
-// =============================================================================
 // Pipeline Context
-// =============================================================================
 
 /**
- * @brief Thread-safe execution context for pipeline
+ * @brief Thread-safe execution context for pipeline.
  *
  * Provides:
  * - Thread-safe resource/service management
@@ -247,12 +229,10 @@ public:
   PipelineContext(PipelineContext &&) noexcept;
   PipelineContext &operator=(PipelineContext &&) noexcept;
 
-  // -------------------------------------------------------------------------
   // Resource Management (Thread-Safe)
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Store a named resource
+   * @brief Store a named resource.
    */
   template <typename T>
   void setResource(const std::string &name, std::shared_ptr<T> resource) {
@@ -261,7 +241,7 @@ public:
   }
 
   /**
-   * @brief Retrieve a named resource
+   * @brief Retrieve a named resource.
    * @return Shared pointer to resource, or nullptr if not found/wrong type
    */
   template <typename T>
@@ -279,7 +259,7 @@ public:
   }
 
   /**
-   * @brief Check if a resource exists
+   * @brief Check if a resource exists.
    */
   [[nodiscard]] bool hasResource(const std::string &name) const {
     std::shared_lock lock(m_resourceMutex);
@@ -287,7 +267,7 @@ public:
   }
 
   /**
-   * @brief Remove a resource
+   * @brief Remove a resource.
    */
   bool removeResource(const std::string &name) {
     std::unique_lock lock(m_resourceMutex);
@@ -295,7 +275,7 @@ public:
   }
 
   /**
-   * @brief Get all resource names
+   * @brief Get all resource names.
    */
   [[nodiscard]] std::vector<std::string> resourceNames() const {
     std::shared_lock lock(m_resourceMutex);
@@ -307,12 +287,10 @@ public:
     return names;
   }
 
-  // -------------------------------------------------------------------------
   // Service Locator (Type-Based)
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Register a service by interface type
+   * @brief Register a service by interface type.
    */
   template <typename Interface>
   void setService(std::shared_ptr<Interface> service) {
@@ -321,7 +299,7 @@ public:
   }
 
   /**
-   * @brief Retrieve a service by interface type
+   * @brief Retrieve a service by interface type.
    */
   template <typename Interface>
   [[nodiscard]] std::shared_ptr<Interface> getService() const {
@@ -338,19 +316,17 @@ public:
   }
 
   /**
-   * @brief Check if a service is registered
+   * @brief Check if a service is registered.
    */
   template <typename Interface> [[nodiscard]] bool hasService() const {
     std::shared_lock lock(m_serviceMutex);
     return m_services.count(std::type_index(typeid(Interface))) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Configuration Management
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Set a configuration value
+   * @brief Set a configuration value.
    */
   template <typename T> void setConfig(const std::string &key, T value) {
     std::unique_lock lock(m_configMutex);
@@ -358,7 +334,7 @@ public:
   }
 
   /**
-   * @brief Get a configuration value
+   * @brief Get a configuration value.
    */
   template <typename T>
   [[nodiscard]] T getConfig(const std::string &key,
@@ -376,72 +352,66 @@ public:
   }
 
   /**
-   * @brief Check if configuration key exists
+   * @brief Check if configuration key exists.
    */
   [[nodiscard]] bool hasConfig(const std::string &key) const {
     std::shared_lock lock(m_configMutex);
     return m_config.count(key) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Execution Tracking
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Start a new execution
+   * @brief Start a new execution.
    * @return The new execution ID
    */
   ExecutionId beginExecution();
 
   /**
-   * @brief End the current execution
+   * @brief End the current execution.
    */
   void endExecution();
 
   /**
-   * @brief Get current execution ID
+   * @brief Get current execution ID.
    */
   [[nodiscard]] ExecutionId executionId() const { return m_executionId; }
 
   /**
-   * @brief Check if an execution is in progress
+   * @brief Check if an execution is in progress.
    */
   [[nodiscard]] bool isExecuting() const {
     return m_isExecuting.load(std::memory_order_acquire);
   }
 
-  // -------------------------------------------------------------------------
   // Node Metrics
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Begin tracking metrics for a node
+   * @brief Begin tracking metrics for a node.
    */
   void beginNodeExecution(const std::string &node_name);
 
   /**
-   * @brief End tracking metrics for a node
+   * @brief End tracking metrics for a node.
    */
   void endNodeExecution(const std::string &node_name, bool success = true,
                         const std::string &error_message = "");
 
   /**
-   * @brief Get metrics for the current/last execution
+   * @brief Get metrics for the current/last execution.
    */
   [[nodiscard]] ExecutionMetrics executionMetrics() const;
 
   /**
-   * @brief Get metrics for a specific node
+   * @brief Get metrics for a specific node.
    */
   [[nodiscard]] std::optional<NodeMetrics>
   nodeMetrics(const std::string &node_name) const;
 
-  // -------------------------------------------------------------------------
   // Cancellation Support
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Get the cancellation token
+   * @brief Get the cancellation token.
    */
   [[nodiscard]] CancellationToken &cancellation() {
     return m_cancellationToken;
@@ -451,23 +421,21 @@ public:
   }
 
   /**
-   * @brief Request cancellation of current execution
+   * @brief Request cancellation of current execution.
    */
   void requestCancellation() { m_cancellationToken.cancel(); }
 
   /**
-   * @brief Check if cancellation was requested
+   * @brief Check if cancellation was requested.
    */
   [[nodiscard]] bool isCancellationRequested() const {
     return m_cancellationToken.isCancelled();
   }
 
-  // -------------------------------------------------------------------------
   // Logger Adapter
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Set the logger adapter
+   * @brief Set the logger adapter.
    *
    * If not set, logs are discarded (NullLoggerAdapter behavior).
    * Set this to bridge to your existing logging system.
@@ -478,7 +446,7 @@ public:
   }
 
   /**
-   * @brief Route the framework's internal logs to this context's adapter
+   * @brief Route the framework's internal logs to this context's adapter.
    *
    * The engine logs through the process-wide ai_pipe logger (LOG_*_S).
    * Calling this installs a bridge so those messages are also delivered
@@ -493,11 +461,11 @@ public:
    */
   void attachEngineLogs(bool quiet_console = false);
 
-  /** @brief Remove the bridge installed by attachEngineLogs() */
+  /** @brief Remove the bridge installed by attachEngineLogs(). */
   void detachEngineLogs();
 
   /**
-   * @brief Log a message through the adapter
+   * @brief Log a message through the adapter.
    */
   void log(PipeLogLevel level, const std::string &node_name,
            const std::string &message) {
@@ -512,7 +480,7 @@ public:
   }
 
   /**
-   * @brief Convenience logging methods
+   * @brief Convenience logging methods.
    */
   void logDebug(const std::string &node_name, const std::string &message) {
     log(PipeLogLevel::KDebug, node_name, message);
@@ -527,41 +495,37 @@ public:
     log(PipeLogLevel::KError, node_name, message);
   }
 
-  // -------------------------------------------------------------------------
   // Progress Reporting
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Get progress reporter for a node
+   * @brief Get progress reporter for a node.
    */
   [[nodiscard]] ProgressReporter &
   progressReporter(const std::string &node_name);
 
   /**
-   * @brief Report overall pipeline progress
+   * @brief Report overall pipeline progress.
    */
   void reportProgress(double progress, const std::string &message = "");
 
   /**
-   * @brief Get overall pipeline progress
+   * @brief Get overall pipeline progress.
    */
   [[nodiscard]] double overallProgress() const {
     return m_overallProgress.load(std::memory_order_acquire);
   }
 
   /**
-   * @brief Set progress callback
+   * @brief Set progress callback.
    */
   void setProgressCallback(ProgressReporter::ProgressCallback callback) {
     m_progressCallback = std::move(callback);
   }
 
-  // -------------------------------------------------------------------------
   // User Data (Arbitrary Key-Value Storage)
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Set arbitrary user data
+   * @brief Set arbitrary user data.
    */
   template <typename T> void setUserData(const std::string &key, T value) {
     std::unique_lock lock(m_userDataMutex);
@@ -569,7 +533,7 @@ public:
   }
 
   /**
-   * @brief Get arbitrary user data
+   * @brief Get arbitrary user data.
    */
   template <typename T>
   [[nodiscard]] std::optional<T> getUserData(const std::string &key) const {
@@ -586,25 +550,23 @@ public:
   }
 
   /**
-   * @brief Remove user data
+   * @brief Remove user data.
    */
   bool removeUserData(const std::string &key) {
     std::unique_lock lock(m_userDataMutex);
     return m_userData.erase(key) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Reset / Clear
-  // -------------------------------------------------------------------------
 
   /**
-   * @brief Reset context for new execution (clears metrics, progress)
+   * @brief Reset context for new execution (clears metrics, progress).
    * @note Does NOT clear resources, services, config, or logger adapter
    */
   void resetExecution();
 
   /**
-   * @brief Full reset (clears everything except logger adapter)
+   * @brief Full reset (clears everything except logger adapter).
    */
   void reset();
 
@@ -656,12 +618,10 @@ private:
       m_nodeProgressReporters;
 };
 
-// =============================================================================
 // Scoped Node Execution Helper
-// =============================================================================
 
 /**
- * @brief RAII helper for node execution context
+ * @brief RAII helper for node execution context.
  */
 class ScopedNodeExecution {
 public:
@@ -690,8 +650,7 @@ public:
     m_errorMessage = error_message;
   }
 
-  /** @brief True when cooperative cancellation was requested (R2.2:
-   *  replaces the throwing checkCancellation) */
+  /** Returns whether cooperative cancellation was requested. */
   [[nodiscard]] bool cancellationRequested() const {
     return m_ctx && m_ctx->isCancellationRequested();
   }
@@ -728,12 +687,10 @@ private:
   std::string m_errorMessage;
 };
 
-// =============================================================================
 // Common Logger Adapters
-// =============================================================================
 
 /**
- * @brief Simple console logger adapter (for testing/debugging)
+ * @brief Simple console logger adapter (for testing/debugging).
  */
 class ConsoleLoggerAdapter : public ILoggerAdapter {
 public:
@@ -742,7 +699,7 @@ public:
 };
 
 /**
- * @brief Logger adapter that captures logs in memory (for testing)
+ * @brief Logger adapter that captures logs in memory (for testing).
  */
 class MemoryLoggerAdapter : public ILoggerAdapter {
 public:

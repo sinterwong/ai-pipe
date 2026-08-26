@@ -7,9 +7,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // BranchState Tests
-// =============================================================================
 
 TEST(BranchStateTest, DefaultConstruction) {
   BranchState state;
@@ -60,9 +58,7 @@ TEST(BranchStateTest, CopyAssignment) {
   EXPECT_FALSE(target.active.load());
 }
 
-// =============================================================================
 // SyncGroup Tests
-// =============================================================================
 
 class SyncGroupTest : public ::testing::Test {
 protected:
@@ -260,18 +256,15 @@ TEST_F(SyncGroupTest, Cleanup) {
   m_group->addBranch("branch_A");
   m_group->addBranch("branch_B");
 
-  // Create some drops
   m_group->reportFrameDropped("branch_A", 10, "test");
   m_group->reportFrameDropped("branch_A", 20, "test");
 
-  // Process frames to advance watermark
   m_group->reportFrameProcessed("branch_A", 100);
   m_group->reportFrameProcessed("branch_B", 100);
 
   // Cleanup should remove old drops
   m_group->cleanup();
 
-  // Test passes if no crash occurs
   EXPECT_GE(m_group->watermark(), 0);
 }
 
@@ -285,9 +278,7 @@ TEST_F(SyncGroupTest, ToString) {
   EXPECT_NE(str.find("branches=2"), std::string::npos);
 }
 
-// =============================================================================
 // SyncCoordinator Tests
-// =============================================================================
 
 class SyncCoordinatorTest : public ::testing::Test {
 protected:
@@ -479,7 +470,6 @@ TEST_F(SyncCoordinatorTest, Cleanup) {
   m_coordinator.reportFrameProcessed("group1", "branch_A", 100);
   m_coordinator.reportFrameProcessed("group1", "branch_B", 100);
 
-  // Should not crash
   m_coordinator.cleanup();
 }
 
@@ -502,9 +492,7 @@ TEST_F(SyncCoordinatorTest, ToString) {
   EXPECT_NE(str.find("groups=1"), std::string::npos);
 }
 
-// =============================================================================
 // NodeSyncContext Tests
-// =============================================================================
 
 class NodeSyncContextTest : public ::testing::Test {
 protected:
@@ -526,7 +514,6 @@ TEST_F(NodeSyncContextTest, Construction) {
 
 TEST_F(NodeSyncContextTest, OnFrameReceived) {
   m_context->onFrameReceived(100);
-  // Should not crash, coordinator tracks the frame
 }
 
 TEST_F(NodeSyncContextTest, OnFrameProcessed) {
@@ -565,7 +552,6 @@ TEST_F(NodeSyncContextTest, AcknowledgeSyncDrop) {
 TEST_F(NodeSyncContextTest, NullCoordinator) {
   NodeSyncContext null_context(nullptr, "group1", "branch_A");
 
-  // Should not crash with null coordinator
   null_context.onFrameReceived(100);
   null_context.onFrameProcessed(100);
   null_context.onFrameDropped(100, "test");
@@ -573,9 +559,7 @@ TEST_F(NodeSyncContextTest, NullCoordinator) {
   null_context.acknowledgeSyncDrop(100);
 }
 
-// =============================================================================
 // Concurrent Access Tests
-// =============================================================================
 
 TEST(SyncCoordinatorConcurrencyTest, ConcurrentGroupCreation) {
   SyncCoordinator coordinator;
@@ -659,9 +643,7 @@ TEST(SyncCoordinatorConcurrencyTest, ConcurrentDropReporting) {
   EXPECT_GT(callback_count.load(), 0);
 }
 
-// =============================================================================
 // Integration Tests
-// =============================================================================
 
 TEST(SyncCoordinatorIntegrationTest, DiamondPatternDropPropagation) {
   SyncCoordinator coordinator;
@@ -679,7 +661,6 @@ TEST(SyncCoordinatorIntegrationTest, DiamondPatternDropPropagation) {
       coordinator.reportDrop("diamond", "branch_A", frame, "backpressure");
     }
 
-    // Check if branch_B should drop
     if (coordinator.shouldDropFrame("diamond", "branch_B", frame)) {
       coordinator.clearPendingSyncDrop("diamond", "branch_B", frame);
     } else {

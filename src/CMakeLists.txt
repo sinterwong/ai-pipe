@@ -1,8 +1,10 @@
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Public headers (API)
-file(GLOB_RECURSE PUBLIC_HEADERS CONFIGURE_DEPENDS 
-    "api/ai_pipe/*.hpp"
+# Public API headers live outside the implementation tree so consumers cannot
+# accidentally depend on private headers.
+set(AI_PIPE_PUBLIC_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/../include")
+file(GLOB_RECURSE AI_PIPE_PUBLIC_HEADERS CONFIGURE_DEPENDS
+    "${AI_PIPE_PUBLIC_INCLUDE_DIR}/ai_pipe/*.hpp"
 )
 
 file(GLOB AI_PIPE_ROOT_HDRS CONFIGURE_DEPENDS "*.hpp")
@@ -20,6 +22,7 @@ set(AI_PIPE_PRIVATE_HEADERS
 add_library(ai_pipe 
     ${AI_PIPE_SOURCES}
     ${AI_PIPE_PRIVATE_HEADERS}
+    ${AI_PIPE_PUBLIC_HEADERS}
 )
 
 add_library(ai_pipe::ai_pipe ALIAS ai_pipe)
@@ -43,12 +46,10 @@ set_target_properties(ai_pipe PROPERTIES
     SOVERSION ${AI_PIPE_VERSION_MAJOR}
 )
 
-# Configure include directories. Only api/ is public: consumers must not
-# see the private headers in src/, so the build-tree interface matches the
-# install-tree interface (tests/benchmarks opt back in explicitly).
+# Consumers see the same `ai_pipe/...` paths in the build and install trees.
 target_include_directories(ai_pipe
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/api>
+        $<BUILD_INTERFACE:${AI_PIPE_PUBLIC_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -79,13 +80,13 @@ write_basic_package_version_file(
 )
 
 configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
+    "${PROJECT_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
     INSTALL_DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
 )
 
 # Install public headers
-install(FILES ${PUBLIC_HEADERS}
+install(FILES ${AI_PIPE_PUBLIC_HEADERS}
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ai_pipe
     COMPONENT dev
 )

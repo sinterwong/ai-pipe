@@ -10,8 +10,7 @@ set(DEPENDENCY_INCLUDES
     ${OpenCV_INCLUDE_DIRS}
     ${PROJECT_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/api
-    ${CMAKE_SOURCE_DIR}/src/api/ai_pipe
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 set(DEPENDENCY_LIBS

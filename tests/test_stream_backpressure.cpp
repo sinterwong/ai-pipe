@@ -186,7 +186,6 @@ TEST_F(StreamBackpressureTest, StatisticsResetBehavior) {
   m_engine->initialize(m_graph.get(), 2);
   m_engine->startStreaming();
 
-  // Push some frames
   const std::size_t frames = 50;
   for (std::size_t i = 0; i < frames; ++i) {
     auto packet = std::make_shared<PortData>();
@@ -195,22 +194,18 @@ TEST_F(StreamBackpressureTest, StatisticsResetBehavior) {
     (void)m_engine->pushInput("source", "output", packet);
   }
 
-  // Wait for processing
   m_engine->waitForDrain(0, std::chrono::milliseconds{5000});
   m_engine->stopStreaming(true);
 
-  // Get statistics BEFORE reset - should have non-zero values
   auto stats_before = m_engine->statistics();
   EXPECT_GT(stats_before.total_output_frames, 0u)
       << "Statistics should show processed frames before reset";
 
-  // Reset the engine
   m_engine->reset();
 
-  // Get statistics AFTER reset - this is the BUG
   auto stats_after = m_engine->statistics();
 
-  // This assertion documents the bug - it will PASS because of the bug
+  // `reset()` intentionally starts a fresh statistics interval.
   EXPECT_EQ(stats_after.total_output_frames, 0u)
       << "BUG CONFIRMED: Statistics are zeroed after reset()";
 }
@@ -237,7 +232,6 @@ TEST_F(StreamBackpressureTest, StatisticsBeforeReset_Workaround) {
   EXPECT_GT(stats.total_output_frames, 0u)
       << "Should have processed frames when statistics retrieved before reset";
 
-  // Verify sink node also counted correctly
   EXPECT_EQ(m_sink->processed(), stats.total_output_frames)
       << "Sink count should match engine statistics";
 
@@ -271,7 +265,6 @@ TEST_F(StreamBackpressureTest, StatisticsAccumulateDuringStreaming) {
   m_engine->waitForDrain(0, std::chrono::milliseconds{5000});
   m_engine->stopStreaming(true);
 
-  // Verify monotonic increase
   for (std::size_t i = 1; i < checkpoints.size(); ++i) {
     EXPECT_GE(checkpoints[i], checkpoints[i - 1])
         << "Statistics should monotonically increase at checkpoint " << i;
@@ -287,18 +280,16 @@ TEST_F(StreamBackpressureTest, QueueDepthOnSourceNode_ReturnsZero) {
   m_engine->initialize(m_graph.get(), 2);
   m_engine->startStreaming();
 
-  // Push data
   for (int i = 0; i < 10; ++i) {
     auto packet = std::make_shared<PortData>();
     packet->id = i;
     (void)m_engine->pushInput("source", "output", packet);
   }
 
-  // Query queue depth on source node
   auto depth = m_engine->queueDepth("source");
 
-  // This will be 0 because source has no input ports
-  // The data is pushed to the DOWNSTREAM node's input queue
+  // Source nodes have no input queue; ingress is routed to the downstream
+  // node's input queue.
   EXPECT_EQ(depth, 0u) << "API LIMITATION: queueDepth('source') returns 0 "
                           "because source has no input ports";
 
@@ -306,7 +297,6 @@ TEST_F(StreamBackpressureTest, QueueDepthOnSourceNode_ReturnsZero) {
 }
 
 TEST_F(StreamBackpressureTest, QueueDepthOnDownstreamNode_ShowsActualDepth) {
-  // Create a slow consumer to build up queue
   auto slow_node =
       std::make_shared<SlowConsumerNode>("slow", std::chrono::milliseconds{50});
   auto sink = std::make_shared<TestSinkNode>("sink");
@@ -320,7 +310,6 @@ TEST_F(StreamBackpressureTest, QueueDepthOnDownstreamNode_ShowsActualDepth) {
   m_engine->initialize(graph.get(), 1);
   m_engine->startStreaming();
 
-  // Push many frames quickly
   const std::size_t frames = 20;
   for (std::size_t i = 0; i < frames; ++i) {
     auto packet = std::make_shared<PortData>();
@@ -329,10 +318,8 @@ TEST_F(StreamBackpressureTest, QueueDepthOnDownstreamNode_ShowsActualDepth) {
     (void)m_engine->pushInput("slow", "input", packet);
   }
 
-  // Immediately check queue depth on the slow node
   auto depth = m_engine->queueDepth("slow", "input");
 
-  // Should have some items queued
   EXPECT_GT(depth, 0u)
       << "Queue depth on downstream node should show queued items";
 
@@ -344,7 +331,6 @@ TEST_F(StreamBackpressureTest, QueueDepthWithExplicitPort) {
   m_engine->initialize(m_graph.get(), 1);
   m_engine->startStreaming();
 
-  // Push data to pass node's input
   const std::size_t frames = 15;
   for (std::size_t i = 0; i < frames; ++i) {
     auto packet = std::make_shared<PortData>();
@@ -352,17 +338,15 @@ TEST_F(StreamBackpressureTest, QueueDepthWithExplicitPort) {
     (void)m_engine->pushInput("source", "output", packet);
   }
 
-  // Small delay to allow some propagation but not full processing
+  // Allow propagation without giving the slow pipeline time to drain.
   std::this_thread::sleep_for(std::chrono::microseconds{100});
 
-  // Stop streaming WITHOUT draining to freeze queue state.
-  // This ensures worker threads are fully stopped before we inspect.
+  // Stop without draining so both queries observe the same stable queue.
   m_engine->stopStreaming(false);
 
-  // Now query with a stable queue - no concurrent consumption
   auto depth_explicit = m_engine->queueDepth("pass", "input");
   auto depth_default =
-      m_engine->queueDepth("pass"); // Should use first input port
+      m_engine->queueDepth("pass"); // Defaults to the first input port.
 
   EXPECT_EQ(depth_explicit, depth_default)
       << "Explicit and default port queries should return same value";
@@ -390,18 +374,13 @@ TEST_F(StreamBackpressureTest, HasQueueCapacityBehavior) {
   m_engine->initialize(m_graph.get(), 1);
   m_engine->startStreaming();
 
-  // Initially should have capacity
   EXPECT_TRUE(m_engine->hasQueueCapacity("pass", "input"))
       << "Empty queue should have capacity";
-
-  // Note: Without a slow consumer, we can't easily test full queue
-  // because items get processed too quickly
 
   m_engine->stopStreaming(false);
 }
 
 TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
-  // Create a pipeline with slow consumer
   auto slow_node =
       std::make_shared<SlowConsumerNode>("slow", std::chrono::milliseconds{10});
   auto sink = std::make_shared<TestSinkNode>("sink");
@@ -416,7 +395,6 @@ TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
   m_engine->initialize(graph.get(), 2);
   m_engine->startStreaming();
 
-  // Fast producer
   const std::size_t frames = 50;
   for (std::size_t i = 0; i < frames; ++i) {
     auto packet = std::make_shared<PortData>();
@@ -427,33 +405,28 @@ TEST_F(StreamBackpressureTest, BackpressureWithCorrectStatistics) {
         std::chrono::microseconds{100}); // Fast but not instant
   }
 
-  // Wait for drain
   auto drained = m_engine->waitForDrain(0, std::chrono::milliseconds{10000});
   EXPECT_TRUE(drained.isOk()) << "Should drain within timeout";
 
-  // IMPORTANT: Get statistics BEFORE stopStreaming/reset
+  // Capture the completed interval before `reset()` clears it.
   auto stats = m_engine->statistics();
 
   m_engine->stopStreaming(true);
 
-  // Verify processing happened
   EXPECT_GT(stats.total_output_frames, 0u)
       << "CRITICAL: processed should be > 0 when stats retrieved before reset";
 
   EXPECT_EQ(sink->processed(), stats.total_output_frames)
       << "Sink count should match statistics";
 
-  // Now safe to reset
   m_engine->reset();
 
-  // After reset, stats are zeroed (this is the bug in the benchmark)
   auto stats_after_reset = m_engine->statistics();
   EXPECT_EQ(stats_after_reset.total_output_frames, 0u)
       << "Stats are zeroed after reset (known behavior)";
 }
 
 TEST_F(StreamBackpressureTest, QueueDepthDuringBackpressure) {
-  // Create slow pipeline
   auto slow_node =
       std::make_shared<SlowConsumerNode>("slow", std::chrono::milliseconds{20});
   auto sink = std::make_shared<TestSinkNode>("sink");
@@ -471,14 +444,12 @@ TEST_F(StreamBackpressureTest, QueueDepthDuringBackpressure) {
   std::size_t max_observed_depth = 0;
   std::vector<std::size_t> depth_samples;
 
-  // Push frames and monitor queue depth
   const std::size_t frames = 30;
   for (std::size_t i = 0; i < frames; ++i) {
     auto packet = std::make_shared<PortData>();
     packet->id = i;
     (void)m_engine->pushInput("slow", "input", packet);
 
-    // Sample queue depth on the slow node (not source!)
     auto depth = m_engine->queueDepth("slow", "input");
     depth_samples.push_back(depth);
     max_observed_depth = std::max(max_observed_depth, depth);
@@ -488,30 +459,17 @@ TEST_F(StreamBackpressureTest, QueueDepthDuringBackpressure) {
 
   m_engine->stopStreaming(false);
 
-  // Should have observed non-zero queue depths
   EXPECT_GT(max_observed_depth, 0u)
       << "Should observe queue buildup during backpressure";
 
-  // Print for debugging
   std::cout << "Max observed queue depth: " << max_observed_depth << std::endl;
   std::cout << "Queue capacity: " << queue_capacity << std::endl;
 }
 
-// =============================================================================
-// Regression Tests for Potential Fixes
-// =============================================================================
+// Disabled specifications for proposed API extensions
 
-/**
- * @test [Proposed Fix] Statistics should survive reset() if explicitly
- * requested
- *
- * This test will FAIL with current implementation, documenting the desired
- * behavior.
- */
+// Intended contract for a future statistics-preserving `reset()` overload.
 TEST_F(StreamBackpressureTest, DISABLED_ProposedFix_StatisticsPreserveOption) {
-  // This test documents desired behavior for a proposed fix:
-  // engine->reset(/* preserve_statistics = */ true);
-
   m_engine = createStreamEngine(2, 16);
   m_engine->initialize(m_graph.get(), 2);
   m_engine->startStreaming();
@@ -526,23 +484,14 @@ TEST_F(StreamBackpressureTest, DISABLED_ProposedFix_StatisticsPreserveOption) {
   m_engine->waitForDrain(0, std::chrono::milliseconds{5000});
   m_engine->stopStreaming(true);
 
-  // Proposed API: reset(preserve_statistics)
   // m_engine->reset(true);  // Preserve statistics
 
   // auto stats = m_engine->statistics();
   // EXPECT_GT(stats.total_output_frames, 0u);
 }
 
-/**
- * @test [Proposed Fix] queueDepth should work with node output ports
- *
- * This test will FAIL with current implementation, documenting the desired
- * behavior.
- */
+// Intended contract for querying queues through source output ports.
 TEST_F(StreamBackpressureTest, DISABLED_ProposedFix_QueueDepthForOutputPorts) {
-  // This test documents desired behavior for a proposed fix:
-  // queueDepth should be able to query output port queues
-
   m_engine = createStreamEngine(1, 32);
   m_engine->initialize(m_graph.get(), 1);
   m_engine->startStreaming();

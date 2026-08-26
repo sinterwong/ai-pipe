@@ -1,16 +1,3 @@
-/**
- * @file test_graph_loader.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Tests for the JSON graph loader (F1, AI_PIPE_WITH_JSON)
- * @version 0.1
- * @date 2026-07-10
- *
- * The loader is an optional component: when the library is built
- * without AI_PIPE_WITH_JSON, only the stub-behavior test runs and the
- * rest are skipped, so this file compiles in every configuration.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/graph_loader.hpp"
 #include "ai_pipe/pipeline.hpp"
 #include <cstdint>
@@ -23,7 +10,7 @@ using namespace ai_pipe;
 
 namespace ai_pipe_unit_test::graph_loader {
 
-/// Source-shaped node: single declared output port
+// Source-shaped node: single declared output port
 class JsonSourceNode : public ILogicNode {
 public:
   explicit JsonSourceNode(const std::string &name) : ILogicNode(name) {}
@@ -36,7 +23,7 @@ public:
   }
 };
 
-/// Pass-through-shaped node: one input, one output
+// Pass-through-shaped node: one input, one output
 class JsonPassNode : public ILogicNode {
 public:
   explicit JsonPassNode(const std::string &name) : ILogicNode(name) {}
@@ -54,7 +41,7 @@ public:
   }
 };
 
-/// Config-consuming node exposing what it received for assertions
+// Config-consuming node exposing what it received for assertions
 class JsonConfiguredNode : public ILogicNode {
 public:
   JsonConfiguredNode(const std::string &name, const PortData &config)

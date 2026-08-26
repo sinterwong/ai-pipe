@@ -1,24 +1,3 @@
-/**
- * @file work_stealing_thread_pool.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Work-stealing thread pool implementation for high-performance
- * scenarios
- * @version 1.0
- * @date 2025-02-05
- *
- * @copyright Copyright (c) 2025
- *
- * This implementation addresses lock contention issues in the standard
- * ThreadPool by giving each worker thread its own local task queue. When a
- * worker's queue is empty, it can steal tasks from other workers' queues.
- *
- * Key features:
- * - Per-worker local queues (LIFO for locality)
- * - Work-stealing from other workers (FIFO steal for fairness)
- * - Fine-grained locking per queue
- * - Thread-local worker identification for efficient task submission
- */
-
 #ifndef AI_PIPE_WORK_STEALING_THREAD_POOL_HPP
 #define AI_PIPE_WORK_STEALING_THREAD_POOL_HPP
 
@@ -40,16 +19,14 @@
 
 namespace ai_pipe {
 
-/**
- * @brief Work-stealing deque for task management
- *
- * This deque supports:
- * - Local push/pop at the front (LIFO, used by owning worker)
- * - Steal from the back (FIFO, used by other workers)
- *
- * Uses fine-grained mutex locking. While not fully lock-free, this design
- * significantly reduces contention compared to a single global queue.
- */
+// Work-stealing deque for task management
+//
+// This deque supports:
+// - Local push/pop at the front (LIFO, used by owning worker)
+// - Steal from the back (FIFO, used by other workers)
+//
+// Uses fine-grained mutex locking. While not fully lock-free, this design
+// significantly reduces contention compared to a single global queue.
 template <typename T> class WorkStealingDeque {
 public:
   WorkStealingDeque() = default;
@@ -61,19 +38,14 @@ public:
   WorkStealingDeque(WorkStealingDeque &&) = delete;
   WorkStealingDeque &operator=(WorkStealingDeque &&) = delete;
 
-  /**
-   * @brief Push a task to the front (local operation, LIFO)
-   * @param item Task to push
-   */
+  // `item`: Task to push
   void pushFront(T item) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_deque.push_front(std::move(item));
   }
 
-  /**
-   * @brief Pop a task from the front (local operation, LIFO)
-   * @return Task if available, nullopt otherwise
-   */
+  // Pop a task from the front (local operation, LIFO)
+  // Returns Task if available, nullopt otherwise
   [[nodiscard]] std::optional<T> popFront() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_deque.empty()) {
@@ -84,10 +56,8 @@ public:
     return item;
   }
 
-  /**
-   * @brief Steal a task from the back (used by other workers, FIFO)
-   * @return Task if available, nullopt otherwise
-   */
+  // Steal a task from the back (used by other workers, FIFO)
+  // Returns Task if available, nullopt otherwise
   [[nodiscard]] std::optional<T> stealBack() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_deque.empty()) {
@@ -98,11 +68,9 @@ public:
     return item;
   }
 
-  /**
-   * @brief Try to steal multiple tasks at once (batch stealing)
-   * @param max_count Maximum number of tasks to steal
-   * @return Vector of stolen tasks
-   */
+  // Try to steal multiple tasks at once (batch stealing)
+  // `max_count`: Maximum number of tasks to steal
+  // Returns Vector of stolen tasks
   [[nodiscard]] std::vector<T> stealBatch(std::size_t max_count) {
     std::vector<T> stolen;
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -117,25 +85,16 @@ public:
     return stolen;
   }
 
-  /**
-   * @brief Check if the deque is empty
-   */
   [[nodiscard]] bool empty() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_deque.empty();
   }
 
-  /**
-   * @brief Get current size
-   */
   [[nodiscard]] std::size_t size() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_deque.size();
   }
 
-  /**
-   * @brief Clear all tasks
-   */
   void clear() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_deque.clear();
@@ -146,9 +105,7 @@ private:
   std::deque<T> m_deque;
 };
 
-/**
- * @brief Configuration for WorkStealingThreadPool
- */
+// Configuration for WorkStealingThreadPool
 struct WorkStealingConfig {
   std::size_t num_threads = std::thread::hardware_concurrency();
   std::size_t max_queue_size_per_worker = 256; // 0 = unlimited
@@ -157,27 +114,21 @@ struct WorkStealingConfig {
   std::size_t steal_batch_size = 4; // Number of tasks to steal at once
 };
 
-/**
- * @brief Exception handler callback type
- */
+// Exception handler callback type
 using WorkStealingExceptionHandler =
     std::function<void(const std::exception_ptr &, const std::string &)>;
 
-/**
- * @brief High-performance work-stealing thread pool
- *
- * Addresses lock contention in traditional thread pools by:
- * 1. Giving each worker its own local task queue
- * 2. Workers steal from others when their queue is empty
- * 3. Using thread-local storage for efficient worker identification
- */
+// High-performance work-stealing thread pool
+//
+// Addresses lock contention in traditional thread pools by:
+// 1. Giving each worker its own local task queue
+// 2. Workers steal from others when their queue is empty
+// 3. Using thread-local storage for efficient worker identification
 class WorkStealingThreadPool {
 public:
-  /**
-   * @brief Construct with number of threads
-   * @param num_threads Number of worker threads
-   * @param max_queue_size Maximum tasks per worker queue (0 = unlimited)
-   */
+  // Construct with number of threads
+  // `num_threads`: Number of worker threads
+  // `max_queue_size`: Maximum tasks per worker queue (0 = unlimited)
   explicit WorkStealingThreadPool(std::size_t num_threads,
                                   std::size_t max_queue_size = 256)
       : m_config{num_threads, max_queue_size, std::chrono::milliseconds{5000},
@@ -187,9 +138,7 @@ public:
     initialize(num_threads);
   }
 
-  /**
-   * @brief Construct with full configuration
-   */
+  // Construct with full configuration
   explicit WorkStealingThreadPool(const WorkStealingConfig &config)
       : m_config{config}, m_state{State::KRunning}, m_nextWorkerIndex{0},
         m_pendingTasks{0}, m_completedTasks{0} {
@@ -204,14 +153,12 @@ public:
   WorkStealingThreadPool(WorkStealingThreadPool &&) = delete;
   WorkStealingThreadPool &operator=(WorkStealingThreadPool &&) = delete;
 
-  /**
-   * @brief Submit a task for execution
-   * @tparam F Callable type
-   * @tparam Args Argument types
-   * @param func Callable object
-   * @param args Arguments to pass to the callable
-   * @return Future for the task result
-   */
+  // Submit a task for execution
+  // `F`: Callable type
+  // `Args`: Argument types
+  // `func`: Callable object
+  // `args`: Arguments to pass to the callable
+  // Returns Future for the task result
   template <typename F, typename... Args>
   [[nodiscard]] auto submit(F &&func, Args &&...args)
       -> std::future<std::invoke_result_t<F, Args...>> {
@@ -222,7 +169,6 @@ public:
           "WorkStealingThreadPool: Cannot submit to stopped pool");
     }
 
-    // Create bound callable
     auto bound_task = [f = std::forward<F>(func),
                        ... captured_args = std::forward<Args>(args)]() mutable {
       return std::invoke(
@@ -239,16 +185,14 @@ public:
     return result;
   }
 
-  /**
-   * @brief Fire-and-forget submission for void tasks
-   *
-   * Skips the packaged_task/shared_ptr/future machinery of submit() -
-   * the right choice when the caller never consumes a result (the
-   * execution engine's per-node tasks). Never throws.
-   *
-   * @return true if the task was enqueued, false if the pool is not
-   *         running or enqueueing failed (e.g. submission timeout)
-   */
+  // Fire-and-forget submission for void tasks
+  //
+  // Skips the packaged_task/shared_ptr/future machinery of submit() -
+  // the right choice when the caller never consumes a result (the
+  // execution engine's per-node tasks). Never throws.
+  //
+  // Returns true if the task was enqueued, false if the pool is not
+  //        running or enqueueing failed (e.g. submission timeout)
   bool post(std::function<void()> task) noexcept {
     if (!task || !isRunning()) {
       return false;
@@ -261,9 +205,7 @@ public:
     }
   }
 
-  /**
-   * @brief Try to submit a task without blocking
-   */
+  // Try to submit a task without blocking
   template <typename F, typename... Args>
   [[nodiscard]] auto trySubmit(F &&func, Args &&...args)
       -> std::optional<std::future<std::invoke_result_t<F, Args...>>> {
@@ -292,14 +234,10 @@ public:
     return result;
   }
 
-  /**
-   * @brief Gracefully shutdown
-   */
+  // Gracefully shutdown
   void shutdown() { shutdown(true); }
 
-  /**
-   * @brief Shutdown with option to wait or discard
-   */
+  // Shutdown with option to wait or discard
   void shutdown(bool wait_for_tasks) {
     State expected = State::KRunning;
     if (!m_state.compare_exchange_strong(expected, State::KStopping,
@@ -309,7 +247,6 @@ public:
     }
 
     if (!wait_for_tasks) {
-      // Clear all queues
       for (auto &queue : m_queues) {
         queue->clear();
       }
@@ -328,9 +265,6 @@ public:
     m_state.store(State::KStopped, std::memory_order_release);
   }
 
-  /**
-   * @brief Wait for all pending tasks
-   */
   void waitForTasks() {
     std::unique_lock<std::mutex> lock(m_globalMutex);
     m_allTasksDone.wait(lock, [this] {
@@ -339,9 +273,6 @@ public:
     });
   }
 
-  /**
-   * @brief Set exception handler
-   */
   void setExceptionHandler(WorkStealingExceptionHandler handler) {
     std::lock_guard<std::mutex> lock(m_handlerMutex);
     m_exceptionHandler = std::move(handler);
@@ -373,10 +304,7 @@ public:
     return m_config.max_queue_size_per_worker * m_config.num_threads;
   }
 
-  /**
-   * @brief Get statistics per worker queue
-   * @return Vector of queue sizes for each worker
-   */
+  // Returns Vector of queue sizes for each worker
   [[nodiscard]] std::vector<std::size_t> queueSizes() const {
     std::vector<std::size_t> sizes;
     sizes.reserve(m_queues.size());
@@ -386,9 +314,6 @@ public:
     return sizes;
   }
 
-  /**
-   * @brief Get the steal count (for statistics/debugging)
-   */
   [[nodiscard]] std::size_t stealCount() const {
     return m_stealCount.load(std::memory_order_relaxed);
   }
@@ -405,13 +330,11 @@ private:
       std::nullopt;
 
   void initialize(std::size_t num_threads) {
-    // Create task queues
     m_queues.reserve(num_threads);
     for (std::size_t i = 0; i < num_threads; ++i) {
       m_queues.push_back(std::make_unique<TaskQueue>());
     }
 
-    // Start workers
     m_workers.reserve(num_threads);
     for (std::size_t i = 0; i < num_threads; ++i) {
       m_workers.emplace_back(&WorkStealingThreadPool::workerLoop, this, i);
@@ -426,25 +349,20 @@ private:
     }
   }
 
-  /**
-   * @brief Main worker loop (event-driven)
-   *
-   * Fast path never touches the global mutex: pop locally (LIFO), then
-   * steal. Only a worker that found nothing blocks on the condition
-   * variable, keyed off m_unclaimedTasks, so an idle pool consumes zero
-   * CPU (previously each worker woke every 1ms and scanned all queues).
-   *
-   * NOTE: sizing uses m_queues.size(), which is fully populated before
-   * any worker starts. m_workers must not be read here - it is still
-   * being appended by the constructor while early workers run.
-   *
-   * @param worker_index Index of this worker
-   */
+  // Main worker loop (event-driven)
+  //
+  // Fast path never touches the global mutex: pop locally (LIFO), then
+  // steal. Only a worker that found nothing blocks on the condition
+  // variable keyed off `m_unclaimedTasks`, so idle workers do not poll.
+  //
+  // Sizing uses `m_queues.size()`, which is fully populated before
+  // any worker starts. m_workers must not be read here - it is still
+  // being appended by the constructor while early workers run.
+  //
+  // `worker_index`: Index of this worker
   void workerLoop(std::size_t worker_index) {
-    // Set thread-local worker index
     tl_worker_index = worker_index;
 
-    // Create random number generator for victim selection
     std::mt19937 rng(std::random_device{}() +
                      static_cast<unsigned>(worker_index));
     std::uniform_int_distribution<std::size_t> dist(0, m_queues.size() - 1);
@@ -484,9 +402,7 @@ private:
     }
   }
 
-  /**
-   * @brief Try to steal a task from another worker
-   */
+  // Try to steal a task from another worker
   Task trySteal(std::size_t worker_index, std::mt19937 &rng,
                 std::uniform_int_distribution<std::size_t> &dist) {
     const std::size_t num_workers = m_queues.size();
@@ -547,15 +463,11 @@ private:
     }
   }
 
-  /**
-   * @brief Enqueue a task to appropriate queue
-   */
+  // Enqueue a task to appropriate queue
   void enqueueTask(Task task) {
     std::size_t target_queue = selectTargetQueue();
 
-    // Check queue capacity if limited
     if (m_config.max_queue_size_per_worker > 0) {
-      // Wait if queue is full (with timeout)
       auto start = std::chrono::steady_clock::now();
       while (m_queues[target_queue]->size() >=
              m_config.max_queue_size_per_worker) {
@@ -591,9 +503,7 @@ private:
     publishTask();
   }
 
-  /**
-   * @brief Try to enqueue without blocking
-   */
+  // Try to enqueue without blocking
   [[nodiscard]] bool tryEnqueueTask(Task task) {
     if (!isRunning()) {
       return false;
@@ -601,7 +511,6 @@ private:
 
     std::size_t target_queue = selectTargetQueue();
 
-    // Check capacity
     if (m_config.max_queue_size_per_worker > 0) {
       // Try all queues
       for (std::size_t i = 0; i < m_queues.size(); ++i) {
@@ -623,13 +532,11 @@ private:
     return true;
   }
 
-  /**
-   * @brief Publish a newly enqueued task to sleeping workers
-   *
-   * The empty lock/unlock of m_globalMutex orders the m_unclaimedTasks
-   * increment against a worker's predicate check, closing the classic
-   * check-then-sleep lost-wakeup window.
-   */
+  // Publish a newly enqueued task to sleeping workers
+  //
+  // The empty lock/unlock of m_globalMutex orders the m_unclaimedTasks
+  // increment against a worker's predicate check, closing the classic
+  // check-then-sleep lost-wakeup window.
   void publishTask() {
     m_unclaimedTasks.fetch_add(1, std::memory_order_release);
     {
@@ -638,12 +545,10 @@ private:
     m_globalCondition.notify_one();
   }
 
-  /**
-   * @brief Select target queue for task submission
-   *
-   * If called from a worker thread, use that worker's queue.
-   * Otherwise, use round-robin distribution.
-   */
+  // Select target queue for task submission
+  //
+  // If called from a worker thread, use that worker's queue.
+  // Otherwise, use round-robin distribution.
   [[nodiscard]] std::size_t selectTargetQueue() {
     // If this is a worker thread, use its own queue
     if (tl_worker_index.has_value()) {
@@ -688,9 +593,7 @@ private:
   std::mutex m_handlerMutex;
 };
 
-/**
- * @brief RAII wrapper for WorkStealingThreadPool
- */
+// RAII wrapper for WorkStealingThreadPool
 class ScopedWorkStealingThreadPool {
 public:
   explicit ScopedWorkStealingThreadPool(std::size_t num_threads,

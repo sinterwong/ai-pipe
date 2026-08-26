@@ -19,7 +19,7 @@ public:
                std::shared_ptr<PipelineContext>) override {}
 };
 
-// R4.2: strategies initialize from a CompiledGraph snapshot
+// strategies initialize from a CompiledGraph snapshot
 CompiledGraph makeTrivialCompiledGraph() {
   Graph graph;
   graph.addNode(std::make_shared<DummyNode>("solo"));
@@ -30,9 +30,7 @@ CompiledGraph makeTrivialCompiledGraph() {
 
 } // namespace
 
-// =============================================================================
 // NoSyncStrategy Tests
-// =============================================================================
 
 class NoSyncStrategyTest : public ::testing::Test {
 protected:
@@ -54,23 +52,17 @@ TEST_F(NoSyncStrategyTest, IsEnabledReturnsFalse) {
 }
 
 TEST_F(NoSyncStrategyTest, InitializeIsNoop) {
-  // Should not crash
   auto compiled = makeTrivialCompiledGraph();
   m_strategy.initialize(compiled);
 }
 
-TEST_F(NoSyncStrategyTest, ResetIsNoop) {
-  // Should not crash
-  m_strategy.reset();
-}
+TEST_F(NoSyncStrategyTest, ResetIsNoop) { m_strategy.reset(); }
 
 TEST_F(NoSyncStrategyTest, RegisterSyncGroupIsNoop) {
-  // Should not crash
   m_strategy.registerSyncGroup("group1", {"branch_A", "branch_B"}, "join_node");
 }
 
 TEST_F(NoSyncStrategyTest, MapNodeToGroupIsNoop) {
-  // Should not crash
   m_strategy.mapNodeToGroup("node1", "group1", "branch_A");
 }
 
@@ -88,7 +80,6 @@ TEST_F(NoSyncStrategyTest, ShouldDropAlwaysReturnsFalse) {
 }
 
 TEST_F(NoSyncStrategyTest, MarkProcessedIsNoop) {
-  // Should not crash
   m_strategy.markProcessed("node1", 100);
 }
 
@@ -99,9 +90,7 @@ TEST_F(NoSyncStrategyTest, GetWatermarkAlwaysReturnsZero) {
   EXPECT_EQ(m_strategy.getWatermark(""), 0);
 }
 
-// =============================================================================
 // NoSyncStrategy Integration Tests
-// =============================================================================
 
 TEST(NoSyncStrategyIntegrationTest, SimulatePipelineExecution) {
   NoSyncStrategy strategy;
@@ -159,9 +148,7 @@ TEST(NoSyncStrategyIntegrationTest, MultipleGroups) {
   EXPECT_TRUE(affected2.empty());
 }
 
-// =============================================================================
 // ISyncStrategy Interface Compliance Tests
-// =============================================================================
 
 TEST(ISyncStrategyTest, NoSyncStrategyImplementsInterface) {
   std::unique_ptr<ISyncStrategy> strategy = std::make_unique<NoSyncStrategy>();
@@ -188,9 +175,7 @@ TEST(ISyncStrategyTest, NoSyncStrategyImplementsInterface) {
   EXPECT_NE(cloned, nullptr);
 }
 
-// =============================================================================
 // Factory Function Tests
-// =============================================================================
 
 TEST(SyncStrategyFactoryTest, CreateNoSyncStrategy) {
   auto strategy = createNoSyncStrategy();
@@ -207,9 +192,7 @@ TEST(SyncStrategyFactoryTest, CreateNoSyncStrategyReturnsUniqueInstances) {
   EXPECT_NE(strategy1.get(), strategy2.get());
 }
 
-// =============================================================================
 // Polymorphism Tests
-// =============================================================================
 
 TEST(SyncStrategyPolymorphismTest, UseAsBasePointer) {
   std::vector<std::unique_ptr<ISyncStrategy>> strategies;
@@ -224,9 +207,7 @@ TEST(SyncStrategyPolymorphismTest, UseAsBasePointer) {
   }
 }
 
-// =============================================================================
 // Edge Cases
-// =============================================================================
 
 TEST(NoSyncStrategyEdgeCasesTest, EmptyStrings) {
   NoSyncStrategy strategy;

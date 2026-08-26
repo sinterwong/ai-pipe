@@ -1,34 +1,3 @@
-/**
- * @file join_aware_sync_strategy.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Fork-join-aware synchronization strategy built on topological analysis
- *
- *  * This strategy solves two critical problems of the naive
- * CoordinatedSyncStrategy:
- *
- * 1. FALSE COUPLING: Only branches that actually converge at a join point are
- *    synchronized. Divergent branches that never meet remain independent.
- *
- * 2. DEPTH BLINDNESS: The entire path from fork to join is mapped to a single
- *    logical BranchId, so any node along the path can trigger synchronized
- * drops.
- *
- * Algorithm:
- * - Identify all Join nodes (in-degree > 1)
- * - For each Join node, backtrack to find the Lowest Common Fork (LCF)
- * - Create a SyncGroup for each (Fork, Join) pair
- * - Map all nodes on the paths between Fork and Join to their logical branches
- *
- * R4.2: topology analysis runs on the engine's CompiledGraph snapshot
- * (dense indices, precomputed adjacency); the strategy retains no
- * reference to any graph after initialize() returns.
- *
- * @version 0.2
- * @date 2026-01-23
- *
- * @copyright Copyright (c) 2026
- *
- */
 #ifndef AI_PIPE_INTERNAL_JOIN_AWARE_SYNC_STRATEGY_HPP
 #define AI_PIPE_INTERNAL_JOIN_AWARE_SYNC_STRATEGY_HPP
 
@@ -47,16 +16,14 @@
 
 namespace ai_pipe {
 
-/**
- * @brief Join-Aware sync strategy using topological analysis
- *
- * This advanced strategy provides intelligent synchronization support:
- * - Fork-Join pair detection using reverse BFS from join points
- * - Full path mapping from fork to join for complete branch coverage
- * - Nested fork-join structure support with multiple sync group membership
- * - Coordinated frame dropping only for truly convergent branches
- *
- */
+// Join-Aware sync strategy using topological analysis
+//
+// This advanced strategy provides intelligent synchronization support:
+// - Fork-Join pair detection using reverse BFS from join points
+// - Full path mapping from fork to join for complete branch coverage
+// - Nested fork-join structure support with multiple sync group membership
+// - Coordinated frame dropping only for truly convergent branches
+//
 class JoinAwareSyncStrategy final : public ISyncStrategy {
 public:
   using NodeIndex = CompiledGraph::NodeIndex;
@@ -64,18 +31,15 @@ public:
   JoinAwareSyncStrategy()
       : m_coordinator(std::make_shared<SyncCoordinator>()) {}
 
-  /**
-   * @brief Initialize strategy with the compiled topology snapshot
-   *
-   * Performs intelligent topology analysis:
-   * 1. Identify all join nodes (in-degree > 1)
-   * 2. For each join node, find the Lowest Common Fork (LCF)
-   * 3. Extract all paths between LCF and join
-   * 4. Create sync groups and map all path nodes
-   *
-   * Only node *names* are retained (in the group mappings); no graph
-   * reference survives this call.
-   */
+  //
+  // Performs intelligent topology analysis:
+  // 1. Identify all join nodes (in-degree > 1)
+  // 2. For each join node, find the Lowest Common Fork (LCF)
+  // 3. Extract all paths between LCF and join
+  // 4. Create sync groups and map all path nodes
+  //
+  // Only node *names* are retained (in the group mappings); no graph
+  // reference survives this call.
   void initialize(const CompiledGraph &graph) override {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_coordinator->reset();
@@ -105,7 +69,6 @@ public:
       const std::string &fork_name = graph.node(result.fork_node)->getName();
       const std::string &join_name = graph.node(join_index)->getName();
 
-      // Create a sync group for this fork-join pair
       std::string group_id = "sync_group_";
       group_id += std::to_string(group_counter++);
       group_id += "_";
@@ -119,7 +82,6 @@ public:
       // Step 3: Map each path to a logical branch
       int branch_counter = 0;
       for (const auto &path : result.paths) {
-        // Create a logical branch ID that represents this entire path
         std::string branch_id = "branch_" + std::to_string(branch_counter++);
 
         branch_ids.push_back(branch_id);
@@ -176,12 +138,10 @@ public:
     addNodeMapping(node_name, group_id, branch_id);
   }
 
-  /**
-   * @brief Report a drop and propagate to all sibling branches
-   *
-   * When any node on a path reports a drop, all parallel branches
-   * in the same sync group(s) are notified.
-   */
+  // Report a drop and propagate to all sibling branches
+  //
+  // When any node on a path reports a drop, all parallel branches
+  // in the same sync group(s) are notified.
   [[nodiscard]] std::vector<BranchId>
   reportDrop(const std::string &node_name, FrameId frame_id,
              const std::string &reason) override {
@@ -212,11 +172,8 @@ public:
     return all_affected;
   }
 
-  /**
-   * @brief Check if a frame should be dropped
-   *
-   * Checks all sync groups that this node belongs to.
-   */
+  //
+  // Checks all sync groups that this node belongs to.
   [[nodiscard]] bool shouldDrop(const std::string &node_name,
                                 FrameId frame_id) const override {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -226,7 +183,6 @@ public:
       return false;
     }
 
-    // Check all groups this node belongs to
     for (const auto &[group_id, branch_id] : multi_it->second) {
       auto pending = m_coordinator->getPendingSyncDrops(group_id, branch_id);
       if (pending.count(frame_id) > 0) {
@@ -237,11 +193,9 @@ public:
     return false;
   }
 
-  /**
-   * @brief Mark a frame as processed
-   *
-   * Notifies all sync groups that this node belongs to.
-   */
+  // Mark a frame as processed
+  //
+  // Notifies all sync groups that this node belongs to.
   void markProcessed(const std::string &node_name, FrameId frame_id) override {
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -289,17 +243,11 @@ public:
 
   std::shared_ptr<SyncCoordinator> coordinator() const { return m_coordinator; }
 
-  /**
-   * @brief Get debug information about detected sync groups
-   */
   [[nodiscard]] std::vector<std::string> getDebugInfo() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_debugInfo;
   }
 
-  /**
-   * @brief Get all sync groups a node belongs to
-   */
   [[nodiscard]] std::vector<std::pair<SyncGroupId, BranchId>>
   getNodeMappings(const std::string &node_name) const {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -311,9 +259,7 @@ public:
   }
 
 private:
-  /**
-   * @brief Result of the Lowest Common Fork search
-   */
+  // Result of the Lowest Common Fork search
   struct ForkSearchResult {
     bool valid = false;
     NodeIndex fork_node{CompiledGraph::k_invalid_index};
@@ -321,19 +267,17 @@ private:
         paths; // Paths from fork to join (excluding fork and join)
   };
 
-  /**
-   * @brief Find the Lowest Common Fork for a join node
-   *
-   * Uses reverse BFS to find the nearest common ancestor (fork point)
-   * of all incoming branches of the join node.
-   *
-   * Algorithm:
-   * 1. Start from all immediate predecessors of the join node
-   * 2. BFS backward, tracking which "source" each visited node came from
-   * 3. When a node is visited from multiple sources, it's a common ancestor
-   * 4. The first such node found with out_degree > 1 is the Lowest Common Fork
-   * 5. Extract all paths from fork to join
-   */
+  // Find the Lowest Common Fork for a join node
+  //
+  // Uses reverse BFS to find the nearest common ancestor (fork point)
+  // of all incoming branches of the join node.
+  //
+  // Algorithm:
+  // 1. Start from all immediate predecessors of the join node
+  // 2. BFS backward, tracking which "source" each visited node came from
+  // 3. When a node is visited from multiple sources, it's a common ancestor
+  // 4. The first such node found with out_degree > 1 is the Lowest Common Fork
+  // 5. Extract all paths from fork to join
   static ForkSearchResult findLowestCommonFork(const CompiledGraph &graph,
                                                NodeIndex join_index) {
     ForkSearchResult result;
@@ -384,7 +328,6 @@ private:
       bool any_progress = false;
       iterations++;
 
-      // Check for common fork before expanding
       for (const auto candidate : reachable_from_source[0]) {
         bool reachable_from_all = true;
         for (std::size_t i = 1; i < reachable_from_source.size(); ++i) {
@@ -435,11 +378,9 @@ private:
     return result;
   }
 
-  /**
-   * @brief Find all paths from source to destination
-   *
-   * Uses DFS to enumerate all paths. For DAGs, this is guaranteed to terminate.
-   */
+  // Find all paths from source to destination
+  //
+  // Uses DFS to enumerate all paths. For DAGs, this is guaranteed to terminate.
   static std::vector<std::vector<NodeIndex>>
   findAllPaths(const CompiledGraph &graph, NodeIndex source, NodeIndex dest) {
     std::vector<std::vector<NodeIndex>> all_paths;
@@ -483,9 +424,6 @@ private:
     visited.erase(current);
   }
 
-  /**
-   * @brief Add a node mapping, supporting multiple group membership
-   */
   void addNodeMapping(const std::string &node_name, const SyncGroupId &group_id,
                       const BranchId &branch_id) {
     // Primary mapping (for backward compatibility)

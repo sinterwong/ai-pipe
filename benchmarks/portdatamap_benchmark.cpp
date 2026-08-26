@@ -1,27 +1,3 @@
-/**
- * @file portdatamap_benchmark.cpp
- * @brief F9 profiling: PortDataMap cost on the per-execution hot path
- *
- * TODO item F9 proposes replacing the PortDataMap
- * (std::map<std::string, PortDataPtr>, built once per node execution)
- * with indexed port arrays - a breaking process() API change that the
- * roadmap gates on profiling evidence. These benchmarks produce that
- * evidence:
- *
- * 1. BM_PortDataMap_PerExecution: the exact container work one node
- *    execution performs today (construct inputs map, construct outputs
- *    map, per-edge find() during propagation, destroy both).
- * 2. BM_IndexedPorts_PerExecution: the same data flow through the
- *    proposed replacement (pre-sized vector indexed by port position).
- *    The delta to (1) is the maximum possible saving per execution.
- * 3. BM_Stream_PerNodeExecutionOverhead: total framework cost per node
- *    execution in a streaming passthrough pipeline (scheduling, queues,
- *    alignment, statistics, and the maps) - the denominator that puts
- *    the delta in context.
- *
- * Verdict recorded in docs/Performance_Report.md section 6 and TODO F9.
- */
-
 #include "benchmark_utils.hpp"
 #include <benchmark/benchmark.h>
 #include <map>
@@ -29,9 +5,7 @@
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // 1. Current container: std::map keyed by port name
-// =============================================================================
 
 static void BM_PortDataMap_PerExecution(::benchmark::State &state) {
   const auto port_count = static_cast<std::size_t>(state.range(0));
@@ -75,9 +49,7 @@ BENCHMARK(BM_PortDataMap_PerExecution)
     ->Args({4})
     ->Unit(::benchmark::kNanosecond);
 
-// =============================================================================
 // 2. Proposed replacement: index-addressed port arrays
-// =============================================================================
 
 static void BM_IndexedPorts_PerExecution(::benchmark::State &state) {
   const auto port_count = static_cast<std::size_t>(state.range(0));
@@ -109,9 +81,7 @@ BENCHMARK(BM_IndexedPorts_PerExecution)
     ->Args({4})
     ->Unit(::benchmark::kNanosecond);
 
-// =============================================================================
 // 3. Context: total framework overhead per node execution
-// =============================================================================
 
 static void BM_Stream_PerNodeExecutionOverhead(::benchmark::State &state) {
   const std::uint8_t workers = 4;

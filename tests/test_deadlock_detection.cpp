@@ -1,13 +1,3 @@
-/**
- * @file test_deadlock_detection.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Regression tests for scheduling deadlock scenarios
- * @version 0.1
- * @date 2026-01-29
- *
- * @copyright Copyright (c) 2026
- *
- */
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/data_types.hpp"
 #include "ai_pipe/execution_engine.hpp"
@@ -24,15 +14,11 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // Test Configuration
-// =============================================================================
 constexpr auto g_deadlock_timeout = 5s;
 constexpr auto g_short_timeout = 2s;
 
-// =============================================================================
 // Test Node Implementations
-// =============================================================================
 
 class TestSourceNode : public ILogicNode {
 public:
@@ -194,9 +180,7 @@ private:
   std::size_t m_inputCount;
 };
 
-// =============================================================================
 // Test Fixture
-// =============================================================================
 
 class DeadlockDetectionTest : public ::testing::Test {
 protected:
@@ -226,9 +210,7 @@ protected:
   }
 };
 
-// =============================================================================
 // TEST: Basic Linear Pipeline (Sanity Check)
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, LinearPipeline_Basic) {
   Graph graph;
@@ -277,9 +259,7 @@ TEST_F(DeadlockDetectionTest, LinearPipeline_DeepChain) {
                    g_deadlock_timeout, "execute deep chain");
 }
 
-// =============================================================================
 // TEST: Fork-Join Topologies (High Deadlock Risk)
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, Diamond_SimpleForkJoin) {
   Graph graph;
@@ -393,9 +373,7 @@ TEST_F(DeadlockDetectionTest, Diamond_UnbalancedDelays) {
                    g_deadlock_timeout, "unbalanced delays execute");
 }
 
-// =============================================================================
 // TEST: Thread Pool Exhaustion (Critical Deadlock Scenario)
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, ThreadPool_SingleWorkerForkJoin) {
   // CRITICAL: Single worker with fork-join can deadlock if not handled properly
@@ -466,9 +444,7 @@ TEST_F(DeadlockDetectionTest, ThreadPool_MoreNodesThanWorkers) {
                    std::chrono::seconds(10), "more nodes than workers execute");
 }
 
-// =============================================================================
 // TEST: Repeated Executions
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, RepeatedExecution_Basic) {
   Graph graph;
@@ -541,9 +517,7 @@ TEST_F(DeadlockDetectionTest, RepeatedExecution_ForkJoin) {
   }
 }
 
-// =============================================================================
 // TEST: Streaming Mode
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, Streaming_BasicFlow) {
   Graph graph;
@@ -603,7 +577,6 @@ TEST_F(DeadlockDetectionTest, Streaming_RapidStartStop) {
                                    std::chrono::milliseconds(500));
     ASSERT_TRUE(start_ok) << "DEADLOCK on start, cycle " << c;
 
-    // Push a few frames
     for (int i = 0; i < 5; ++i) {
       auto packet = std::make_shared<PortData>();
       packet->id = c * 5 + i;
@@ -675,9 +648,7 @@ TEST_F(DeadlockDetectionTest, Streaming_ConcurrentPushAndStop) {
   EXPECT_GT(pushed_count.load(), 0) << "No frames were pushed";
 }
 
-// =============================================================================
 // TEST: Error Recovery
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, ErrorRecovery_StopDuringExecution) {
   Graph graph;
@@ -731,7 +702,6 @@ TEST_F(DeadlockDetectionTest, ErrorRecovery_ResetDuringStreaming) {
   ASSERT_TRUE(engine->initialize(&graph, 4));
   ASSERT_TRUE(engine->startStreaming());
 
-  // Push some frames
   for (int i = 0; i < 10; ++i) {
     auto packet = std::make_shared<PortData>();
     packet->id = i;
@@ -757,9 +727,7 @@ TEST_F(DeadlockDetectionTest, ErrorRecovery_ResetDuringStreaming) {
       g_deadlock_timeout, "stop after restart");
 }
 
-// =============================================================================
 // TEST: Nested Fork-Join
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, NestedForkJoin_TwoLevels) {
   Graph graph;
@@ -813,9 +781,7 @@ TEST_F(DeadlockDetectionTest, NestedForkJoin_TwoLevels) {
                    g_deadlock_timeout, "nested fork-join execute");
 }
 
-// =============================================================================
 // TEST: Stress Tests
-// =============================================================================
 
 TEST_F(DeadlockDetectionTest, Stress_HighFrequencyExecution) {
   Graph graph;

@@ -1,12 +1,3 @@
-/**
- * @file test_compiled_graph.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Tests for CompiledGraph: indexing, topology, routing, cycle detection
- * @version 0.1
- * @date 2026-07-03
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/compiled_graph.hpp"
 #include "helper_nodes.hpp"
 #include <gtest/gtest.h>

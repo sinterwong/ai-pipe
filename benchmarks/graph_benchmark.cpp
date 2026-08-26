@@ -1,17 +1,3 @@
-/**
- * @file graph_benchmark.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Micro-benchmarks for graph topology queries and routing (P1.5)
- *
- * Quantifies the Phase 1 refactor: the engine previously resolved a node's
- * downstream connections with Graph::getOutgoingEdges (a full O(E) edge-list
- * scan per node completion); it now uses CompiledGraph's precompiled
- * per-node OutEdge table. Both mechanisms are benchmarked side by side on
- * the same topology, along with graph construction and compilation cost.
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "ai_pipe/compiled_graph.hpp"
 #include "benchmark_nodes.hpp"
 #include <benchmark/benchmark.h>
@@ -21,9 +7,7 @@ using namespace ai_pipe::benchmark;
 
 namespace {
 
-/**
- * @brief Build a linear chain: n0 -> n1 -> ... -> n{count-1}
- */
+// Build a linear chain: n0 -> n1 -> ... -> n{count-1}
 Graph buildChainGraph(int node_count) {
   Graph graph;
   for (int i = 0; i < node_count; ++i) {
@@ -39,9 +23,7 @@ Graph buildChainGraph(int node_count) {
 
 } // namespace
 
-// =============================================================================
-// Downstream resolution: legacy O(E) scan vs precompiled routing table
-// =============================================================================
+// Downstream resolution: O(E) scan baseline versus precompiled routing table.
 
 static void BM_Graph_GetOutgoingEdges_Scan(::benchmark::State &state) {
   const int node_count = static_cast<int>(state.range(0));
@@ -73,9 +55,7 @@ static void BM_CompiledGraph_OutEdges(::benchmark::State &state) {
 }
 BENCHMARK(BM_CompiledGraph_OutEdges)->Arg(16)->Arg(128)->Arg(1024);
 
-// =============================================================================
 // Construction and compilation cost
-// =============================================================================
 
 static void BM_Graph_Construction_Chain(::benchmark::State &state) {
   const int node_count = static_cast<int>(state.range(0));
@@ -100,9 +80,7 @@ static void BM_CompiledGraph_Compile(::benchmark::State &state) {
 }
 BENCHMARK(BM_CompiledGraph_Compile)->Arg(128)->Arg(1024)->Arg(8192);
 
-// =============================================================================
-// Cycle detection (iterative Kahn since P1.2)
-// =============================================================================
+// Cycle detection with iterative Kahn traversal.
 
 static void BM_Graph_HasCycle(::benchmark::State &state) {
   const int node_count = static_cast<int>(state.range(0));

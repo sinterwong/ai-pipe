@@ -1,16 +1,3 @@
-/**
- * @file i_sync_strategy.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Synchronization strategy interface definition
- * @version 1.0
- * @date 2025-12-24
- *
- * This file defines the pure interface for synchronization strategies.
- * It contains no implementation details and no internal dependencies.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_I_SYNC_STRATEGY_HPP
 #define AI_PIPE_I_SYNC_STRATEGY_HPP
 
@@ -24,31 +11,27 @@ namespace ai_pipe {
 // Forward declaration; full definition in ai_pipe/compiled_graph.hpp
 class CompiledGraph;
 
-// =============================================================================
 // Sync Types
-// =============================================================================
 
 /**
- * @brief Unique identifier for a synchronization group
+ * @brief Unique identifier for a synchronization group.
  */
 using SyncGroupId = std::string;
 
 /**
- * @brief Branch identifier within a sync group
+ * @brief Branch identifier within a sync group.
  */
 using BranchId = std::string;
 
 /**
- * @brief Frame identifier for synchronization
+ * @brief Frame identifier for synchronization.
  */
 using FrameId = std::uint64_t;
 
-// =============================================================================
 // Sync Strategy Interface
-// =============================================================================
 
 /**
- * @brief Abstract interface for synchronization strategies
+ * @brief Abstract interface for synchronization strategies.
  *
  * Synchronization strategies handle:
  * - Registration of sync groups (parallel branches)
@@ -63,21 +46,20 @@ public:
   virtual ~ISyncStrategy() = default;
 
   /**
-   * @brief Initialize strategy with the compiled topology snapshot
+   * Initializes state from the immutable topology snapshot.
    *
-   * R4.2: the CompiledGraph is an immutable indexed snapshot that owns
-   * the nodes, so strategies must not retain references to the mutable
-   * Graph (and need not - everything topological is available here).
+   * The snapshot owns its nodes, so a strategy can retain derived topology
+   * state without depending on the caller's mutable `Graph` lifetime.
    */
   virtual void initialize(const CompiledGraph &graph) = 0;
 
   /**
-   * @brief Reset strategy state
+   * @brief Reset strategy state.
    */
   virtual void reset() = 0;
 
   /**
-   * @brief Register a synchronization group
+   * @brief Register a synchronization group.
    * @param group_id Unique identifier for the sync group
    * @param branch_ids IDs of branches in this group
    * @param join_node Name of the join node (optional)
@@ -87,14 +69,14 @@ public:
                                  const std::string &join_node = "") = 0;
 
   /**
-   * @brief Map a node to a sync group and branch
+   * @brief Map a node to a sync group and branch.
    */
   virtual void mapNodeToGroup(const std::string &node_name,
                               const SyncGroupId &group_id,
                               const BranchId &branch_id) = 0;
 
   /**
-   * @brief Report a frame drop and get affected branches
+   * @brief Report a frame drop and get affected branches.
    * @return List of branches that should also drop this frame
    */
   [[nodiscard]] virtual std::vector<BranchId>
@@ -102,30 +84,30 @@ public:
              const std::string &reason) = 0;
 
   /**
-   * @brief Check if a frame should be dropped
+   * @brief Check if a frame should be dropped.
    */
   [[nodiscard]] virtual bool shouldDrop(const std::string &node_name,
                                         FrameId frame_id) const = 0;
 
   /**
-   * @brief Mark a frame as processed by a node
+   * @brief Mark a frame as processed by a node.
    */
   virtual void markProcessed(const std::string &node_name,
                              FrameId frame_id) = 0;
 
   /**
-   * @brief Get the watermark for a sync group
+   * @brief Get the watermark for a sync group.
    */
   [[nodiscard]] virtual FrameId
   getWatermark(const SyncGroupId &group_id) const = 0;
 
   /**
-   * @brief Check if synchronization is enabled
+   * @brief Check if synchronization is enabled.
    */
   [[nodiscard]] virtual bool isEnabled() const = 0;
 
   /**
-   * @brief Whether this strategy tracks the given node
+   * @brief Whether this strategy tracks the given node.
    *
    * The engine consults this once at initialize time to decide which
    * nodes get per-frame shouldDrop()/markProcessed() calls. Strategies
@@ -139,12 +121,12 @@ public:
   }
 
   /**
-   * @brief Get strategy name for logging
+   * @brief Get strategy name for logging.
    */
   [[nodiscard]] virtual std::string name() const = 0;
 
   /**
-   * @brief Clone this strategy
+   * @brief Clone this strategy.
    */
   [[nodiscard]] virtual std::unique_ptr<ISyncStrategy> clone() const = 0;
 };

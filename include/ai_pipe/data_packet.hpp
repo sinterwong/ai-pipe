@@ -1,22 +1,3 @@
-/**
- * @file data_packet.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Type-erased key-value container passed between pipeline nodes
- * @version 0.2
- * @date 2026-07-04
- *
- * v0.2 (P3.1): storage switched from std::map<std::string, std::any> to a
- * flat vector scanned linearly. Packets typically carry a handful of
- * params, where a contiguous scan beats red-black tree traversal and
- * per-node heap allocations. The accessor API is unchanged; the storage
- * itself is now private (no external code accessed `.params` directly).
- *
- * Also introduces TypedParam<T>: a small declarative handle that binds a
- * param key to its C++ type once, giving nodes typed get/set access
- * without repeating <T> and key strings at every call site.
- *
- * @copyright Copyright (c) 2025
- */
 #ifndef AI_PIPE_UTILS_DATA_PACKET_HPP
 #define AI_PIPE_UTILS_DATA_PACKET_HPP
 
@@ -31,18 +12,21 @@
 namespace ai_pipe {
 using DataPacketId = uint64_t;
 
+/**
+ * Type-erased parameters and frame identity carried through pipeline ports.
+ *
+ * Parameter values own their storage through `std::any`. Copying a packet
+ * copies every stored value according to that value's copy semantics.
+ */
 struct DataPacket {
   /**
-   * Frame identity header (P3.4). `id` doubles as the FrameId used for
-   * cross-branch synchronization: 0 means "unassigned", and the engine
-   * stamps a monotonically increasing id when an unassigned packet
-   * enters the pipeline. Mid-pipeline output packets inherit the frame
-   * identity of the inputs that produced them unless the node sets one
-   * explicitly.
+   * Identity used for cross-branch synchronization. Zero means unassigned;
+   * the engine assigns a monotonic ID at ingress and propagates it to output
+   * packets that do not set an ID explicitly.
    */
   DataPacketId id{0};
-  StreamId stream_id{frame_constants::k_default_stream_id};
-  Timestamp timestamp{};
+  StreamId stream_id{frame_constants::k_default_stream_id}; ///< Source stream.
+  Timestamp timestamp{}; ///< Capture or production time on `steady_clock`.
 
   [[nodiscard]] FrameId frameId() const { return id; }
   [[nodiscard]] bool hasFrameId() const {
@@ -50,13 +34,11 @@ struct DataPacket {
   }
 
   /**
-   * @brief Typed access returning Result<T> - the only read path (R2.2)
+   * Returns a copy of the parameter stored under `key`.
    *
-   * Missing keys and type mismatches come back as Error values
-   * (InvalidArgument), matching the framework-wide Result convention.
-   * The former exception-throwing accessors (getParam/getOptionalParam)
-   * were removed with the exception dual-track; use
-   * `param<T>(key).valueOr(default)` where a fallback is wanted.
+   * A missing key or a value whose exact `std::any` type is not `T` returns
+   * `ErrorCode::InvalidArgument`. Use `valueOr()` on the result when a fallback
+   * is appropriate.
    */
   template <typename T> Result<T> param(const std::string &key) const {
     const std::any *value = findParam(key);
@@ -72,6 +54,7 @@ struct DataPacket {
                               "'. Expected type: " + typeid(T).name());
   }
 
+  /** Inserts or replaces `key` with an owned value of type `T`. */
   template <typename T> void setParam(const std::string &key, T value) {
     if (std::any *existing = findParam(key)) {
       *existing = std::move(value);
@@ -80,8 +63,10 @@ struct DataPacket {
     m_params.emplace_back(key, std::any(std::move(value)));
   }
 
+  /** Returns whether any value is stored under `key`. */
   bool has(const std::string &key) const { return findParam(key) != nullptr; }
 
+  /** Returns whether at least one parameter has the exact type `T`. */
   template <typename T> bool has() const {
     for (const auto &entry : m_params) {
       if (entry.second.type() == typeid(T)) {
@@ -91,6 +76,7 @@ struct DataPacket {
     return false;
   }
 
+  /** Returns whether `key` exists and has the exact type `T`. */
   template <typename T> bool has(const std::string &key) const {
     const std::any *value = findParam(key);
     return value && value->type() == typeid(T);
@@ -132,10 +118,7 @@ private:
 };
 
 /**
- * @brief Declarative typed handle for a DataPacket parameter
- *
- * Binds a key to its C++ type once, at declaration, so access sites are
- * typo- and type-safe without repeating the template argument:
+ * Binds a parameter key to `T` so access sites do not repeat either contract.
  *
  * @code
  *   // In the node class:
@@ -153,7 +136,7 @@ public:
 
   [[nodiscard]] const std::string &key() const { return m_key; }
 
-  /** @brief Read the param: Error value on missing key or mismatch */
+  /** Reads the parameter, preserving `DataPacket::param()` error semantics. */
   [[nodiscard]] Result<T> read(const DataPacket &packet) const {
     return packet.param<T>(m_key);
   }

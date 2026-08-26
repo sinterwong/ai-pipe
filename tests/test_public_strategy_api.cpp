@@ -1,25 +1,10 @@
-/**
- * @file test_public_strategy_api.cpp
- * @brief Contract tests for ai_pipe/strategies.hpp
- *
- * These tests deliberately include ONLY the public header — no private
- * src/ header — so they exercise exactly what a find_package() consumer
- * can reach. test_scheduler_strategies.cpp and test_sync_strategies.cpp
- * cover the same strategies from the inside (with the concrete types
- * visible); this file guards the boundary itself: if
- * StreamSchedulerConfig or a factory moves back behind a private header,
- * or a factory stops forwarding its config, this TU fails.
- */
-
 #include "ai_pipe/strategies.hpp"
 #include <gtest/gtest.h>
 
 namespace ai_pipe {
 namespace {
 
-// =============================================================================
 // Factories are reachable and return the built-ins
-// =============================================================================
 
 TEST(PublicStrategyApiTest, CreateBatchScheduler) {
   auto strategy = createBatchScheduler();
@@ -62,11 +47,9 @@ TEST(PublicStrategyApiTest, FactoriesReturnIndependentInstances) {
   EXPECT_NE(a.get(), b.get());
 }
 
-// =============================================================================
 // The config a consumer passes actually reaches the strategy
-// =============================================================================
 
-/** A node with one of two inputs ready, having just executed. */
+// A node with one of two inputs ready, having just executed.
 SchedulingContext partiallyReadyContext() {
   SchedulingContext context;
   context.expected_input_count = 2;

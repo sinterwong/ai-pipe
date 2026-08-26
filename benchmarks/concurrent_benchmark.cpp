@@ -1,11 +1,3 @@
-/**
- * @file concurrent_benchmark.cpp
- * @brief Benchmark tests for concurrency performance
- *
- * This file contains performance tests focused on parallel execution,
- * thread pool efficiency, and contention analysis.
- */
-
 #include "benchmark_utils.hpp"
 #include <atomic>
 #include <benchmark/benchmark.h>
@@ -14,18 +6,13 @@
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // Thread Pool Overhead
-// =============================================================================
 
-/**
- * @brief Measure thread pool task dispatch overhead
- */
+// Measure thread pool task dispatch overhead
 static void BM_Concurrent_ThreadPoolOverhead(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t tasks = 1000;
 
-  // Create a simple pipeline with minimal work
   auto topology = buildLinearPipeline(1);
   auto engine = createBenchmarkBatchEngine(workers);
   engine->initialize(topology.graph.get(), workers);
@@ -48,13 +35,9 @@ BENCHMARK(BM_Concurrent_ThreadPoolOverhead)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Parallel Branch Execution
-// =============================================================================
 
-/**
- * @brief Measure parallel branch execution efficiency
- */
+// Measure parallel branch execution efficiency
 static void BM_Concurrent_ParallelBranches(::benchmark::State &state) {
   const auto branches = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 16;
@@ -98,13 +81,9 @@ BENCHMARK(BM_Concurrent_ParallelBranches)
     ->Args({32})
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Worker Utilization
-// =============================================================================
 
-/**
- * @brief Measure worker utilization with compute-bound workload
- */
+// Measure worker utilization with compute-bound workload
 static void BM_Concurrent_WorkerUtilization_Compute(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t parallel_tasks = workers * 2;
@@ -146,9 +125,7 @@ BENCHMARK(BM_Concurrent_WorkerUtilization_Compute)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-/**
- * @brief Measure worker utilization with IO-bound workload
- */
+// Measure worker utilization with IO-bound workload
 static void BM_Concurrent_WorkerUtilization_IO(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t parallel_tasks = workers * 4;
@@ -175,13 +152,9 @@ BENCHMARK(BM_Concurrent_WorkerUtilization_IO)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Queue Contention
-// =============================================================================
 
-/**
- * @brief Measure queue contention with multiple producers
- */
+// Measure queue contention with multiple producers
 static void BM_Concurrent_QueueContention(::benchmark::State &state) {
   const auto producer_count = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 8;
@@ -249,13 +222,9 @@ BENCHMARK(BM_Concurrent_QueueContention)
     ->Args({16})
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Scaling Analysis
-// =============================================================================
 
-/**
- * @brief Strong scaling: fixed problem size, varying workers
- */
+// Strong scaling: fixed problem size, varying workers
 static void BM_Concurrent_StrongScaling(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t total_work = 32; // Fixed problem size
@@ -289,9 +258,7 @@ BENCHMARK(BM_Concurrent_StrongScaling)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-/**
- * @brief Weak scaling: problem size scales with workers
- */
+// Weak scaling: problem size scales with workers
 static void BM_Concurrent_WeakScaling(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t work_per_worker = 4;
@@ -319,13 +286,9 @@ BENCHMARK(BM_Concurrent_WeakScaling)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Mixed Workload
-// =============================================================================
 
-/**
- * @brief Measure performance with mixed compute/IO workload
- */
+// Measure performance with mixed compute/IO workload
 static void BM_Concurrent_MixedWorkload(::benchmark::State &state) {
   const auto compute_ratio = state.range(0) / 100.0; // 0-100%
   const std::size_t workers = 8;
@@ -343,7 +306,6 @@ static void BM_Concurrent_MixedWorkload(::benchmark::State &state) {
   std::size_t compute_nodes = static_cast<std::size_t>(depth * compute_ratio);
   std::size_t io_nodes = depth - compute_nodes;
 
-  // Add compute nodes
   for (std::size_t i = 0; i < compute_nodes; ++i) {
     std::string name = "compute_" + std::to_string(i);
     auto node = std::make_shared<ComputeNode>(name, 20000);
@@ -353,7 +315,6 @@ static void BM_Concurrent_MixedWorkload(::benchmark::State &state) {
     prev = name;
   }
 
-  // Add IO nodes
   for (std::size_t i = 0; i < io_nodes; ++i) {
     std::string name = "delay_" + std::to_string(i);
     auto node =
@@ -391,18 +352,13 @@ BENCHMARK(BM_Concurrent_MixedWorkload)
     ->Args({100}) // 100% compute (no IO)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Context Switch Overhead
-// =============================================================================
 
-/**
- * @brief Measure context switch overhead with many small tasks
- */
+// Measure context switch overhead with many small tasks
 static void BM_Concurrent_ContextSwitchOverhead(::benchmark::State &state) {
   const auto task_count = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
 
-  // Create many tiny tasks
   TopologyResult result;
   result.graph = std::make_unique<Graph>();
 
@@ -448,13 +404,9 @@ BENCHMARK(BM_Concurrent_ContextSwitchOverhead)
     ->Args({1000})
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Maximum Throughput (Streaming)
-// =============================================================================
 
-/**
- * @brief Find maximum sustainable throughput in streaming mode
- */
+// Find maximum sustainable throughput in streaming mode
 static void BM_Concurrent_StreamMaxThroughput(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t depth = 4;
@@ -470,7 +422,6 @@ static void BM_Concurrent_StreamMaxThroughput(::benchmark::State &state) {
 
     auto start = std::chrono::steady_clock::now();
 
-    // Push as fast as possible
     for (std::size_t i = 0; i < test_frames; ++i) {
       auto packet = std::make_shared<PortData>();
       packet->id = i;

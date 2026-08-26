@@ -10,9 +10,7 @@
 
 namespace ai_pipe::logging {
 
-// ============================================================================
 // Logger Implementation
-// ============================================================================
 
 Logger::Logger() {
   m_initialized.store(true, std::memory_order_release);
@@ -60,7 +58,6 @@ void Logger::configure(const LoggerConfig &config) {
     }
 
     if (config.file_enabled) {
-      // Create parent directories if needed
       auto parent = std::filesystem::path(config.file_path).parent_path();
       if (!parent.empty() && !std::filesystem::exists(parent)) {
         std::filesystem::create_directories(parent);
@@ -74,7 +71,6 @@ void Logger::configure(const LoggerConfig &config) {
   // Handle async mode changes
   if (need_async_change) {
     if (config.async_enabled && !m_running.load(std::memory_order_acquire)) {
-      // Start async worker
       m_ringBuffer =
           std::make_unique<SPSCRingBuffer<LogEntry>>(config.async_queue_size);
       m_running.store(true, std::memory_order_release);
@@ -82,7 +78,6 @@ void Logger::configure(const LoggerConfig &config) {
           std::make_unique<std::thread>(&Logger::asyncWorker, this);
     } else if (!config.async_enabled &&
                m_running.load(std::memory_order_acquire)) {
-      // Stop async worker
       m_running.store(false, std::memory_order_release);
       {
         std::lock_guard lock(m_workerMutex);
@@ -288,7 +283,6 @@ void Logger::shutdown() {
     return;
   }
 
-  // Stop async worker
   if (m_running.exchange(false, std::memory_order_acq_rel)) {
     m_workerCv.notify_all();
 
@@ -307,7 +301,6 @@ void Logger::shutdown() {
     }
   }
 
-  // Clear callbacks
   {
     std::lock_guard lock(m_callbackMutex);
     m_callbacks.clear();
@@ -371,7 +364,6 @@ void Logger::writeFile(const LogEntry &entry) {
   if (!m_fileStream.is_open())
     return;
 
-  // Check rotation
   rotateFile();
 
   auto &buf = getThreadLocalBuffer();
@@ -396,7 +388,6 @@ void Logger::asyncWorker() {
   batch.reserve(64);
 
   while (m_running.load(std::memory_order_acquire)) {
-    // Wait for entries or shutdown signal
     {
       std::unique_lock lock(m_workerMutex);
       m_workerCv.wait_for(lock, std::chrono::milliseconds(100), [this] {
@@ -668,9 +659,7 @@ std::string_view Logger::extractFilename(std::string_view path) noexcept {
   return path;
 }
 
-// ============================================================================
 // Hex Dump Utility
-// ============================================================================
 
 std::string hexDump(const void *data, size_t size, size_t bytes_per_line) {
   static constexpr char hex_chars[] = "0123456789ABCDEF";

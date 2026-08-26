@@ -33,7 +33,7 @@ endif()
 # header that includes a removed file or misses its own dependencies
 # fails the build instead of rotting unnoticed.
 file(GLOB PUBLIC_API_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/../src/api/ai_pipe/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../include/ai_pipe/*.hpp"
 )
 set(HEADER_CHECK_SOURCES "")
 foreach(header ${PUBLIC_API_HEADERS})

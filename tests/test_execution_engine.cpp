@@ -1,13 +1,3 @@
-/**
- * @file test_execution_engine.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief ExecutionEngine unit and behavior tests
- * @version 0.1
- * @date 2026-01-19
- *
- * @copyright Copyright (c) 2026
- *
- */
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "helper_nodes.hpp"
@@ -73,9 +63,7 @@ protected:
   std::shared_ptr<SinkNode> m_sink;
 };
 
-// =============================================================================
 // Construction and Initialization Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, DefaultConstruction) {
   ExecutionEngine engine;
@@ -155,9 +143,7 @@ TEST_F(ExecutionEngineTest, InitializeWithZeroWorkers) {
   EXPECT_EQ(engine->config().num_workers, 8);
 }
 
-// =============================================================================
 // Strategy Injection Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, SetSchedulerStrategy) {
   auto engine = createBatchEngine();
@@ -187,7 +173,7 @@ TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
 }
 
 TEST_F(ExecutionEngineTest, SyncCoordinationKnobSelectsSyncStrategy) {
-  // Regression (R3.4): enable_sync_coordination was parsed and copied
+  // Regression: enable_sync_coordination was parsed and copied
   // everywhere but never read - STREAM always installed the JoinAware
   // strategy regardless of the knob.
   auto with_sync = ExecutionEngine::create(EngineConfig::stream());
@@ -218,9 +204,7 @@ TEST_F(ExecutionEngineTest, CannotChangeStrategyWhileRunning) {
   engine->stopStreaming();
 }
 
-// =============================================================================
 // Batch Execution Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, BatchExecuteSynchronous) {
   auto engine = createBatchEngine();
@@ -311,13 +295,11 @@ TEST_F(ExecutionEngineTest, DoubleExecuteRejectsSecond) {
   PortDataMap inputs;
   inputs["source"] = createData();
 
-  // Start first execution async
   EXPECT_TRUE(engine->execute(inputs, false).isOk());
 
   // Try to start second execution - should fail
   EXPECT_FALSE(engine->execute(inputs, true).isOk());
 
-  // Wait for completion
   std::this_thread::sleep_for(300ms);
 }
 
@@ -360,7 +342,7 @@ TEST_F(ExecutionEngineTest, RejectedConcurrentExecuteKeepsRunningContext) {
       engine->execute(inputs, false, std::make_shared<PipelineContext>())
           .isOk());
 
-  // Regression (R1.4): execute() used to store the new context at entry
+  // Regression: execute() used to store the new context at entry
   // and null it on the AlreadyRunning path, so nodes scheduled after
   // this rejection (probe, once the slow source finishes) received a
   // null context.
@@ -377,9 +359,7 @@ TEST_F(ExecutionEngineTest, RejectedConcurrentExecuteKeepsRunningContext) {
   EXPECT_FALSE(probe->m_sawNullContext.load());
 }
 
-// =============================================================================
 // Result and Error Callback Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, ResultCallback) {
   auto engine = createBatchEngine();
@@ -446,9 +426,7 @@ TEST_F(ExecutionEngineTest, ErrorCallback) {
   EXPECT_FALSE(error_message.empty());
 }
 
-// =============================================================================
 // Streaming Execution Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, StartStreaming) {
   auto engine = createStreamEngine();
@@ -552,9 +530,7 @@ TEST_F(ExecutionEngineTest, StreamingWithContext) {
   engine->stopStreaming();
 }
 
-// =============================================================================
 // State Management Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, GetState) {
   auto engine = createBatchEngine();
@@ -619,7 +595,6 @@ TEST_F(ExecutionEngineTest, StopExecutionAsync) {
   // async execution
   EXPECT_TRUE(engine->execute(inputs, false).isOk());
 
-  // Stop asynchronously
   engine->stopExecutionAsync();
 
   // give time for stop to propagate
@@ -646,15 +621,12 @@ TEST_F(ExecutionEngineTest, StopExecutionSync) {
 
   std::this_thread::sleep_for(50ms);
 
-  // Stop synchronously
   engine->stopStreaming(true);
 
   EXPECT_EQ(engine->getState(), EngineState::IDLE);
 }
 
-// =============================================================================
 // Queue Management Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, QueueDepth) {
   auto engine = createStreamEngine(4, 16);
@@ -663,7 +635,6 @@ TEST_F(ExecutionEngineTest, QueueDepth) {
 
   EXPECT_TRUE(engine->startStreaming().isOk());
 
-  // Push some items
   for (int i = 0; i < 5; ++i) {
     (void)engine->pushInput("source", createData(i));
   }
@@ -716,7 +687,6 @@ TEST_F(ExecutionEngineTest, WaitForDrain) {
 }
 
 TEST_F(ExecutionEngineTest, WaitForDrainTimeout) {
-  // Create a pipeline with normal processing
   auto source = std::make_shared<PassThroughNode>("source", 50ms);
   auto sink = std::make_shared<SinkNode>("sink");
 
@@ -755,12 +725,9 @@ TEST_F(ExecutionEngineTest, SetNodeQueueConfig) {
   EXPECT_EQ(engine->getState(), EngineState::IDLE);
 }
 
-// =============================================================================
 // Drop Callback Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
-  // Create a pipeline with a very slow node and small queue
   auto source = std::make_shared<SourceNode>("source");
   auto slow = std::make_shared<SlowNode>("slow", 100ms);
   auto sink = std::make_shared<SinkNode>("sink");
@@ -799,7 +766,7 @@ TEST_F(ExecutionEngineTest, DropCallbackTriggered) {
 
 namespace {
 
-/// Node recording lifecycle transitions (P6.2)
+// Node recording lifecycle transitions
 class LifecycleNode : public PassThroughNode {
 public:
   explicit LifecycleNode(const std::string &name, bool fail_setup = false)
@@ -889,7 +856,7 @@ TEST_F(ExecutionEngineTest, LifecycleTeardownOnDestruction) {
 }
 
 TEST_F(ExecutionEngineTest, StreamingNodeRecoversAfterFailure) {
-  // P4.5: in streaming mode a node exception must not permanently
+  // in streaming mode a node exception must not permanently
   // disable the node - subsequent frames keep flowing.
   auto failable = std::make_shared<FailableNode>("failable");
   auto sink = std::make_shared<SinkNode>("sink");
@@ -923,7 +890,7 @@ TEST_F(ExecutionEngineTest, StreamingNodeRecoversAfterFailure) {
 }
 
 TEST_F(ExecutionEngineTest, FrameIdentityAssignedAndInherited) {
-  // P3.4: packets entering without an id get a monotonic FrameId; fresh
+  // packets entering without an id get a monotonic FrameId; fresh
   // output packets inherit the identity of the inputs that produced them.
   auto source = std::make_shared<PassThroughNode>("source");
   auto sink = std::make_shared<SinkNode>("sink");
@@ -1022,9 +989,7 @@ TEST_F(ExecutionEngineTest, DropTailRejectionIsReportedNotSilent) {
   engine->stopStreaming(false);
 }
 
-// =============================================================================
 // Statistics Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, StatisticsInitialState) {
   auto engine = createBatchEngine();
@@ -1049,7 +1014,7 @@ TEST_F(ExecutionEngineTest, StatisticsAfterExecution) {
 
   auto stats = engine->statistics();
 
-  // Since P5.3 total_executions counts NODE execution attempts
+  // total_executions counts NODE execution attempts
   // (unified across modes): one run of the 3-node linear pipeline = 3.
   EXPECT_EQ(stats.total_executions, 3u);
   EXPECT_EQ(stats.successful_executions, 3u);
@@ -1068,14 +1033,12 @@ TEST_F(ExecutionEngineTest, StatisticsMultipleExecutions) {
 
   auto stats = engine->statistics();
 
-  // 5 runs x 3 nodes: node-attempt semantics (P5.3)
+  // 5 runs x 3 nodes: node-attempt semantics
   EXPECT_EQ(stats.total_executions, 15u);
   EXPECT_EQ(stats.successful_executions, 15u);
 }
 
-// =============================================================================
 // Information Query Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, Info) {
   auto engine = createBatchEngine(4);
@@ -1109,9 +1072,7 @@ TEST_F(ExecutionEngineTest, Config) {
   EXPECT_EQ(retrieved.default_queue_capacity, 64);
 }
 
-// =============================================================================
 // Complex Pipeline Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, ForkJoinPipeline) {
   createForkJoinPipeline();
@@ -1259,9 +1220,7 @@ TEST_F(ExecutionEngineTest, ConcurrentStatisticsAccess) {
   engine->stopStreaming();
 }
 
-// =============================================================================
 // Edge Cases and Error Handling Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, NodeFailureDoesNotCrash) {
   auto failable = std::make_shared<FailableNode>("failable", true);
@@ -1277,7 +1236,6 @@ TEST_F(ExecutionEngineTest, NodeFailureDoesNotCrash) {
   PortDataMap inputs;
   inputs["failable"] = createData();
 
-  // Should not crash, but may not succeed
   engine->execute(inputs, true);
 
   // Engine should still be usable
@@ -1335,7 +1293,7 @@ TEST_F(ExecutionEngineTest, ExecuteDuringStreaming) {
 TEST_F(ExecutionEngineTest, EmptyGraphIsRejected) {
   auto engine = createBatchEngine();
 
-  // Since P1.2 the engine validates the graph at initialize() time:
+  // the engine validates the graph at initialize() time:
   // an empty graph is a configuration error, not a no-op pipeline.
   auto result = engine->initialize(m_graph.get());
   ASSERT_FALSE(result.isOk());
@@ -1370,9 +1328,7 @@ TEST_F(ExecutionEngineTest, SingleNodeGraph) {
   EXPECT_EQ(single->processCount(), 1);
 }
 
-// =============================================================================
 // Engine Configuration Tests
-// =============================================================================
 
 TEST_F(ExecutionEngineTest, EngineConfigBatch) {
   auto config = EngineConfig::batch(6);

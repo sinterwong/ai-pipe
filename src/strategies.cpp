@@ -1,16 +1,3 @@
-/**
- * @file strategies.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Out-of-line factories for the built-in strategies
- *
- * Defining these here is what keeps the concrete strategy classes
- * private: consumers get an interface pointer without ever seeing
- * BatchSchedulerStrategy et al., so the headers under src/ need not be
- * installed and their layout stays outside the ABI promise.
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "ai_pipe/strategies.hpp"
 
 #include "join_aware_sync_strategy.hpp"
