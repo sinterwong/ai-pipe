@@ -11,6 +11,9 @@ project(AIPipe
     DESCRIPTION "AI Pipeline framework for building modular AI applications"
 )
 
+set(AI_PIPE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(AI_PIPE_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -26,6 +29,19 @@ option(BUILD_AI_PIPE_EXAMPLES "Build with examples" OFF)
 option(BUILD_AI_PIPE_BENCHMARKS "Build with benchmark" OFF)
 option(AI_PIPE_WITH_JSON
     "Enable the JSON graph loader (vendored header-only nlohmann/json; core stays dependency-free when OFF)" OFF)
+
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(AI_PIPE_FORMAT_CHECK_DEFAULT ON)
+else()
+    set(AI_PIPE_FORMAT_CHECK_DEFAULT OFF)
+endif()
+option(AI_PIPE_FORMAT_CHECK_ON_BUILD
+    "Run clang-format validation as part of the default build"
+    ${AI_PIPE_FORMAT_CHECK_DEFAULT})
+unset(AI_PIPE_FORMAT_CHECK_DEFAULT)
+
+include("${AI_PIPE_CMAKE_DIR}/CodeQuality.cmake")
+ai_pipe_configure_code_quality()
 
 # Sanitizer support (e.g. -DAI_PIPE_SANITIZER=address / thread / undefined)
 set(AI_PIPE_SANITIZER "" CACHE STRING
@@ -46,6 +62,7 @@ message(STATUS "Build with tests: ${BUILD_AI_PIPE_TESTS}")
 message(STATUS "Build with examples: ${BUILD_AI_PIPE_EXAMPLES}")
 message(STATUS "Build with benchmarks: ${BUILD_AI_PIPE_BENCHMARKS}")
 message(STATUS "Build with JSON graph loader: ${AI_PIPE_WITH_JSON}")
+message(STATUS "Format check on build: ${AI_PIPE_FORMAT_CHECK_ON_BUILD}")
 message(STATUS "CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
 
@@ -102,6 +119,9 @@ add_subdirectory(3rdparty)
 message(STATUS "================================")
 message(STATUS "Building AIPipe library...")
 add_subdirectory(src)
+if(AI_PIPE_FORMAT_CHECK_ON_BUILD AND TARGET ai_pipe_format_check)
+    add_dependencies(ai_pipe ai_pipe_format_check)
+endif()
 
 if(BUILD_AI_PIPE_TESTS)
     message(STATUS "================================")

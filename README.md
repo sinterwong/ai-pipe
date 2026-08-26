@@ -487,6 +487,19 @@ ctest --output-on-failure
 ./benchmarks/ai_pipe_benchmark
 ```
 
+Top-level builds run a clang-format 21 check before compiling the library.
+The check is disabled by default when AI Pipe is included as a subproject.
+Use the dedicated targets to check or update all first-party C++ sources:
+
+```bash
+cmake --build . --target ai_pipe_format_check
+cmake --build . --target ai_pipe_format
+```
+
+If clang-format 21 is not on `PATH`, set
+`AI_PIPE_CLANG_FORMAT_EXECUTABLE` to its executable. Pass
+`-DAI_PIPE_FORMAT_CHECK_ON_BUILD=OFF` to disable the default-build check.
+
 ---
 
 ## License

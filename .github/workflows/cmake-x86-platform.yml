@@ -225,18 +225,19 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Pin the exact formatter version used for the one-time normalization
-    # (P6.4) so gate results do not drift across toolchain releases.
-    - name: Install clang-format
-      run: pip install clang-format==22.1.5
+    - name: Install clang-format 21
+      run: |
+        wget -q https://apt.llvm.org/llvm.sh
+        sudo bash llvm.sh 21
+        sudo apt-get install -y clang-format-21
 
     - name: Check formatting
       run: |
-        clang-format --dry-run --Werror \
-          src/*.cpp src/*.hpp src/api/ai_pipe/*.hpp \
-          tests/*.cpp tests/*.hpp \
-          benchmarks/*.cpp benchmarks/*.hpp \
-          examples/*.cpp
+        cmake -B ${{ github.workspace }}/build/format \
+          -DAI_PIPE_CLANG_FORMAT_EXECUTABLE=clang-format-21 \
+          -S ${{ github.workspace }}
+        cmake --build ${{ github.workspace }}/build/format \
+          --target ai_pipe_format_check
 
   clang-tidy:
     runs-on: ubuntu-24.04
