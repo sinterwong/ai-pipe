@@ -11,9 +11,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // ExecutionId Tests
-// =============================================================================
 
 TEST(ExecutionIdTest, DefaultConstruction) {
   ExecutionId id;
@@ -47,9 +45,7 @@ TEST(ExecutionIdTest, ToString) {
   EXPECT_EQ(str.length(), 16); // 16 hex digits
 }
 
-// =============================================================================
 // NodeMetrics Tests
-// =============================================================================
 
 TEST(NodeMetricsTest, DefaultConstruction) {
   NodeMetrics metrics;
@@ -66,9 +62,7 @@ TEST(NodeMetricsTest, DurationMs) {
   EXPECT_DOUBLE_EQ(metrics.durationMs(), 1.5);
 }
 
-// =============================================================================
 // ExecutionMetrics Tests
-// =============================================================================
 
 TEST(ExecutionMetricsTest, SuccessRateZeroExecutions) {
   ExecutionMetrics metrics;
@@ -94,9 +88,7 @@ TEST(ExecutionMetricsTest, SuccessRatePartial) {
   EXPECT_DOUBLE_EQ(metrics.successRate(), 70.0);
 }
 
-// =============================================================================
 // CancellationToken Tests
-// =============================================================================
 
 TEST(CancellationTokenTest, DefaultNotCancelled) {
   CancellationToken token;
@@ -119,7 +111,7 @@ TEST(CancellationTokenTest, Reset) {
 }
 
 TEST(CancellationTokenTest, CancelIsObservable) {
-  // R2.2: throwIfCancelled was removed; polling isCancelled() is the
+  // throwIfCancelled was removed; polling isCancelled() is the
   // only (cooperative) checkpoint style.
   CancellationToken token;
   EXPECT_FALSE(token.isCancelled());
@@ -159,9 +151,7 @@ TEST(CancellationTokenTest, ThreadSafety) {
   EXPECT_GT(check_count.load(), 0);
 }
 
-// =============================================================================
 // ProgressReporter Tests
-// =============================================================================
 
 TEST(ProgressReporterTest, DefaultProgress) {
   ProgressReporter reporter;
@@ -193,9 +183,7 @@ TEST(ProgressReporterTest, Callback) {
   EXPECT_EQ(received_message, "three quarters");
 }
 
-// =============================================================================
 // Logger Adapter Tests
-// =============================================================================
 
 TEST(NullLoggerAdapterTest, DoesNotCrash) {
   NullLoggerAdapter logger;
@@ -250,9 +238,7 @@ TEST(MemoryLoggerAdapterTest, ThreadSafety) {
   EXPECT_EQ(logger.entries().size(), 1000);
 }
 
-// =============================================================================
 // PipelineContext Tests
-// =============================================================================
 
 class PipelineContextTest : public ::testing::Test {
 protected:
@@ -580,9 +566,7 @@ TEST_F(PipelineContextTest, ConcurrentConfigAccess) {
   }
 }
 
-// =============================================================================
 // ScopedNodeExecution Tests
-// =============================================================================
 
 class ScopedNodeExecutionTest : public ::testing::Test {
 protected:
@@ -662,9 +646,7 @@ TEST_F(ScopedNodeExecutionTest, NullContext) {
   EXPECT_NO_THROW(exec.logInfo("message"));
 }
 
-// =============================================================================
 // Move Semantics Tests
-// =============================================================================
 
 TEST(PipelineContextMoveTest, MoveConstruction) {
   auto ctx = std::make_shared<PipelineContext>();
@@ -687,9 +669,7 @@ TEST(PipelineContextMoveTest, MoveAssignment) {
   EXPECT_TRUE(moved.hasResource("res"));
 }
 
-// =============================================================================
-// Engine log bridge (P5.5)
-// =============================================================================
+// Engine log bridge
 
 namespace {
 

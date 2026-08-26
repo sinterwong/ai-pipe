@@ -1,19 +1,3 @@
-/**
- * @file plugin_loader.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief PluginLoader implementation (F8)
- *
- * dlopen runs the plugin's static initializers, which is where
- * AI_PIPE_REGISTER_NODE registrations happen - i.e. registration
- * precedes the handshake by construction. The loader therefore
- * snapshots the registry around dlopen: the delta identifies the
- * plugin's node types, and on a failed handshake the delta is rolled
- * back before the library is closed (leaving a dangling factory whose
- * code is unmapped would be worse than the transient registration).
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "ai_pipe/node_registry.hpp"
 #include "ai_pipe/plugin.hpp"
 #include "ai_pipe/version.hpp"
@@ -104,7 +88,7 @@ Result<void> PluginLoader::unload(const std::string & /*path*/) {
 
 namespace {
 
-/** @brief Pre-1.0 compatibility rule: major and minor must match */
+// Pre-1.0 compatibility rule: major and minor must match.
 bool frameworkVersionCompatible(std::uint32_t plugin_version) {
   constexpr std::uint32_t k_host = AI_PIPE_VERSION;
   return (plugin_version / 100) == (k_host / 100);

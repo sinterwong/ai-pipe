@@ -1,11 +1,3 @@
-/**
- * @file benchmark_utils.hpp
- * @brief Utility functions and topology builders for benchmarking
- *
- * This file provides reusable utilities for creating benchmark test cases,
- * including topology builders, engine factories, and measurement helpers.
- */
-
 #ifndef BENCHMARK_UTILS_HPP
 #define BENCHMARK_UTILS_HPP
 
@@ -22,13 +14,9 @@
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // Topology Builders
-// =============================================================================
 
-/**
- * @brief Result of topology building
- */
+// Result of topology building
 struct TopologyResult {
   std::unique_ptr<Graph> graph;
   std::vector<std::shared_ptr<ILogicNode>> nodes;
@@ -38,9 +26,7 @@ struct TopologyResult {
   std::vector<std::string> sink_nodes;   // For multi-sink topologies
 };
 
-/**
- * @brief Build a linear pipeline: Source → [Node1 → ... → NodeN] → Sink
- */
+// Build a linear pipeline: Source → [Node1 → ... → NodeN] → Sink
 inline TopologyResult buildLinearPipeline(
     std::size_t depth,
     std::chrono::microseconds node_delay = std::chrono::microseconds{0}) {
@@ -84,9 +70,7 @@ inline TopologyResult buildLinearPipeline(
   return result;
 }
 
-/**
- * @brief Build a compute-intensive linear pipeline
- */
+// Build a compute-intensive linear pipeline
 inline TopologyResult buildComputePipeline(std::size_t depth,
                                            std::size_t iterations_per_node) {
   TopologyResult result;
@@ -119,19 +103,17 @@ inline TopologyResult buildComputePipeline(std::size_t depth,
   return result;
 }
 
-/**
- * @brief Build a diamond (fork-join) topology
- *
- *         Source
- *           |
- *        [Fork]
- *       /  |   \
- *      B1  B2 ... Bn
- *       \  |   /
- *        [Join]
- *           |
- *         Sink
- */
+// Build a diamond (fork-join) topology
+//
+//        Source
+//          |
+//       [Fork]
+//      /  |   \
+//     B1  B2 ... Bn
+//      \  |   /
+//       [Join]
+//          |
+//        Sink
 inline TopologyResult buildDiamondPipeline(
     std::size_t branch_count,
     std::chrono::microseconds branch_delay = std::chrono::microseconds{100}) {
@@ -180,9 +162,7 @@ inline TopologyResult buildDiamondPipeline(
   return result;
 }
 
-/**
- * @brief Build a multi-stage fork-join pipeline
- */
+// Build a multi-stage fork-join pipeline
 inline TopologyResult buildMultiStagePipeline(
     std::size_t stages, std::size_t branches_per_stage,
     std::chrono::microseconds branch_delay = std::chrono::microseconds{50}) {
@@ -242,9 +222,7 @@ inline TopologyResult buildMultiStagePipeline(
   return result;
 }
 
-/**
- * @brief Build parallel independent pipelines
- */
+// Build parallel independent pipelines
 inline TopologyResult buildParallelPipelines(
     std::size_t pipeline_count, std::size_t depth_per_pipeline,
     std::chrono::microseconds node_delay = std::chrono::microseconds{10}) {
@@ -280,7 +258,6 @@ inline TopologyResult buildParallelPipelines(
     result.sink_nodes.push_back(prefix + "sink");
   }
 
-  // Set first pipeline as default
   if (!result.source_nodes.empty()) {
     result.source_node = result.source_nodes[0];
     result.sink_node = result.sink_nodes[0];
@@ -289,13 +266,8 @@ inline TopologyResult buildParallelPipelines(
   return result;
 }
 
-// =============================================================================
 // Engine Factories
-// =============================================================================
 
-/**
- * @brief Create a batch execution engine
- */
 inline std::unique_ptr<ExecutionEngine>
 createBenchmarkBatchEngine(std::uint8_t workers = 4) {
   auto config = EngineConfig::batch(workers);
@@ -303,9 +275,6 @@ createBenchmarkBatchEngine(std::uint8_t workers = 4) {
   return ExecutionEngine::create(config);
 }
 
-/**
- * @brief Create a stream execution engine
- */
 inline std::unique_ptr<ExecutionEngine>
 createBenchmarkStreamEngine(std::uint8_t workers = 4,
                             std::size_t queue_capacity = 16,
@@ -324,13 +293,9 @@ createBenchmarkStreamEngine(std::uint8_t workers = 4,
   return engine;
 }
 
-// =============================================================================
 // Measurement Helpers
-// =============================================================================
 
-/**
- * @brief Record throughput metrics
- */
+// Record throughput metrics
 inline void recordThroughput(::benchmark::State &state,
                              std::uint64_t items_processed,
                              std::size_t bytes_per_item = 0) {
@@ -342,18 +307,14 @@ inline void recordThroughput(::benchmark::State &state,
   }
 }
 
-/**
- * @brief Record custom counters
- */
+// Record custom counters
 inline void recordCustomCounters(
     ::benchmark::State &state, const std::string &name, double value,
     ::benchmark::Counter::Flags flags = ::benchmark::Counter::kDefaults) {
   state.counters[name] = ::benchmark::Counter(value, flags);
 }
 
-/**
- * @brief Record latency percentile counters
- */
+// Record latency percentile counters
 inline void recordLatencyCounters(::benchmark::State &state,
                                   const SinkNode::LatencyStats &stats) {
   state.counters["latency_avg_us"] = stats.avg;
@@ -362,49 +323,37 @@ inline void recordLatencyCounters(::benchmark::State &state,
   state.counters["latency_max_us"] = stats.max;
 }
 
-// =============================================================================
 // Benchmark Argument Generators
-// =============================================================================
 
-/**
- * @brief Generate worker count arguments: 1, 2, 4, 8, 16
- */
+// Generate worker count arguments: 1, 2, 4, 8, 16
 inline void WorkerCountArgs(::benchmark::internal::Benchmark *b) {
   for (int workers = 1; workers <= 16; workers *= 2) {
     b->Args({workers});
   }
 }
 
-/**
- * @brief Generate pipeline depth arguments: 1, 2, 4, 8, 16, 32
- */
+// Generate pipeline depth arguments: 1, 2, 4, 8, 16, 32
 inline void PipelineDepthArgs(::benchmark::internal::Benchmark *b) {
   for (int depth = 1; depth <= 32; depth *= 2) {
     b->Args({depth});
   }
 }
 
-/**
- * @brief Generate queue capacity arguments: 8, 16, 32, 64, 128, 256
- */
+// Generate queue capacity arguments: 8, 16, 32, 64, 128, 256
 inline void QueueCapacityArgs(::benchmark::internal::Benchmark *b) {
   for (int capacity = 8; capacity <= 256; capacity *= 2) {
     b->Args({capacity});
   }
 }
 
-/**
- * @brief Generate payload size arguments: 64B, 256B, 1KB, 4KB, 16KB, 64KB
- */
+// Generate payload size arguments: 64B, 256B, 1KB, 4KB, 16KB, 64KB
 inline void PayloadSizeArgs(::benchmark::internal::Benchmark *b) {
   for (int size = 64; size <= 65536; size *= 4) {
     b->Args({size});
   }
 }
 
-/**
- * @brief Generate combined workers x depth arguments
- */
+// Generate combined workers x depth arguments
 inline void WorkerDepthArgs(::benchmark::internal::Benchmark *b) {
   for (int workers = 1; workers <= 8; workers *= 2) {
     for (int depth = 1; depth <= 16; depth *= 2) {
@@ -413,22 +362,15 @@ inline void WorkerDepthArgs(::benchmark::internal::Benchmark *b) {
   }
 }
 
-/**
- * @brief Generate branch count arguments for fork-join: 2, 4, 8, 16
- */
+// Generate branch count arguments for fork-join: 2, 4, 8, 16
 inline void BranchCountArgs(::benchmark::internal::Benchmark *b) {
   for (int branches = 2; branches <= 16; branches *= 2) {
     b->Args({branches});
   }
 }
 
-// =============================================================================
 // Test Data Helpers
-// =============================================================================
 
-/**
- * @brief Create initial input for a source node
- */
 inline PortDataMap createSourceInput(std::uint64_t frame_id = 0,
                                      std::size_t payload_size = 1024) {
   PortDataMap inputs;
@@ -440,9 +382,6 @@ inline PortDataMap createSourceInput(std::uint64_t frame_id = 0,
   return inputs;
 }
 
-/**
- * @brief Create initial inputs for multiple source nodes
- */
 inline PortDataMap
 createMultiSourceInput(const std::vector<std::string> &source_nodes,
                        std::uint64_t frame_id = 0,

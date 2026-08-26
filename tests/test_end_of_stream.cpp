@@ -1,14 +1,3 @@
-/**
- * @file test_end_of_stream.cpp
- * @brief R6.1 in-stream EOS / flush protocol
- *
- * Acceptance criteria from docs/design/eos_flush.md §8. The protocol is
- * a per-input-port EOS latch, not an in-band marker packet, so the tests
- * that matter most are the ones the packet design would have failed:
- * EOS surviving queue pressure under every drop policy, and EOS never
- * overtaking data already queued ahead of it.
- */
-
 #include "ai_pipe/ai_pipe.hpp"
 #include <atomic>
 #include <chrono>
@@ -24,7 +13,7 @@ using namespace std::chrono_literals;
 
 constexpr auto k_wait = 5000ms;
 
-/** Forwards its input; records every frame id it sees. */
+// Forwards its input; records every frame id it sees.
 class PassNode : public ILogicNode {
 public:
   explicit PassNode(std::string name) : ILogicNode(std::move(name)) {}
@@ -66,11 +55,9 @@ private:
   std::atomic<bool> m_flushed{false};
 };
 
-/**
- * Accumulates inputs and only emits once it has a full batch - the
- * canonical node that strands data at the end of a finite stream unless
- * a flush hook exists.
- */
+// Accumulates inputs and only emits once it has a full batch - the
+// canonical node that strands data at the end of a finite stream unless
+// a flush hook exists.
 class BatchingNode : public ILogicNode {
 public:
   BatchingNode(std::string name, std::size_t batch_size)
@@ -123,7 +110,7 @@ private:
   std::atomic<int> m_flushCalls{0};
 };
 
-/** Terminal node; counts what arrives and whether EOS reached it. */
+// Terminal node; counts what arrives and whether EOS reached it.
 class SinkNode : public ILogicNode {
 public:
   explicit SinkNode(std::string name) : ILogicNode(std::move(name)) {}
@@ -164,7 +151,7 @@ private:
   std::vector<std::int64_t> m_batches;
 };
 
-/** Two-input join. */
+// Two-input join.
 class JoinNode : public ILogicNode {
 public:
   explicit JoinNode(std::string name) : ILogicNode(std::move(name)) {}
@@ -200,7 +187,7 @@ private:
   std::atomic<bool> m_flushed{false};
 };
 
-/** A flush hook that throws; must not strand the rest of the graph. */
+// A flush hook that throws; must not strand the rest of the graph.
 class ThrowingFlushNode : public ILogicNode {
 public:
   explicit ThrowingFlushNode(std::string name) : ILogicNode(std::move(name)) {}
@@ -227,22 +214,20 @@ public:
 
 PortDataPtr makePacket() { return std::make_shared<PortData>(); }
 
-/**
- * A packet with an explicit frame id.
- *
- * Needed whenever two branches must pair at a join: the engine's
- * ingress stamps ids from one counter per stream, so two packets pushed
- * into different ports of the same stream get *different* ids and would
- * never align. Real multi-branch sources carry a shared capture id;
- * these tests say so explicitly.
- */
+// A packet with an explicit frame id.
+//
+// Needed whenever two branches must pair at a join: the engine's
+// ingress stamps ids from one counter per stream, so two packets pushed
+// into different ports of the same stream get *different* ids and would
+// never align. Real multi-branch sources carry a shared capture id;
+// these tests say so explicitly.
 PortDataPtr makePacket(FrameId id) {
   auto packet = std::make_shared<PortData>();
   packet->id = id;
   return packet;
 }
 
-/** source -> pass -> sink, streaming. */
+// source -> pass -> sink, streaming.
 struct LinearFixture {
   std::shared_ptr<PassNode> source = std::make_shared<PassNode>("source");
   std::shared_ptr<PassNode> middle = std::make_shared<PassNode>("middle");
@@ -269,9 +254,7 @@ struct LinearFixture {
   }
 };
 
-// =============================================================================
 // Linear propagation
-// =============================================================================
 
 TEST(EndOfStreamTest, ReachesSinkAndUnblocksWaiter) {
   LinearFixture fx;
@@ -346,9 +329,7 @@ TEST(EndOfStreamTest, PipelineStaysRunningAfterEos) {
   fx.pipeline.stop();
 }
 
-// =============================================================================
 // Flush hook
-// =============================================================================
 
 TEST(EndOfStreamTest, FlushHookEmitsStrandedResidue) {
   auto source = std::make_shared<PassNode>("source");
@@ -446,9 +427,7 @@ TEST(EndOfStreamTest, ThrowingFlushHookDoesNotStrandDownstream) {
   pipeline.stop();
 }
 
-// =============================================================================
 // Join semantics (§6.2, §6.3)
-// =============================================================================
 
 struct JoinFixture {
   std::shared_ptr<PassNode> left = std::make_shared<PassNode>("left");
@@ -536,9 +515,7 @@ TEST(EndOfStreamTest, ClosedBranchDoesNotBlockAlignedJoin) {
   fx.pipeline.stop();
 }
 
-// =============================================================================
 // Latch durability (the reason this is not an in-band packet - §4)
-// =============================================================================
 
 class DropPolicyEosTest : public ::testing::TestWithParam<const char *> {};
 
@@ -583,9 +560,7 @@ INSTANTIATE_TEST_SUITE_P(AllDropPolicies, DropPolicyEosTest,
                          ::testing::Values("DropHead", "DropTail",
                                            "KeepLatest"));
 
-// =============================================================================
 // Contract errors
-// =============================================================================
 
 TEST(EndOfStreamTest, PushAfterEosIsRejected) {
   LinearFixture fx;
@@ -649,9 +624,7 @@ TEST(EndOfStreamTest, SignalRequiresStreamingMode) {
   EXPECT_FALSE(pipeline.isEndOfStreamReached());
 }
 
-// =============================================================================
 // Observer and reset
-// =============================================================================
 
 class EosObserver : public IPipelineObserver {
 public:

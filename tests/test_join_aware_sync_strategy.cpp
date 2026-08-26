@@ -1,13 +1,3 @@
-/**
- * @file test_join_aware_sync_strategy.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief JoinAwareSyncStrategy topology analysis tests
- * @version 0.1
- * @date 2026-01-23
- *
- * @copyright Copyright (c) 2026
- *
- */
 #include "ai_pipe/context.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
@@ -37,7 +27,7 @@ protected:
   std::unique_ptr<JoinAwareSyncStrategy> m_strategy;
   Graph m_graph;
 
-  // R4.2: strategies initialize from the compiled snapshot
+  // strategies initialize from the compiled snapshot
   [[nodiscard]] CompiledGraph compiledGraph() {
     auto compiled = CompiledGraph::compile(m_graph);
     EXPECT_TRUE(compiled.isOk()) << compiled.errorMessage();
@@ -53,14 +43,12 @@ protected:
   }
 };
 
-/**
- * Diamond topology:
- *       A
- *      / \
- *     B   C
- *      \ /
- *       D
- */
+// Diamond topology:
+//      A
+//     / \
+//    B   C
+//     \ /
+//      D
 TEST_F(JoinAwareSyncStrategyTest, SimpleDiamondPattern) {
   addNode("A");
   addNode("B");
@@ -83,20 +71,17 @@ TEST_F(JoinAwareSyncStrategyTest, SimpleDiamondPattern) {
   EXPECT_EQ(b_mappings[0].first, c_mappings[0].first) << "Same sync group";
   EXPECT_NE(b_mappings[0].second, c_mappings[0].second) << "Different branches";
 
-  // Test drop propagation
   auto affected = m_strategy->reportDrop("B", 100, "test_drop");
   EXPECT_FALSE(affected.empty());
   EXPECT_TRUE(m_strategy->shouldDrop("C", 100));
 }
 
-/**
- * Divergent topology (no join):
- *       A
- *      / \
- *     B   C
- *     |   |
- *     D   E
- */
+// Divergent topology (no join):
+//      A
+//     / \
+//    B   C
+//    |   |
+//    D   E
 TEST_F(JoinAwareSyncStrategyTest, DivergentBranchesNoSync) {
   addNode("A");
   addNode("B");
@@ -116,16 +101,14 @@ TEST_F(JoinAwareSyncStrategyTest, DivergentBranchesNoSync) {
   EXPECT_TRUE(m_strategy->getNodeMappings("C").empty());
 }
 
-/**
- * Deep branch topology:
- *       A
- *      / \
- *     B   C
- *     |   |
- *     D   E
- *      \ /
- *       F
- */
+// Deep branch topology:
+//      A
+//     / \
+//    B   C
+//    |   |
+//    D   E
+//     \ /
+//      F
 TEST_F(JoinAwareSyncStrategyTest, DeepBranchSync) {
   addNode("A");
   addNode("B");
@@ -161,18 +144,16 @@ TEST_F(JoinAwareSyncStrategyTest, DeepBranchSync) {
   EXPECT_TRUE(m_strategy->shouldDrop("C", 200)) << "C drops when D drops";
 }
 
-/**
- * Asymmetric branches:
- *       A
- *      / \
- *     B   C
- *     |   |
- *     D   |
- *     |   |
- *     E   |
- *      \ /
- *       F
- */
+// Asymmetric branches:
+//      A
+//     / \
+//    B   C
+//    |   |
+//    D   |
+//    |   |
+//    E   |
+//     \ /
+//      F
 TEST_F(JoinAwareSyncStrategyTest, AsymmetricBranchLengths) {
   addNode("A");
   addNode("B");
@@ -205,10 +186,8 @@ TEST_F(JoinAwareSyncStrategyTest, AsymmetricBranchLengths) {
       << "C drops when E (deep) drops";
 }
 
-/**
- * Linear chain (no fork-join):
- *   A -> B -> C -> D
- */
+// Linear chain (no fork-join):
+//  A -> B -> C -> D
 TEST_F(JoinAwareSyncStrategyTest, LinearChainNoSync) {
   addNode("A");
   addNode("B");
@@ -228,18 +207,16 @@ TEST_F(JoinAwareSyncStrategyTest, LinearChainNoSync) {
   EXPECT_TRUE(m_strategy->getNodeMappings("D").empty());
 }
 
-/**
- * Nested Fork-Join:
- *       A
- *      / \
- *     B   \
- *    / \   \
- *   C   D   E
- *    \ /   /
- *     F --/
- *     |
- *     G
- */
+// Nested Fork-Join:
+//      A
+//     / \
+//    B   \
+//   / \   \
+//  C   D   E
+//   \ /   /
+//    F --/
+//    |
+//    G
 TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   addNode("A");
   addNode("B");
@@ -276,7 +253,6 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   // Our algorithm maps intermediate nodes of paths to branches.
   ASSERT_FALSE(b_maps.empty());
 
-  // Check inner loop: C and D share a group
   bool shared_inner = false;
   for (auto &cm : c_maps) {
     for (auto &dm : d_maps) {
@@ -286,7 +262,6 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   }
   EXPECT_TRUE(shared_inner);
 
-  // Check outer loop: B and E share a group
   bool shared_outer = false;
   for (auto &bm : b_maps) {
     for (auto &em : e_maps) {
@@ -296,7 +271,6 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   }
   EXPECT_TRUE(shared_outer);
 
-  // Test nested drop propagation
   // If C drops, D should drop (inner)
   (void)m_strategy->reportDrop("C", 777, "inner_drop");
   EXPECT_TRUE(m_strategy->shouldDrop("D", 777));
@@ -308,13 +282,11 @@ TEST_F(JoinAwareSyncStrategyTest, NestedForkJoin) {
   EXPECT_TRUE(m_strategy->shouldDrop("E", 777));
 }
 
-// =============================================================================
 // Manual Registration Surface (ISyncStrategy contract)
 //
 // The engine wires the strategy through initialize() topology analysis;
 // registerSyncGroup/mapNodeToGroup are the manual path for custom or
 // engine-independent use and must behave equivalently.
-// =============================================================================
 
 TEST_F(JoinAwareSyncStrategyTest, ManualRegistrationMirrorsTopologyAnalysis) {
   m_strategy->registerSyncGroup("g", {"left", "right"}, "join");
@@ -385,14 +357,12 @@ TEST_F(JoinAwareSyncStrategyTest, CloneThenInitializeMatchesOriginal) {
   EXPECT_FALSE(m_strategy->shouldDrop("C", 5));
 }
 
-// =============================================================================
 // ISyncStrategy default tracksNode() (interface contract)
-// =============================================================================
 
 namespace {
 
-/// Minimal strategy overriding only the pure virtuals, so the default
-/// tracksNode() implementation (delegate to isEnabled) is exercised
+// Minimal strategy overriding only the pure virtuals, so the default
+// tracksNode() implementation (delegate to isEnabled) is exercised
 class MinimalSyncStrategy : public ISyncStrategy {
 public:
   explicit MinimalSyncStrategy(bool enabled) : m_enabled(enabled) {}

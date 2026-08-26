@@ -27,7 +27,6 @@ std::string readFile(const std::filesystem::path &path) {
 
 } // namespace
 
-// =============================================================================
 // Logger Test Fixture
 //
 // Logger is a process-wide singleton also used by PipelineContext bridging,
@@ -35,7 +34,6 @@ std::string readFile(const std::filesystem::path &path) {
 // Console output is silenced for the duration of each test; entries are
 // observed through callbacks and filtered by a per-test marker so that
 // residual callbacks from other suites cannot interfere.
-// =============================================================================
 
 class LoggerTest : public ::testing::Test {
 protected:
@@ -89,9 +87,7 @@ protected:
   std::filesystem::path m_temp_dir;
 };
 
-// =============================================================================
 // Level Filtering
-// =============================================================================
 
 TEST_F(LoggerTest, SetLevelAccessor) {
   auto &logger = Logger::instance();
@@ -161,9 +157,7 @@ TEST_F(LoggerTest, ConvenienceMethodsMapToLevels) {
   EXPECT_EQ(delivered[5], LogLevel::Fatal);
 }
 
-// =============================================================================
 // Callbacks
-// =============================================================================
 
 TEST_F(LoggerTest, CallbackReceivesEntryFields) {
   auto &logger = Logger::instance();
@@ -253,9 +247,7 @@ TEST_F(LoggerTest, ThrowingCallbackIsSwallowed) {
   EXPECT_EQ(count, 1);
 }
 
-// =============================================================================
 // Formatting Entry Points (logf / LogStream)
-// =============================================================================
 
 TEST_F(LoggerTest, LogfFormatsPrintfStyle) {
   auto &logger = Logger::instance();
@@ -325,9 +317,7 @@ TEST_F(LoggerTest, LogStreamDisabledLevelDoesNotLog) {
   EXPECT_EQ(count, 0);
 }
 
-// =============================================================================
 // Configuration
-// =============================================================================
 
 TEST_F(LoggerTest, ConfigureRoundTrip) {
   auto &logger = Logger::instance();
@@ -356,9 +346,7 @@ TEST_F(LoggerTest, SetPatternRoundTrip) {
   EXPECT_EQ(logger.config().pattern, "%T | %m");
 }
 
-// =============================================================================
 // File Output
-// =============================================================================
 
 TEST_F(LoggerTest, FileOutputWritesFormattedLines) {
   auto &logger = Logger::instance();
@@ -497,9 +485,7 @@ TEST_F(LoggerTest, FileRotationKeepsBackupChain) {
   EXPECT_LE(std::filesystem::file_size(log_path.string() + ".1"), 512u);
 }
 
-// =============================================================================
 // JSON Output
-// =============================================================================
 
 TEST_F(LoggerTest, JsonOutputEscapesSpecialCharacters) {
   auto &logger = Logger::instance();
@@ -535,9 +521,7 @@ TEST_F(LoggerTest, JsonOutputEscapesSpecialCharacters) {
   EXPECT_EQ(payload.find('\t'), std::string::npos);
 }
 
-// =============================================================================
 // Async Mode
-// =============================================================================
 
 TEST_F(LoggerTest, AsyncModeDeliversAllEntries) {
   auto &logger = Logger::instance();
@@ -590,9 +574,7 @@ TEST_F(LoggerTest, AsyncQueueFullFallsBackToSyncWithoutLoss) {
   EXPECT_EQ(count.load(), k_total);
 }
 
-// =============================================================================
 // LogEntry / SourceLocation
-// =============================================================================
 
 TEST(LogEntryTest, DefaultConstruction) {
   LogEntry entry;
@@ -629,9 +611,7 @@ TEST(SourceLocationTest, CurrentCapturesThisFile) {
 }
 #endif
 
-// =============================================================================
 // SPSC Ring Buffer
-// =============================================================================
 
 TEST(SPSCRingBufferTest, CapacityRoundsUpToPowerOfTwo) {
   SPSCRingBuffer<int> buffer(5);
@@ -710,9 +690,7 @@ TEST(SPSCRingBufferTest, ConcurrentProducerConsumer) {
   EXPECT_TRUE(buffer.empty());
 }
 
-// =============================================================================
 // Hex Dump
-// =============================================================================
 
 TEST(HexDumpTest, FormatsPrintableAscii) {
   const char data[] = "Hello";
@@ -753,9 +731,7 @@ TEST(HexDumpTest, CustomBytesPerLine) {
   EXPECT_NE(dump.find("|BBBB|"), std::string::npos);
 }
 
-// =============================================================================
-// Public engine-log control surface (R2.3, ai_pipe/engine_log.hpp)
-// =============================================================================
+// Public engine-log control surface
 
 TEST_F(LoggerTest, PublicSurfaceLevelRoundTrip) {
   ai_pipe::setEngineLogLevel(ai_pipe::PipeLogLevel::KWarning);

@@ -21,9 +21,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // Helper Functions
-// =============================================================================
 
 inline PortDataPtr makeDataPacket(uint64_t id = 0) {
   auto packet = std::make_shared<DataPacket>();
@@ -39,9 +37,7 @@ inline PortDataPtr makeDataPacketWithValue(uint64_t id, const std::string &key,
   return packet;
 }
 
-// =============================================================================
 // Mock Node for Testing
-// =============================================================================
 
 class TestNode : public ILogicNode {
 public:
@@ -61,7 +57,6 @@ public:
       std::this_thread::sleep_for(m_delay);
     }
 
-    // Copy input to output
     for (const auto &[port, data] : inputs) {
       outputs["output"] = data;
     }
@@ -152,9 +147,7 @@ private:
   std::vector<PortDataPtr> m_receivedData;
 };
 
-// =============================================================================
-// PipelineOptions Tests (unchanged — struct itself is the same)
-// =============================================================================
+// Pipeline options
 
 TEST(PipelineOptionsTest, DefaultValues) {
   PipelineOptions opts;
@@ -199,12 +192,9 @@ TEST(PipelineOptionsTest, StreamFactoryDefaultValues) {
   EXPECT_EQ(opts.queue_capacity, 16);
 }
 
-// =============================================================================
-// ExecutionOutput Tests (replaces ExecutionResult)
-// =============================================================================
+// Execution output
 
 TEST(ExecutionOutputTest, DefaultValues) {
-  // v2.0: ExecutionResult removed → ExecutionOutput is the success payload
   ExecutionOutput output;
 
   EXPECT_TRUE(output.outputs.empty());
@@ -212,7 +202,6 @@ TEST(ExecutionOutputTest, DefaultValues) {
 }
 
 TEST(ExecutionOutputTest, InsideResultSuccess) {
-  // v2.0: Pipeline::run() returns Result<ExecutionOutput>
   ExecutionOutput output;
   output.outputs["test"] = makeDataPacket(1);
   output.elapsed = std::chrono::milliseconds(150);
@@ -226,7 +215,6 @@ TEST(ExecutionOutputTest, InsideResultSuccess) {
 }
 
 TEST(ExecutionOutputTest, InsideResultError) {
-  // v2.0: error branch carries Error instead of string
   auto result = Result<ExecutionOutput>::err(ErrorCode::ExecutionFailed,
                                              "node crashed", "detector");
 
@@ -237,9 +225,7 @@ TEST(ExecutionOutputTest, InsideResultError) {
   EXPECT_EQ(result.error().nodeName(), "detector");
 }
 
-// =============================================================================
 // IPipelineObserver Tests
-// =============================================================================
 
 TEST(IPipelineObserverTest, DefaultImplementationsDoNotCrash) {
   class TestObserver : public IPipelineObserver {};
@@ -248,15 +234,12 @@ TEST(IPipelineObserverTest, DefaultImplementationsDoNotCrash) {
 
   EXPECT_NO_THROW(observer.onExecutionStarted());
   EXPECT_NO_THROW(observer.onExecutionCompleted({}));
-  // v2.0: onExecutionFailed now takes const Error& instead of two strings
   EXPECT_NO_THROW(observer.onExecutionFailed(
       Error(ErrorCode::ExecutionFailed, "error", "node")));
   EXPECT_NO_THROW(observer.onFrameDropped("node", 100, "reason"));
 }
 
-// =============================================================================
 // CallbackObserver Tests
-// =============================================================================
 
 TEST(CallbackObserverTest, OnStart) {
   bool started = false;
@@ -283,7 +266,6 @@ TEST(CallbackObserverTest, OnResult) {
 }
 
 TEST(CallbackObserverTest, OnError) {
-  // v2.0: onError callback now receives const Error& instead of two strings
   ErrorCode received_code = ErrorCode::Ok;
   std::string received_msg;
   std::string received_node;
@@ -343,14 +325,11 @@ TEST(CallbackObserverTest, NullCallbacksDoNotCrash) {
 
   EXPECT_NO_THROW(observer.onExecutionStarted());
   EXPECT_NO_THROW(observer.onExecutionCompleted({}));
-  // v2.0: pass Error object instead of two strings
   EXPECT_NO_THROW(observer.onExecutionFailed(Error()));
   EXPECT_NO_THROW(observer.onFrameDropped("", 0, ""));
 }
 
-// =============================================================================
-// PipelineBuilder Tests (build() now returns Result<Pipeline>)
-// =============================================================================
+// Pipeline builder
 
 class PipelineBuilderTest : public ::testing::Test {
 protected:
@@ -371,7 +350,6 @@ protected:
 };
 
 TEST_F(PipelineBuilderTest, BasicBuild) {
-  // v2.0: build() returns Result<Pipeline>
   auto result = Pipeline::create()
                     .withGraph(std::move(*m_graph))
                     .withMode(ExecutionMode::BATCH)
@@ -505,7 +483,6 @@ TEST_F(PipelineBuilderTest, OnResultCallback) {
 }
 
 TEST_F(PipelineBuilderTest, OnErrorCallback) {
-  // v2.0: onError callback now receives const Error& instead of two strings
   ErrorCode captured_code = ErrorCode::Ok;
 
   auto result = Pipeline::create()
@@ -524,15 +501,12 @@ TEST_F(PipelineBuilderTest, MoveConstruction) {
   builder1.withGraph(std::move(*m_graph));
   PipelineBuilder builder2(std::move(builder1));
 
-  // v2.0: build() returns Result<Pipeline>
   auto result = builder2.build();
   ASSERT_TRUE(result) << result.errorMessage();
   EXPECT_TRUE(result.value().isReady());
 }
 
-// =============================================================================
 // Pipeline Basic Tests
-// =============================================================================
 
 class PipelineTest : public ::testing::Test {
 protected:
@@ -547,7 +521,6 @@ protected:
     m_graph->addEdge("source", "output", "sink", "input");
   }
 
-  // Helper: build and unwrap, fail the test on error
   Pipeline buildPipeline(Graph &&graph) {
     auto result = Pipeline::create().withGraph(std::move(graph)).build();
     EXPECT_TRUE(result) << result.errorMessage();
@@ -565,7 +538,6 @@ TEST_F(PipelineTest, DefaultConstruction) {
 }
 
 TEST_F(PipelineTest, MoveConstruction) {
-  // v2.0: build() returns Result<Pipeline>, unwrap via helper
   auto pipeline1 = buildPipeline(std::move(*m_graph));
 
   EXPECT_TRUE(pipeline1.isReady());
@@ -621,9 +593,7 @@ TEST_F(PipelineTest, ModeAccessor) {
   EXPECT_EQ(result.value().mode(), ExecutionMode::BATCH);
 }
 
-// =============================================================================
 // Pipeline Observer Management Tests
-// =============================================================================
 
 TEST_F(PipelineTest, AddObserver) {
   auto pipeline = buildPipeline(std::move(*m_graph));
@@ -642,9 +612,7 @@ TEST_F(PipelineTest, RemoveObserver) {
   EXPECT_NO_THROW(pipeline.removeObserver(observer));
 }
 
-// =============================================================================
 // Pipeline State Tests
-// =============================================================================
 
 TEST_F(PipelineTest, InitialState) {
   auto pipeline = buildPipeline(std::move(*m_graph));
@@ -654,9 +622,7 @@ TEST_F(PipelineTest, InitialState) {
   EXPECT_FALSE(pipeline.hasError());
 }
 
-// =============================================================================
-// Convenience Factory Functions Tests (now return Result<Pipeline>)
-// =============================================================================
+// Convenience factories
 
 TEST(PipelineFactoryTest, MakeBatchPipeline) {
   Graph graph;
@@ -666,7 +632,6 @@ TEST(PipelineFactoryTest, MakeBatchPipeline) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  // v2.0: returns Result<Pipeline>
   auto result = makeBatchPipeline(std::move(graph), 4);
 
   ASSERT_TRUE(result) << result.errorMessage();
@@ -696,7 +661,6 @@ TEST(PipelineFactoryTest, MakeStreamPipeline) {
   graph.addNode(sink);
   graph.addEdge("source", "output", "sink", "input");
 
-  // v2.0: returns Result<Pipeline>
   auto result = makeStreamPipeline(std::move(graph), 4, 32);
 
   ASSERT_TRUE(result) << result.errorMessage();
@@ -718,9 +682,7 @@ TEST(PipelineFactoryTest, MakeStreamPipelineDefaultParams) {
   EXPECT_TRUE(result.value().isReady());
 }
 
-// =============================================================================
 // Complex Graph Tests
-// =============================================================================
 
 TEST(PipelineComplexGraphTest, DiamondTopology) {
   Graph graph;
@@ -745,7 +707,6 @@ TEST(PipelineComplexGraphTest, DiamondTopology) {
   graph.addEdge("left", "output", "sink", "input");
   graph.addEdge("right", "output", "sink", "input");
 
-  // v2.0: build() returns Result<Pipeline>
   auto result = Pipeline::create()
                     .withGraph(std::move(graph))
                     .withMode(ExecutionMode::BATCH)
@@ -782,7 +743,6 @@ TEST(PipelineComplexGraphTest, LinearChain) {
                   "node_" + std::to_string(i + 1), "input");
   }
 
-  // v2.0: build() returns Result<Pipeline>
   auto result = Pipeline::create().withGraph(std::move(graph)).build();
 
   ASSERT_TRUE(result) << result.errorMessage();
@@ -842,10 +802,8 @@ TEST_F(PipelineTest, CancellationMidExecution) {
               result.errorCode() == ErrorCode::ExecutionFailed);
 }
 
-// =============================================================================
 // Pipeline Facade Coverage: build failures, streaming, submit/runAsync,
 // observers wired end-to-end, trace sink, uninitialized safety
-// =============================================================================
 
 namespace {
 
@@ -950,9 +908,7 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2000ms) {
 
 } // namespace
 
-// =============================================================================
 // PipelineBuilder Failure Paths
-// =============================================================================
 
 TEST(PipelineBuildFailureTest, BuildWithoutGraphFails) {
   auto result = Pipeline::create().build();
@@ -978,9 +934,7 @@ TEST(PipelineBuildFailureTest, BuildWithCyclicGraphFails) {
   EXPECT_EQ(result.errorCode(), ErrorCode::GraphCycleDetected);
 }
 
-// =============================================================================
 // Streaming via the Pipeline Facade
-// =============================================================================
 
 class PipelineStreamingTest : public ::testing::Test {
 protected:
@@ -1073,7 +1027,7 @@ TEST_F(PipelineStreamingTest, NodeExceptionIsPerFrameNotPipelineFatal) {
   ASSERT_TRUE(pipeline.pushInput("thrower", makeDataPacket(1)).isOk());
   ASSERT_TRUE(waitFor([&] { return error_count.load() >= 1; }));
 
-  // Regression (R1.2): a per-frame node exception in streaming mode used
+  // Regression: a per-frame node exception in streaming mode used
   // to latch the facade into ERROR while the engine kept running -
   // isRunning() went false and validateState() refused everything until
   // reset(). The facade must stay RUNNING and keep accepting frames.
@@ -1116,11 +1070,8 @@ TEST_F(PipelineStreamingTest, RateLimitedTailFrameEventuallyExecutes) {
   ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(1)).isOk());
   ASSERT_TRUE(pipeline.pushInput("sink", makeDataPacket(2)).isOk());
 
-  // Regression (R3.2): the first frame executes immediately; the second
-  // lands inside the min_interval window and is deferred. With no
-  // further data events, only the engine's defer timer can reschedule
-  // it - previously DeferToNextCycle had no consumer and the tail frame
-  // was stranded forever.
+  // No later input event can wake the deferred second frame, so this exercises
+  // the engine's defer timer rather than incidental rescheduling.
   EXPECT_TRUE(waitFor([&] { return sink->processCount() >= 2; }, 3000ms));
 
   pipeline.stop(false);
@@ -1274,9 +1225,7 @@ TEST_F(PipelineStreamingTest, DropNotificationReachesBuilderOnDrop) {
   EXPECT_GE(pipeline.statistics().total_dropped_frames, 1u);
 }
 
-// =============================================================================
 // submit() / runAsync() via the Facade
-// =============================================================================
 
 class PipelineAsyncTest : public ::testing::Test {
 protected:
@@ -1366,9 +1315,6 @@ TEST_F(PipelineAsyncTest, RunAsyncPropagatesNodeFailure) {
 }
 
 TEST_F(PipelineAsyncTest, WaitBlocksUntilAsyncCompletion) {
-  // R4.4: wait() is a blocking CV wait on the engine's completion
-  // signal (formerly a 10ms sleep poll). After it returns, the async
-  // submission must be fully finished.
   auto source = std::make_shared<TestNode>("entry", 100ms);
   auto sink = std::make_shared<SinkNode>("sink");
 
@@ -1402,7 +1348,7 @@ TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
   ASSERT_TRUE(waitFor([&] { return m_results.load() >= 1; }));
   const int results_after_async = m_results.load();
 
-  // Regression (R1.1): runAsync used to leave its one-shot promise
+  // Regression: runAsync used to leave its one-shot promise
   // callbacks registered on the engine. The next run() then re-fired
   // them; the second set_value threw std::future_error out of
   // checkCompletionAndNotify, skipping notifyCompletionWaiters, and
@@ -1423,9 +1369,7 @@ TEST_F(PipelineAsyncTest, RunAfterRunAsyncCompletesWithoutRefire) {
   EXPECT_EQ(pipeline.state(), PipelineState::IDLE);
 }
 
-// =============================================================================
-// CancellationToken wiring (R3.1)
-// =============================================================================
+// CancellationToken wiring
 
 namespace {
 
@@ -1567,9 +1511,7 @@ TEST(PipelineCancellationTest, DirectTokenCancelStopsScheduling) {
   EXPECT_EQ(sink->processCount(), 0);
 }
 
-// =============================================================================
-// Real run(timeout) semantics (R1.3)
-// =============================================================================
+// Real run(timeout) semantics
 
 TEST(PipelineTimeoutTest, TimeoutFiresWhileNodeHangs) {
   auto gate = std::make_shared<GatedPassNode>("gate");
@@ -1583,7 +1525,7 @@ TEST(PipelineTimeoutTest, TimeoutFiresWhileNodeHangs) {
   PortDataMap inputs;
   inputs["gate"] = makeDataPacket(1);
 
-  // Regression (R1.3): the timeout used to be checked only after the
+  // Regression: the timeout used to be checked only after the
   // engine finished - with a hung node, run(timeout) never returned.
   const auto start = std::chrono::steady_clock::now();
   auto result = pipeline.run(inputs, 100ms);
@@ -1622,9 +1564,7 @@ TEST(PipelineTimeoutTest, TimeoutCancelsCooperativeNode) {
   EXPECT_TRUE(waitFor([&] { return node->sawCancellation(); }, 3000ms));
 }
 
-// =============================================================================
 // End-to-End Observer Error Notification + reset()
-// =============================================================================
 
 TEST(PipelineErrorRecoveryTest, ObserverSeesErrorAndResetRecovers) {
   auto thrower = std::make_shared<ThrowingNode>("thrower");
@@ -1667,9 +1607,7 @@ TEST(PipelineErrorRecoveryTest, ObserverSeesErrorAndResetRecovers) {
   ASSERT_TRUE(retry.isOk()) << retry.errorMessage();
 }
 
-// =============================================================================
 // Trace Sink via the Facade
-// =============================================================================
 
 TEST(PipelineTraceSinkTest, BatchRunEmitsEventsToInstalledSink) {
   auto source = std::make_shared<SourceNode>("source");
@@ -1715,9 +1653,7 @@ TEST(PipelineTraceSinkTest, InstallWhileStreamingIsRejected) {
   pipeline.stop(false);
 }
 
-// =============================================================================
 // Uninitialized Pipeline: accessors must be safe
-// =============================================================================
 
 TEST(PipelineUninitializedTest, AccessorsAreSafeWithoutEngine) {
   Pipeline pipeline;

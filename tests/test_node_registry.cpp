@@ -1,12 +1,3 @@
-/**
- * @file test_node_registry.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Tests for NodeRegistry and registration macros (P6.1)
- * @version 0.1
- * @date 2026-07-04
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/node_registry.hpp"
 #include "helper_nodes.hpp"
@@ -16,7 +7,7 @@ using namespace ai_pipe;
 
 namespace ai_pipe_unit_test::node_registry {
 
-/// Simple registrable node taking only a name
+// Simple registrable node taking only a name
 class MacroNode : public ILogicNode {
 public:
   explicit MacroNode(const std::string &name) : ILogicNode(name) {}
@@ -24,7 +15,7 @@ public:
                std::shared_ptr<PipelineContext>) override {}
 };
 
-/// Node configured through the PortData config bag
+// Node configured through the PortData config bag
 class ConfiguredNode : public ILogicNode {
 public:
   ConfiguredNode(const std::string &name, const PortData &config)

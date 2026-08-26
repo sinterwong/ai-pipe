@@ -1,18 +1,10 @@
-/**
- * @file test_plugin.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Valid AI Pipe test plugin: registers one node and declares
- *        itself with AI_PIPE_PLUGIN (F8)
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/node_registry.hpp"
 #include "ai_pipe/plugin.hpp"
 
 namespace ai_pipe_test_plugin {
 
-/// Trivial pass-through node contributed by the plugin
+// Trivial pass-through node contributed by the plugin
 class PluginEchoNode : public ai_pipe::ILogicNode {
 public:
   explicit PluginEchoNode(const std::string &name) : ILogicNode(name) {}

@@ -1,22 +1,3 @@
-/**
- * @file scheduler_strategies.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Built-in scheduler strategy implementations
- * @version 1.0
- * @date 2025-12-24
- *
- * Built-in scheduler strategy implementations. These classes are
- * private: consumers reach them through the factories in
- * ai_pipe/strategies.hpp, which also owns StreamSchedulerConfig. Keeping
- * the classes here means their layout is not part of the installed ABI.
- *
- * Strategies provided:
- * - BatchSchedulerStrategy: Traditional batch processing
- * - StreamSchedulerStrategy: Continuous streaming with backpressure
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_SCHEDULER_STRATEGIES_HPP
 #define AI_PIPE_SCHEDULER_STRATEGIES_HPP
 
@@ -26,18 +7,14 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Batch Scheduler Strategy
-// =============================================================================
 
-/**
- * @brief Traditional batch processing scheduler
- *
- * Characteristics:
- * - Nodes execute when all inputs are ready
- * - Execution completes when all sinks execute once
- * - No automatic rescheduling
- */
+// Traditional batch processing scheduler
+//
+// Characteristics:
+// - Nodes execute when all inputs are ready
+// - Execution completes when all sinks execute once
+// - No automatic rescheduling
 class BatchSchedulerStrategy final : public ISchedulerStrategy {
 public:
   [[nodiscard]] ScheduleResult
@@ -101,19 +78,15 @@ public:
   }
 };
 
-// =============================================================================
 // Stream Scheduler Strategy
-// =============================================================================
 
-/**
- * @brief Continuous streaming scheduler
- *
- * Characteristics:
- * - Supports continuous data flow
- * - Automatic rescheduling on completion
- * - Optional partial input execution
- * - Rate limiting support
- */
+// Continuous streaming scheduler
+//
+// Characteristics:
+// - Supports continuous data flow
+// - Automatic rescheduling on completion
+// - Optional partial input execution
+// - Rate limiting support
 class StreamSchedulerStrategy final : public ISchedulerStrategy {
 public:
   explicit StreamSchedulerStrategy(StreamSchedulerConfig config = {})
@@ -121,12 +94,9 @@ public:
 
   [[nodiscard]] ScheduleResult
   shouldSchedule(const SchedulingContext &context) const override {
-    // Rate limiting gates every data-ready path below (R3.2): a node
-    // that executed too recently defers instead of scheduling, and the
-    // engine's defer timer re-evaluates it once the interval elapses.
-    // (This check previously sat below the ready-input returns, where
-    // it was unreachable exactly when inputs were ready - min_interval
-    // never limited anything.)
+    // Rate limiting must precede every data-ready return below. The engine's
+    // defer timer re-evaluates the node after the remaining interval even when
+    // no new input event arrives.
     if (m_config.min_interval.count() > 0 && context.execution_count > 0 &&
         hasReadyWork(context)) {
       const auto elapsed =
@@ -191,7 +161,7 @@ public:
   [[nodiscard]] const StreamSchedulerConfig &config() const { return m_config; }
 
 private:
-  /** @brief Would the ready-input paths schedule this node right now? */
+  // Would the ready-input paths schedule this node right now?
   [[nodiscard]] bool hasReadyWork(const SchedulingContext &context) const {
     if (context.is_source_node && context.has_initial_input) {
       return true;

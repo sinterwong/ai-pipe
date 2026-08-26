@@ -1,25 +1,3 @@
-/**
- * @file test_error_handling.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Unit tests for the unified error handling refactoring
- * @version 1.0
- * @date 2026-02-12
- *
- * Tests cover:
- *   1. ErrorCode enum & string conversion
- *   2. Error class (construction, accessors, factories, comparison)
- *   3. Result<T> (success/error, value access, copy, move, valueOr)
- *   4. Result<void> specialization
- *   5. PushStatus (outcome, factories)
- *   7. EngineConfig / PipelineOptions factory methods
- *   8. ExecutionOutput structure
- *   9. IPipelineObserver / CallbackObserver dispatch
- *  10. LatencyHistogram bucketing
- *  11. Header compilation for all refactored files
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "ai_pipe/error.hpp"
 #include "ai_pipe/execution_types.hpp"
 #include "ai_pipe/pipeline.hpp"
@@ -168,7 +146,6 @@ TEST_F(ErrorTest, CopySemantics) {
   EXPECT_EQ(copy.message(), "slow");
   EXPECT_EQ(copy.nodeName(), "heavy_node");
 
-  // Original unchanged
   EXPECT_EQ(original.code(), ErrorCode::ExecutionTimeout);
 }
 
@@ -528,7 +505,7 @@ TEST_F(ObserverTest, CallbackObserverDropCallback) {
 }
 
 TEST_F(ObserverTest, DefaultObserverLegacyFallback) {
-  // Custom observer that overrides the legacy method
+  // Exercise the compatibility hook used by existing observers.
   class LegacyObserver : public IPipelineObserver {
   public:
     std::string last_msg;
@@ -546,7 +523,7 @@ TEST_F(ObserverTest, DefaultObserverLegacyFallback) {
   Error err(ErrorCode::ExecutionFailed, "timeout", "slow_node");
   obs.onExecutionFailed(err);
 
-  // Default implementation delegates to legacy
+  // The structured callback delegates to the compatibility hook.
   EXPECT_EQ(obs.last_msg, "timeout");
   EXPECT_EQ(obs.last_node, "slow_node");
 }
@@ -820,9 +797,7 @@ TEST_F(EdgeCaseTest, MultipleErrorCodesDistinct) {
   }
 }
 
-// =============================================================================
 // 13. Compilation Verification — include all refactored headers
-// =============================================================================
 
 // Verify that all new types are usable from a single TU
 TEST_F(EdgeCaseTest, AllTypesCompile) {

@@ -1,19 +1,3 @@
-/**
- * @file graph_loader.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief JSON graph loader implementation (optional, AI_PIPE_WITH_JSON)
- * @version 0.1
- * @date 2026-07-10
- *
- * Compiled in two flavors: with AI_PIPE_WITH_JSON the full nlohmann-based
- * parser; without it, stubs that return InvalidConfiguration. Both expose
- * the same symbols, so switching the option never changes link
- * compatibility, and nlohmann/json stays a private implementation detail
- * (never reachable from public headers).
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "ai_pipe/graph_loader.hpp"
 
 #ifdef AI_PIPE_WITH_JSON
@@ -34,7 +18,7 @@ Result<void> err(std::string message) {
   return Result<void>::err(ErrorCode::InvalidConfiguration, std::move(message));
 }
 
-/** @brief Reject document keys the schema does not define (typo guard) */
+// Reject document keys the schema does not define (typo guard)
 Result<void> checkKnownKeys(const json &obj, const char *what,
                             std::initializer_list<const char *> allowed) {
   for (const auto &item : obj.items()) {
@@ -52,15 +36,13 @@ Result<void> checkKnownKeys(const json &obj, const char *what,
   return Result<void>::ok();
 }
 
-/**
- * @brief Convert a JSON config value into a typed PortData param
- *
- * Scalar mapping: bool -> bool, integer -> int64_t, float -> double,
- * string -> std::string. Homogeneous arrays map to std::vector of the
- * element type (a numeric array containing any float becomes
- * std::vector<double>). Nested objects/arrays and nulls are rejected -
- * node configs are flat parameter bags by design.
- */
+// Convert a JSON config value into a typed PortData param
+//
+// Scalar mapping: bool -> bool, integer -> int64_t, float -> double,
+// string -> std::string. Homogeneous arrays map to std::vector of the
+// element type (a numeric array containing any float becomes
+// std::vector<double>). Nested objects/arrays and nulls are rejected -
+// node configs are flat parameter bags by design.
 Result<void> setConfigParam(PortData &config, const std::string &node_name,
                             const std::string &key, const json &value) {
   auto fail = [&](const char *reason) {
@@ -120,12 +102,10 @@ Result<void> setConfigParam(PortData &config, const std::string &node_name,
   }
 }
 
-/**
- * @brief Parse one edge endpoint: "node.port" string or {node, port}
- *
- * The compact string form splits on a single mandatory '.'; names that
- * themselves contain dots must use the object form.
- */
+// Parse one edge endpoint: "node.port" string or {node, port}
+//
+// The compact string form splits on a single mandatory '.'; names that
+// themselves contain dots must use the object form.
 Result<void> parseEndpoint(const json &endpoint, const char *side,
                            std::size_t edge_index, std::string &node,
                            std::string &port) {
@@ -164,7 +144,7 @@ Result<void> parseEndpoint(const json &endpoint, const char *side,
                      "{\"node\": ..., \"port\": ...} object");
 }
 
-/** @brief Read a non-negative integer option, bounded to [min, max] */
+// Read a non-negative integer option, bounded to [min, max]
 Result<std::uint64_t> parseUintOption(const json &value, const char *key,
                                       std::uint64_t min, std::uint64_t max) {
   if (!value.is_number_unsigned() && !value.is_number_integer()) {

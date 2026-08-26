@@ -1,12 +1,3 @@
-/**
- * @file test_plugin_noentry.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Foreign shared library: registers a node at static init but
- *        exports no plugin descriptor. The loader must reject it and
- *        roll the registration back (F8).
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/node_registry.hpp"
 

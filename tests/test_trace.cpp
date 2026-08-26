@@ -1,15 +1,3 @@
-/**
- * @file test_trace.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Execution tracing hook tests (F7)
- *
- * Validates that an injected ITraceSink receives per-frame span events
- * for every lifecycle phase (enqueue/schedule/execute/propagate) with
- * correct frame identity, that the sink cannot change while running,
- * and that ChromeTraceSink serializes the Chrome Trace Event format.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/trace.hpp"
@@ -22,7 +10,7 @@ using namespace std::chrono_literals;
 
 namespace ai_pipe_unit_test::trace {
 
-/// Sink copying every event (TraceEvent string_views are call-scoped)
+// Sink copying every event (TraceEvent string_views are call-scoped)
 class RecordingSink : public ITraceSink {
 public:
   struct Copied {

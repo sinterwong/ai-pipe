@@ -1,11 +1,3 @@
-/**
- * @file test_plugin_badversion.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Plugin declaring an incompatible plugin ABI revision. The
- *        loader must reject it and roll back its registration (F8).
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/i_logic_node.hpp"
 #include "ai_pipe/node_registry.hpp"
 #include "ai_pipe/plugin.hpp"

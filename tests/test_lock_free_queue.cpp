@@ -1,26 +1,3 @@
-/**
- * @file test_lock_free_queue.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Comprehensive GTest unit tests for LockFreeMPMCQueue and
- * LockFreeNodeQueue
- * @version 1.1
- * @date 2026-02-06
- *
- * Test coverage:
- * 1. Core MPMC queue: push/pop, capacity rounding, boundary conditions
- * 2. SPSC (single producer/single consumer) correctness
- * 3. MPMC concurrent stress test with data integrity verification
- * 4. ABA problem verification via sequence-tag validation
- * 5. Drop policy: DropHead, DropTail, KeepLatest
- * 6. Statistics tracking
- * 7. Drop callback notification
- * 8. Clear and query operations
- * 9. Edge cases
- * 10. Performance benchmarks (latency < 100ns target)
- *
- * @copyright Copyright (c) 2026
- */
-
 #include "lock_free_queue.hpp"
 #include <atomic>
 #include <chrono>
@@ -327,12 +304,10 @@ TEST_F(LockFreeConcurrencyTest, ABA_SequenceTagPreventsCorruption) {
     });
   }
 
-  // Wait for producers
   threads[0].join();
   threads[1].join();
   stop.store(true, std::memory_order_release);
 
-  // Wait for consumers
   threads[2].join();
   threads[3].join();
 
@@ -688,9 +663,7 @@ TEST_F(LockFreeConcurrencyTest, ForcePush_ExtremeContention_SmallCapacity) {
 
 } // namespace ai_pipe_unit_test::lock_free_queue
 
-// =============================================================================
-// tryPeek (P4.2) - single-consumer non-destructive front access
-// =============================================================================
+// tryPeek - single-consumer non-destructive front access
 
 TEST(LockFreePeekTest, PeekDoesNotConsume) {
   LockFreeMPMCQueue<int> q(8);
@@ -724,9 +697,7 @@ TEST(LockFreePeekTest, NodeQueuePeekOptional) {
   EXPECT_EQ(q.size(), 1u);
 }
 
-// =============================================================================
-// Drop events carry real frame ids once an accessor is set (P4.2)
-// =============================================================================
+// Drop events carry real frame ids once an accessor is set
 
 TEST(LockFreeDropFrameIdTest, DropEventUsesAccessorFrameId) {
   struct Packet {

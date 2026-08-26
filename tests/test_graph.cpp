@@ -8,9 +8,7 @@
 
 using namespace ai_pipe;
 
-// =============================================================================
 // Mock Node Implementation
-// =============================================================================
 
 class MockNode : public ILogicNode {
 public:
@@ -47,9 +45,7 @@ private:
   std::vector<std::string> m_outputPorts;
 };
 
-// =============================================================================
 // Graph Basic Tests
-// =============================================================================
 
 class GraphTest : public ::testing::Test {
 protected:
@@ -148,9 +144,7 @@ TEST_F(GraphTest, AddMultipleEdges) {
   EXPECT_EQ(m_graph->getEdges().size(), 4);
 }
 
-// =============================================================================
 // Degree Tests
-// =============================================================================
 
 TEST_F(GraphTest, InDegreeSourceNode) {
   auto source = createNode("source");
@@ -212,9 +206,7 @@ TEST_F(GraphTest, OutDegreeMultipleOutputs) {
   EXPECT_EQ(m_graph->getOutDegree(source), 3);
 }
 
-// =============================================================================
 // Neighbor Tests
-// =============================================================================
 
 TEST_F(GraphTest, GetOutgoingNeighbors) {
   auto source = createNode("source");
@@ -274,9 +266,7 @@ TEST_F(GraphTest, GetIncomingNeighborsEmpty) {
   EXPECT_TRUE(neighbors.empty());
 }
 
-// =============================================================================
 // Edge Query Tests
-// =============================================================================
 
 TEST_F(GraphTest, GetIncomingEdges) {
   auto source1 = createNode("source1");
@@ -330,9 +320,7 @@ TEST_F(GraphTest, EdgeContainsCorrectPorts) {
   EXPECT_EQ(edges[0].dest_port, "input_port");
 }
 
-// =============================================================================
 // Cycle Detection Tests
-// =============================================================================
 
 TEST_F(GraphTest, NoCycleInLinearGraph) {
   auto node1 = createNode("node1");
@@ -433,9 +421,7 @@ TEST_F(GraphTest, NoCycleWithMultipleBranches) {
   EXPECT_FALSE(m_graph->hasCycle());
 }
 
-// =============================================================================
 // Clear Tests
-// =============================================================================
 
 TEST_F(GraphTest, Clear) {
   auto node1 = createNode("node1");
@@ -454,9 +440,7 @@ TEST_F(GraphTest, Clear) {
   EXPECT_TRUE(m_graph->getEdges().empty());
 }
 
-// =============================================================================
 // Move Semantics Tests
-// =============================================================================
 
 TEST_F(GraphTest, MoveConstruction) {
   auto node1 = createNode("node1");
@@ -488,9 +472,7 @@ TEST_F(GraphTest, MoveAssignment) {
   EXPECT_EQ(moved.getEdges().size(), 1);
 }
 
-// =============================================================================
 // Complex Topology Tests
-// =============================================================================
 
 TEST_F(GraphTest, ComplexPipelineTopology) {
   // Create a complex pipeline:
@@ -523,7 +505,6 @@ TEST_F(GraphTest, ComplexPipelineTopology) {
   EXPECT_EQ(m_graph->getEdges().size(), 7);
   EXPECT_FALSE(m_graph->hasCycle());
 
-  // Check degrees
   EXPECT_EQ(m_graph->getInDegree(source), 0);
   EXPECT_EQ(m_graph->getOutDegree(source), 1);
   EXPECT_EQ(m_graph->getInDegree(merge), 2);
@@ -560,9 +541,7 @@ TEST_F(GraphTest, DisconnectedComponents) {
   EXPECT_TRUE(m_graph->getOutgoingNeighbors(b2).empty());
 }
 
-// =============================================================================
 // Edge Cases
-// =============================================================================
 
 TEST_F(GraphTest, SingleNodeGraph) {
   auto node = createNode("single");
@@ -667,13 +646,11 @@ TEST_F(GraphTest, MultipleSourcesAndSinks) {
 
 TEST_F(GraphTest, AddNullNodeFails) { EXPECT_FALSE(m_graph->addNode(nullptr)); }
 
-// =============================================================================
-// Port Payload Type Validation Tests (P3.2)
-// =============================================================================
+// Port Payload Type Validation Tests
 
 namespace {
 
-/// Node declaring concrete payload types on its ports
+// Node declaring concrete payload types on its ports
 template <typename OutT, typename InT> class TypedNode : public ILogicNode {
 public:
   explicit TypedNode(const std::string &name) : ILogicNode(name) {}
@@ -730,7 +707,7 @@ TEST_F(GraphPortTypeTest, UntypedEndpointAlwaysConnects) {
 }
 
 TEST_F(GraphPortTypeTest, NullNodeDegreeQueriesDoNotThrow) {
-  // P6.5: Graph no longer throws; null queries degrade to 0 with a log.
+  // Graph no longer throws; null queries degrade to 0 with a log.
   EXPECT_NO_THROW({
     EXPECT_EQ(m_graph.getInDegree(nullptr), 0);
     EXPECT_EQ(m_graph.getOutDegree(nullptr), 0);

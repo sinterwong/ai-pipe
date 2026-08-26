@@ -1,16 +1,3 @@
-/**
- * @file test_plugin_loader.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Dynamic plugin loading tests (F8)
- *
- * Uses the plugins built under tests/plugins/: a valid one (declares
- * AI_PIPE_PLUGIN and registers PluginEchoNode), plus two rejects in
- * bad/ - a foreign library without the descriptor symbol and one with
- * an incompatible plugin ABI revision. Rejected plugins must leave no
- * trace in the NodeRegistry.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/node_registry.hpp"
 #include "ai_pipe/plugin.hpp"
 #include <cstdlib>
@@ -21,7 +8,7 @@ using namespace ai_pipe;
 
 namespace ai_pipe_unit_test::plugin_loader {
 
-/// Directory holding the valid test plugin (bad ones live in bad/)
+// Directory holding the valid test plugin (bad ones live in bad/)
 std::string pluginRoot() {
   if (const char *env = std::getenv("AI_PIPE_TEST_PLUGIN_DIR")) {
     return env;

@@ -1,26 +1,3 @@
-/**
- * @file sync_coordinator.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Cross-branch frame synchronization coordinator (sync groups,
- * watermarks, drop propagation)
- * @version 0.1
- * @date 2025-12-24
- *
- * This is the most critical component for handling the DAG branch/join
- * synchronization problem. When one branch drops a frame due to backpressure,
- * parallel branches must also drop the corresponding frame to maintain
- * alignment at join points.
- *
- * Key concepts:
- * - Sync Group: A set of parallel branches that share a common join point
- * - Drop Propagation: When one branch drops frame N, all branches drop frame N
- * - Watermark: The minimum frame ID that has been fully processed by all
- * branches
- *
- * @copyright Copyright (c) 2025
- *
- */
-
 #ifndef AI_PIPE_SYNC_COORDINATOR_HPP
 #define AI_PIPE_SYNC_COORDINATOR_HPP
 
@@ -38,34 +15,22 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Sync Group Definitions
-// =============================================================================
 
-/**
- * @brief Unique identifier for a synchronization group
- */
+// Unique identifier for a synchronization group
 using SyncGroupId = std::string;
 
-/**
- * @brief Branch identifier within a sync group
- */
+// Branch identifier within a sync group
 using BranchId = std::string;
 
-/**
- * @brief Callback for coordinated drop events
- */
+// Callback for coordinated drop events
 using CoordinatedDropCallback =
     std::function<void(SyncGroupId group_id, BranchId branch_id,
                        FrameId frame_id, const std::string &reason)>;
 
-// =============================================================================
 // Branch State
-// =============================================================================
 
-/**
- * @brief State tracking for a single branch in a sync group
- */
+// State tracking for a single branch in a sync group
 struct BranchState {
   BranchId branch_id;
   FrameId latest_frame{
@@ -100,27 +65,19 @@ struct BranchState {
   }
 };
 
-// =============================================================================
 // Sync Group
-// =============================================================================
 
-/**
- * @brief Represents a group of branches that must synchronize drops
- *
- * A sync group is typically created at a branch point in the DAG and
- * includes all paths that converge at a common join node.
- */
+// Represents a group of branches that must synchronize drops
+//
+// A sync group is typically created at a branch point in the DAG and
+// includes all paths that converge at a common join node.
 class SyncGroup {
 public:
   explicit SyncGroup(SyncGroupId id) : m_groupId(std::move(id)) {}
 
-  // -------------------------------------------------------------------------
   // Branch Management
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Register a branch in this sync group
-   */
+  // Register a branch in this sync group
   void addBranch(const BranchId &branch_id) {
     std::unique_lock lock(m_mutex);
     if (m_branches.find(branch_id) == m_branches.end()) {
@@ -128,9 +85,6 @@ public:
     }
   }
 
-  /**
-   * @brief Remove a branch from the sync group
-   */
   void removeBranch(const BranchId &branch_id) {
     std::unique_lock lock(m_mutex);
     auto it = m_branches.find(branch_id);
@@ -140,17 +94,11 @@ public:
     }
   }
 
-  /**
-   * @brief Check if a branch exists
-   */
   [[nodiscard]] bool hasBranch(const BranchId &branch_id) const {
     std::shared_lock lock(m_mutex);
     return m_branches.find(branch_id) != m_branches.end();
   }
 
-  /**
-   * @brief Get all branch IDs
-   */
   [[nodiscard]] std::vector<BranchId> branchIds() const {
     std::shared_lock lock(m_mutex);
     std::vector<BranchId> ids;
@@ -161,22 +109,15 @@ public:
     return ids;
   }
 
-  /**
-   * @brief Get number of branches
-   */
   [[nodiscard]] std::size_t branchCount() const {
     std::shared_lock lock(m_mutex);
     return m_branches.size();
   }
 
-  // -------------------------------------------------------------------------
   // Frame Tracking
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Report that a branch received a frame
-   * @return The current watermark (minimum processed frame across all branches)
-   */
+  // Report that a branch received a frame
+  // Returns The current watermark (minimum processed frame across all branches)
   FrameId reportFrameReceived(const BranchId &branch_id, FrameId frame_id) {
     std::unique_lock lock(m_mutex);
 
@@ -190,7 +131,6 @@ public:
       state.latest_frame = frame_id;
     }
 
-    // Check if this frame needs to be dropped due to sync requirements
     if (m_globalDrops.count(frame_id) > 0) {
       state.pending_sync_drops.insert(frame_id);
     }
@@ -198,9 +138,7 @@ public:
     return m_watermark;
   }
 
-  /**
-   * @brief Report that a branch processed a frame
-   */
+  // Report that a branch processed a frame
   void reportFrameProcessed(const BranchId &branch_id, FrameId frame_id) {
     std::unique_lock lock(m_mutex);
 
@@ -217,16 +155,14 @@ public:
     updateWatermarkLocked();
   }
 
-  /**
-   * @brief Report that a branch dropped a frame
-   *
-   * This triggers coordinated drops across all other branches in the group.
-   *
-   * @param branch_id The branch that initiated the drop
-   * @param frame_id The frame ID that was dropped
-   * @param reason The reason for dropping
-   * @return List of branches that need to drop this frame
-   */
+  // Report that a branch dropped a frame
+  //
+  // This triggers coordinated drops across all other branches in the group.
+  //
+  // `branch_id`: The branch that initiated the drop
+  // `frame_id`: The frame ID that was dropped
+  // `reason`: The reason for dropping
+  // Returns List of branches that need to drop this frame
   std::vector<BranchId> reportFrameDropped(const BranchId &branch_id,
                                            FrameId frame_id,
                                            const std::string &reason) {
@@ -240,7 +176,6 @@ public:
     auto &state = *it->second;
     state.dropped_frames.insert(frame_id);
 
-    // Add to global drops
     m_globalDrops.insert(frame_id);
     m_dropReasons[frame_id] = reason;
 
@@ -261,23 +196,16 @@ public:
     return affected_branches;
   }
 
-  // -------------------------------------------------------------------------
   // Sync Drop Queries
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Check if a frame should be dropped by a branch
-   */
   [[nodiscard]] bool shouldDropFrame(const BranchId &branch_id,
                                      FrameId frame_id) const {
     std::shared_lock lock(m_mutex);
 
-    // Check if globally marked for drop
     if (m_globalDrops.count(frame_id) > 0) {
       return true;
     }
 
-    // Check branch-specific pending drops
     auto it = m_branches.find(branch_id);
     if (it != m_branches.end()) {
       return it->second->pending_sync_drops.count(frame_id) > 0;
@@ -286,9 +214,6 @@ public:
     return false;
   }
 
-  /**
-   * @brief Get pending sync drops for a branch
-   */
   [[nodiscard]] std::unordered_set<FrameId>
   getPendingSyncDrops(const BranchId &branch_id) const {
     std::shared_lock lock(m_mutex);
@@ -301,9 +226,6 @@ public:
     return it->second->pending_sync_drops;
   }
 
-  /**
-   * @brief Clear a pending sync drop after it's been handled
-   */
   void clearPendingSyncDrop(const BranchId &branch_id, FrameId frame_id) {
     std::unique_lock lock(m_mutex);
 
@@ -314,9 +236,6 @@ public:
     }
   }
 
-  /**
-   * @brief Clear all pending sync drops up to a frame ID
-   */
   void clearPendingSyncDropsBefore(const BranchId &branch_id,
                                    FrameId frame_id) {
     std::unique_lock lock(m_mutex);
@@ -339,24 +258,16 @@ public:
     }
   }
 
-  // -------------------------------------------------------------------------
   // Watermark
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Get the current watermark
-   *
-   * The watermark is the minimum frame ID that has been fully processed
-   * by all branches (either processed or dropped).
-   */
+  //
+  // The watermark is the minimum frame ID that has been fully processed
+  // by all branches (either processed or dropped).
   [[nodiscard]] FrameId watermark() const {
     std::shared_lock lock(m_mutex);
     return m_watermark;
   }
 
-  /**
-   * @brief Get the minimum latest frame across all branches
-   */
   [[nodiscard]] FrameId minLatestFrame() const {
     std::shared_lock lock(m_mutex);
 
@@ -369,17 +280,11 @@ public:
     return min_latest;
   }
 
-  // -------------------------------------------------------------------------
   // Cleanup
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Clean up old drop records below the watermark
-   */
   void cleanup() {
     std::unique_lock lock(m_mutex);
 
-    // Remove old global drops
     for (auto it = m_globalDrops.begin(); it != m_globalDrops.end();) {
       if (*it < m_watermark) {
         m_dropReasons.erase(*it);
@@ -389,7 +294,6 @@ public:
       }
     }
 
-    // Clean up branch-specific drops
     for (auto &[id, state] : m_branches) {
       for (auto it = state->dropped_frames.begin();
            it != state->dropped_frames.end();) {
@@ -402,9 +306,7 @@ public:
     }
   }
 
-  // -------------------------------------------------------------------------
   // Info
-  // -------------------------------------------------------------------------
 
   [[nodiscard]] const SyncGroupId &id() const { return m_groupId; }
 
@@ -478,36 +380,32 @@ private:
   mutable std::shared_mutex m_mutex;
 };
 
-// =============================================================================
 // Synchronization Coordinator
-// =============================================================================
 
-/**
- * @brief Central coordinator for multi-stream synchronization
- *
- * Manages multiple sync groups and provides the interface for:
- * - Registering DAG branch/join structures
- * - Coordinating frame drops across parallel branches
- * - Tracking watermarks for each sync group
- *
- * Usage in BackpressureExecutionEngine:
- * @code
- *   auto coordinator = std::make_shared<SyncCoordinator>();
- *
- *   // When building the graph, identify branch/join structures
- *   coordinator->createSyncGroup("group1", {"branchA", "branchB"});
- *
- *   // When a node drops a frame
- *   if (node_in_sync_group) {
- *     coordinator->reportDrop("group1", "branchA", frame_id, "backpressure");
- *   }
- *
- *   // Before processing a frame, check if it should be dropped
- *   if (coordinator->shouldDropFrame("group1", "branchB", frame_id)) {
- *     // Skip this frame
- *   }
- * @endcode
- */
+// Central coordinator for multi-stream synchronization
+//
+// Manages multiple sync groups and provides the interface for:
+// - Registering DAG branch/join structures
+// - Coordinating frame drops across parallel branches
+// - Tracking watermarks for each sync group
+//
+// Usage in BackpressureExecutionEngine:
+//
+//  auto coordinator = std::make_shared<SyncCoordinator>();
+//
+//  // When building the graph, identify branch/join structures
+//  coordinator->createSyncGroup("group1", {"branchA", "branchB"});
+//
+//  // When a node drops a frame
+//  if (node_in_sync_group) {
+//    coordinator->reportDrop("group1", "branchA", frame_id, "backpressure");
+//  }
+//
+//  // Before processing a frame, check if it should be dropped
+//  if (coordinator->shouldDropFrame("group1", "branchB", frame_id)) {
+//    // Skip this frame
+//  }
+//
 class SyncCoordinator {
 public:
   SyncCoordinator() = default;
@@ -517,16 +415,11 @@ public:
   SyncCoordinator(const SyncCoordinator &) = delete;
   SyncCoordinator &operator=(const SyncCoordinator &) = delete;
 
-  // -------------------------------------------------------------------------
   // Sync Group Management
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Create a new sync group
-   * @param group_id Unique identifier for the group
-   * @param branch_ids Initial set of branches
-   * @return true if created successfully
-   */
+  // `group_id`: Unique identifier for the group
+  // `branch_ids`: Initial set of branches
+  // Returns true if created successfully
   bool createSyncGroup(const SyncGroupId &group_id,
                        const std::vector<BranchId> &branch_ids = {}) {
     std::unique_lock lock(m_mutex);
@@ -544,34 +437,22 @@ public:
     return true;
   }
 
-  /**
-   * @brief Remove a sync group
-   */
   void removeSyncGroup(const SyncGroupId &group_id) {
     std::unique_lock lock(m_mutex);
     m_groups.erase(group_id);
   }
 
-  /**
-   * @brief Check if a sync group exists
-   */
   [[nodiscard]] bool hasSyncGroup(const SyncGroupId &group_id) const {
     std::shared_lock lock(m_mutex);
     return m_groups.find(group_id) != m_groups.end();
   }
 
-  /**
-   * @brief Get a sync group
-   */
   [[nodiscard]] SyncGroup *getSyncGroup(const SyncGroupId &group_id) {
     std::shared_lock lock(m_mutex);
     auto it = m_groups.find(group_id);
     return it != m_groups.end() ? it->second.get() : nullptr;
   }
 
-  /**
-   * @brief Get all sync group IDs
-   */
   [[nodiscard]] std::vector<SyncGroupId> syncGroupIds() const {
     std::shared_lock lock(m_mutex);
     std::vector<SyncGroupId> ids;
@@ -582,13 +463,8 @@ public:
     return ids;
   }
 
-  // -------------------------------------------------------------------------
   // Branch Management
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Add a branch to a sync group
-   */
   bool addBranch(const SyncGroupId &group_id, const BranchId &branch_id) {
     std::shared_lock lock(m_mutex);
 
@@ -601,9 +477,6 @@ public:
     return true;
   }
 
-  /**
-   * @brief Remove a branch from a sync group
-   */
   void removeBranch(const SyncGroupId &group_id, const BranchId &branch_id) {
     std::shared_lock lock(m_mutex);
 
@@ -613,13 +486,9 @@ public:
     }
   }
 
-  // -------------------------------------------------------------------------
   // Frame Reporting
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Report that a frame was received by a branch
-   */
+  // Report that a frame was received by a branch
   FrameId reportFrameReceived(const SyncGroupId &group_id,
                               const BranchId &branch_id, FrameId frame_id) {
     std::shared_lock lock(m_mutex);
@@ -632,9 +501,7 @@ public:
     return it->second->reportFrameReceived(branch_id, frame_id);
   }
 
-  /**
-   * @brief Report that a frame was processed by a branch
-   */
+  // Report that a frame was processed by a branch
   void reportFrameProcessed(const SyncGroupId &group_id,
                             const BranchId &branch_id, FrameId frame_id) {
     std::shared_lock lock(m_mutex);
@@ -645,19 +512,17 @@ public:
     }
   }
 
-  /**
-   * @brief Report that a frame was dropped by a branch
-   *
-   * This is the key method for coordinated dropping. When called:
-   * 1. Records the drop for the originating branch
-   * 2. Notifies all other branches in the group to drop the same frame
-   * 3. Calls the coordinated drop callback for each affected branch
-   *
-   * @param group_id The sync group
-   * @param branch_id The branch that dropped the frame
-   * @param frame_id The dropped frame ID
-   * @param reason The reason for dropping
-   */
+  // Report that a frame was dropped by a branch
+  //
+  // This is the key method for coordinated dropping. When called:
+  // 1. Records the drop for the originating branch
+  // 2. Notifies all other branches in the group to drop the same frame
+  // 3. Calls the coordinated drop callback for each affected branch
+  //
+  // `group_id`: The sync group
+  // `branch_id`: The branch that dropped the frame
+  // `frame_id`: The dropped frame ID
+  // `reason`: The reason for dropping
   void reportDrop(const SyncGroupId &group_id, const BranchId &branch_id,
                   FrameId frame_id, const std::string &reason) {
     std::vector<BranchId> affected_branches;
@@ -686,13 +551,8 @@ public:
     }
   }
 
-  // -------------------------------------------------------------------------
   // Sync Drop Queries
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Check if a frame should be dropped by a branch
-   */
   [[nodiscard]] bool shouldDropFrame(const SyncGroupId &group_id,
                                      const BranchId &branch_id,
                                      FrameId frame_id) const {
@@ -706,9 +566,6 @@ public:
     return it->second->shouldDropFrame(branch_id, frame_id);
   }
 
-  /**
-   * @brief Get all pending sync drops for a branch
-   */
   [[nodiscard]] std::unordered_set<FrameId>
   getPendingSyncDrops(const SyncGroupId &group_id,
                       const BranchId &branch_id) const {
@@ -722,9 +579,6 @@ public:
     return it->second->getPendingSyncDrops(branch_id);
   }
 
-  /**
-   * @brief Clear a pending sync drop
-   */
   void clearPendingSyncDrop(const SyncGroupId &group_id,
                             const BranchId &branch_id, FrameId frame_id) {
     std::shared_lock lock(m_mutex);
@@ -735,13 +589,8 @@ public:
     }
   }
 
-  // -------------------------------------------------------------------------
   // Watermark
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Get the watermark for a sync group
-   */
   [[nodiscard]] FrameId getWatermark(const SyncGroupId &group_id) const {
     std::shared_lock lock(m_mutex);
 
@@ -753,24 +602,14 @@ public:
     return it->second->watermark();
   }
 
-  // -------------------------------------------------------------------------
   // Callbacks
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Set callback for coordinated drop events
-   */
   void setDropCallback(CoordinatedDropCallback callback) {
     m_dropCallback = std::move(callback);
   }
 
-  // -------------------------------------------------------------------------
   // Maintenance
-  // -------------------------------------------------------------------------
 
-  /**
-   * @brief Clean up old records in all sync groups
-   */
   void cleanup() {
     std::shared_lock lock(m_mutex);
 
@@ -779,17 +618,13 @@ public:
     }
   }
 
-  /**
-   * @brief Reset all sync groups
-   */
+  // Reset all sync groups
   void reset() {
     std::unique_lock lock(m_mutex);
     m_groups.clear();
   }
 
-  // -------------------------------------------------------------------------
   // Info
-  // -------------------------------------------------------------------------
 
   [[nodiscard]] std::string toString() const {
     std::shared_lock lock(m_mutex);
@@ -816,15 +651,11 @@ private:
   mutable std::shared_mutex m_mutex;
 };
 
-// =============================================================================
 // Sync Context for Nodes
-// =============================================================================
 
-/**
- * @brief Helper class for nodes to interact with sync coordinator
- *
- * Provides a simplified interface for nodes that participate in sync groups.
- */
+// Helper class for nodes to interact with sync coordinator
+//
+// Provides a simplified interface for nodes that participate in sync groups.
 class NodeSyncContext {
 public:
   NodeSyncContext(std::shared_ptr<SyncCoordinator> coordinator,
@@ -832,36 +663,27 @@ public:
       : m_coordinator(std::move(coordinator)), m_groupId(std::move(group_id)),
         m_branchId(std::move(branch_id)) {}
 
-  /**
-   * @brief Report frame received
-   */
+  // Report frame received
   void onFrameReceived(FrameId frame_id) {
     if (m_coordinator) {
       m_coordinator->reportFrameReceived(m_groupId, m_branchId, frame_id);
     }
   }
 
-  /**
-   * @brief Report frame processed
-   */
+  // Report frame processed
   void onFrameProcessed(FrameId frame_id) {
     if (m_coordinator) {
       m_coordinator->reportFrameProcessed(m_groupId, m_branchId, frame_id);
     }
   }
 
-  /**
-   * @brief Report frame dropped
-   */
+  // Report frame dropped
   void onFrameDropped(FrameId frame_id, const std::string &reason) {
     if (m_coordinator) {
       m_coordinator->reportDrop(m_groupId, m_branchId, frame_id, reason);
     }
   }
 
-  /**
-   * @brief Check if a frame should be skipped
-   */
   [[nodiscard]] bool shouldSkipFrame(FrameId frame_id) const {
     if (m_coordinator) {
       return m_coordinator->shouldDropFrame(m_groupId, m_branchId, frame_id);
@@ -869,9 +691,7 @@ public:
     return false;
   }
 
-  /**
-   * @brief Acknowledge a sync drop
-   */
+  // Acknowledge a sync drop
   void acknowledgeSyncDrop(FrameId frame_id) {
     if (m_coordinator) {
       m_coordinator->clearPendingSyncDrop(m_groupId, m_branchId, frame_id);

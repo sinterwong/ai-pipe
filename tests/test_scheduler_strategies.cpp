@@ -10,9 +10,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// =============================================================================
 // Mock Node for Testing
-// =============================================================================
 
 class MockNode : public ILogicNode {
 public:
@@ -45,9 +43,7 @@ private:
   std::vector<std::string> m_outputPorts;
 };
 
-// =============================================================================
 // SchedulingContext Tests
-// =============================================================================
 
 TEST(SchedulingContextTest, AllInputsReadyWhenEmpty) {
   SchedulingContext context;
@@ -105,9 +101,7 @@ TEST(SchedulingContextTest, InputReadinessRatioPartial) {
   EXPECT_DOUBLE_EQ(context.inputReadinessRatio(), 0.5);
 }
 
-// =============================================================================
 // ScheduleResult Tests
-// =============================================================================
 
 TEST(ScheduleResultTest, ScheduleNow) {
   auto result = ScheduleResult::scheduleNow("test reason");
@@ -141,9 +135,7 @@ TEST(ScheduleResultTest, Defer) {
   EXPECT_EQ(result.reason, "deferred");
 }
 
-// =============================================================================
 // BatchSchedulerStrategy Tests
-// =============================================================================
 
 class BatchSchedulerStrategyTest : public ::testing::Test {
 protected:
@@ -249,9 +241,7 @@ TEST_F(BatchSchedulerStrategyTest, CheckCompletionAllSinksExecuted) {
   EXPECT_TRUE(status.is_complete);
 }
 
-// =============================================================================
 // StreamSchedulerStrategy Tests
-// =============================================================================
 
 class StreamSchedulerStrategyTest : public ::testing::Test {
 protected:
@@ -435,9 +425,7 @@ TEST_F(StreamSchedulerStrategyTest, ConfigAccessors) {
   EXPECT_DOUBLE_EQ(m_strategy.config().min_input_ratio, 0.7);
 }
 
-// =============================================================================
 // Factory Function Tests
-// =============================================================================
 
 TEST(SchedulerStrategyFactoryTest, CreateBatchStrategy) {
   auto strategy = createSchedulerStrategy(ExecutionMode::BATCH);
@@ -469,14 +457,12 @@ TEST(SchedulerStrategyFactoryTest, CreateStreamStrategyWithConfig) {
   EXPECT_TRUE(stream_strategy->config().allow_partial_inputs);
 }
 
-// =============================================================================
 // ISchedulerStrategy Interface Tests
-// =============================================================================
 
 TEST(ISchedulerStrategyTest, InitializeAndResetAreNoOps) {
   BatchSchedulerStrategy strategy;
 
-  // These should not crash (R4.2: initialize takes the compiled snapshot)
+  // These should not crash (initialize takes the compiled snapshot)
   Graph graph;
   graph.addNode(std::make_shared<MockNode>("solo"));
   auto compiled = CompiledGraph::compile(graph);
@@ -485,9 +471,7 @@ TEST(ISchedulerStrategyTest, InitializeAndResetAreNoOps) {
   strategy.reset();
 }
 
-// =============================================================================
 // CompletionStatus Tests
-// =============================================================================
 
 TEST(CompletionStatusTest, DefaultValues) {
   CompletionStatus status;
@@ -497,15 +481,13 @@ TEST(CompletionStatusTest, DefaultValues) {
   EXPECT_FALSE(status.time_to_completion.has_value());
 }
 
-// =============================================================================
 // StreamSchedulerConfig Tests
-// =============================================================================
 
 TEST(StreamSchedulerConfigTest, DefaultValues) {
   StreamSchedulerConfig config;
 
   EXPECT_FALSE(config.allow_partial_inputs);
-  // R3.4: 0.0 so that enabling allow_partial_inputs alone is
+  // 0.0 so that enabling allow_partial_inputs alone is
   // meaningful ("any ready input schedules")
   EXPECT_DOUBLE_EQ(config.min_input_ratio, 0.0);
   EXPECT_TRUE(config.auto_reschedule);

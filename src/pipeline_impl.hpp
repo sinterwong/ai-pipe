@@ -1,24 +1,3 @@
-/**
- * @file pipeline_impl.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Pipeline PIMPL implementation (internal)
- * @version 2.0
- * @date 2025-12-24
- *
- * This is an INTERNAL header file. Users should not include this directly.
- *
- * v2.0: Unified error handling with Result<T>.
- *       - initialize() returns Result<void> instead of bool
- *       - run() returns Result<ExecutionOutput> instead of ExecutionResult
- *       - submit()/start() return Result<void> instead of bool
- *       - pushInput() returns Result<PushStatus> instead of QueuePushResult
- *       - waitForDrain() returns Result<void> instead of bool
- *       - Observer notifications use Error type
- *       - PipelineBuilder::build() returns Result<Pipeline> (never throws)
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_INTERNAL_PIPELINE_IMPL_HPP
 #define AI_PIPE_INTERNAL_PIPELINE_IMPL_HPP
 
@@ -121,10 +100,8 @@ public:
   void removeObserver(const std::shared_ptr<IPipelineObserver> &observer);
 
 private:
-  /**
-   * @brief Validate pipeline state for an operation
-   * @return Result<void> - ok if state is valid, Error with context otherwise
-   */
+  // Validate pipeline state for an operation
+  // Returns Result<void> - ok if state is valid, Error with context otherwise
   [[nodiscard]] Result<void> validateState(const char *operation) const;
 
   void transitionTo(PipelineState new_state);

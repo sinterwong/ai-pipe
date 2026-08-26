@@ -1,14 +1,3 @@
-/**
- * @file test_engine_statistics.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Statistics types and live-wiring tests
- * @version 0.1
- * @date 2026-02-04
- *
- * @copyright Copyright (c) 2026
- *
- */
-
 #include "ai_pipe/execution_engine.hpp"
 #include "ai_pipe/execution_types.hpp"
 #include "ai_pipe/graph.hpp"
@@ -21,9 +10,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// ============================================================================
 // LatencyHistogram Tests
-// ============================================================================
 
 class LatencyHistogramTest : public ::testing::Test {
 protected:
@@ -183,9 +170,7 @@ TEST_F(LatencyHistogramTest, ConcurrentRecording) {
   EXPECT_EQ(m_histogram.totalCount(), num_threads * records_per_thread);
 }
 
-// ============================================================================
 // NodeStatistics Tests
-// ============================================================================
 
 class NodeStatisticsTest : public ::testing::Test {
 protected:
@@ -247,18 +232,14 @@ TEST_F(NodeStatisticsTest, SuccessRate_AllFailures) {
   EXPECT_DOUBLE_EQ(m_stats.successRate(), 0.0);
 }
 
-// ============================================================================
 // AtomicNodeStatistics Tests
-// ============================================================================
 
 class AtomicNodeStatisticsTest : public ::testing::Test {
 protected:
   AtomicNodeStatistics m_atomicStats;
 };
 
-// =============================================================================
 // Initial State
-// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, InitialState) {
   EXPECT_EQ(m_atomicStats.execution_count.load(), 0);
@@ -268,13 +249,9 @@ TEST_F(AtomicNodeStatisticsTest, InitialState) {
   EXPECT_EQ(m_atomicStats.min_processing_us.load(),
             std::numeric_limits<std::uint64_t>::max());
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 0);
-  // v2.0: total_input_count / total_output_count removed from
-  //       AtomicNodeStatistics
 }
 
-// =============================================================================
 // Raw Atomic Increments (still valid for direct field access)
-// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, AtomicIncrements) {
   m_atomicStats.execution_count.fetch_add(1);
@@ -286,15 +263,9 @@ TEST_F(AtomicNodeStatisticsTest, AtomicIncrements) {
   EXPECT_EQ(m_atomicStats.total_processing_us.load(), 1000);
 }
 
-// =============================================================================
-// recordExecution (replaces updateMinMax + manual fetch_add)
-// =============================================================================
+// recordExecution
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_FirstValue) {
-  // v2.0: replaces updateMinMax(500)
-  //       recordExecution atomically updates:
-  //         execution_count, success/failure_count,
-  //         total_processing_us, min/max
   m_atomicStats.recordExecution(true, 500);
 
   EXPECT_EQ(m_atomicStats.execution_count.load(), 1);
@@ -306,7 +277,6 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_FirstValue) {
 }
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_Failure) {
-  // v2.0: failure branch increments failure_count instead of success_count
   m_atomicStats.recordExecution(false, 200);
 
   EXPECT_EQ(m_atomicStats.execution_count.load(), 1);
@@ -316,7 +286,6 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_Failure) {
 }
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMin) {
-  // v2.0: replaces updateMinMax(500); updateMinMax(100);
   m_atomicStats.recordExecution(true, 500);
   m_atomicStats.recordExecution(true, 100);
 
@@ -325,7 +294,6 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMin) {
 }
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMax) {
-  // v2.0: replaces updateMinMax(500); updateMinMax(1000);
   m_atomicStats.recordExecution(true, 500);
   m_atomicStats.recordExecution(true, 1000);
 
@@ -334,7 +302,6 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_NewMax) {
 }
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_NoChange) {
-  // v2.0: replaces three updateMinMax calls
   m_atomicStats.recordExecution(true, 100);
   m_atomicStats.recordExecution(true, 1000);
   m_atomicStats.recordExecution(true, 500); // Between min and max
@@ -344,7 +311,6 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_NoChange) {
 }
 
 TEST_F(AtomicNodeStatisticsTest, RecordExecution_MixedSuccessFailure) {
-  // v2.0: new test — validates mixed success/failure counting
   m_atomicStats.recordExecution(true, 100);
   m_atomicStats.recordExecution(false, 200);
   m_atomicStats.recordExecution(true, 300);
@@ -358,12 +324,9 @@ TEST_F(AtomicNodeStatisticsTest, RecordExecution_MixedSuccessFailure) {
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 300);
 }
 
-// =============================================================================
 // Reset
-// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, Reset) {
-  // v2.0: use recordExecution instead of raw fetch_add + updateMinMax
   m_atomicStats.recordExecution(true, 100);
   m_atomicStats.recordExecution(true, 1000);
   m_atomicStats.recordExecution(false, 500);
@@ -379,20 +342,16 @@ TEST_F(AtomicNodeStatisticsTest, Reset) {
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), 0);
 }
 
-// =============================================================================
 // Snapshot
-// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, Snapshot) {
   m_atomicStats.execution_count.store(10);
   m_atomicStats.success_count.store(8);
   m_atomicStats.failure_count.store(2);
   m_atomicStats.total_processing_us.store(8000);
-  // v2.0: total_input_count.store(15) / total_output_count.store(12) removed
   m_atomicStats.recordExecution(true, 100);  // updates min to 100
   m_atomicStats.recordExecution(true, 2000); // updates max to 2000
 
-  // v2.0: snapshot(name) — no queue_depth parameter
   auto snapshot = m_atomicStats.snapshot("my_node");
 
   EXPECT_EQ(snapshot.node_name, "my_node");
@@ -405,21 +364,15 @@ TEST_F(AtomicNodeStatisticsTest, Snapshot) {
   EXPECT_EQ(snapshot.total_processing_us, 10100);
   EXPECT_EQ(snapshot.min_processing_us, 100);
   EXPECT_EQ(snapshot.max_processing_us, 2000);
-  // v2.0: snapshot no longer fills total_input_count,
-  //       total_output_count, current_queue_depth
 }
 
 TEST_F(AtomicNodeStatisticsTest, Snapshot_UninitializedMin) {
-  // v2.0: snapshot no longer normalizes sentinel min to 0
-  //       raw sentinel value (max uint64) is preserved
   auto snapshot = m_atomicStats.snapshot("node");
   EXPECT_EQ(snapshot.min_processing_us,
             std::numeric_limits<std::uint64_t>::max());
 }
 
-// =============================================================================
 // Concurrent Updates
-// =============================================================================
 
 TEST_F(AtomicNodeStatisticsTest, ConcurrentUpdates) {
   const int num_threads = 8;
@@ -429,8 +382,6 @@ TEST_F(AtomicNodeStatisticsTest, ConcurrentUpdates) {
   for (int t = 0; t < num_threads; ++t) {
     threads.emplace_back([this, updates_per_thread]() {
       for (int i = 0; i < updates_per_thread; ++i) {
-        // v2.0: use recordExecution instead of
-        //       manual fetch_add + updateMinMax
         m_atomicStats.recordExecution(true, static_cast<std::uint64_t>(i + 1));
       }
     });
@@ -448,9 +399,7 @@ TEST_F(AtomicNodeStatisticsTest, ConcurrentUpdates) {
   EXPECT_EQ(m_atomicStats.max_processing_us.load(), updates_per_thread);
 }
 
-// ============================================================================
 // EngineStatistics Tests
-// ============================================================================
 
 class EngineStatisticsTest : public ::testing::Test {
 protected:
@@ -671,9 +620,7 @@ TEST_F(EngineStatisticsTest, ConcurrentUpdates) {
             num_threads * updates_per_thread);
 }
 
-// ============================================================================
 // EngineStatisticsSnapshot Tests
-// ============================================================================
 
 class EngineStatisticsSnapshotTest : public ::testing::Test {
 protected:
@@ -859,9 +806,7 @@ TEST_F(EngineStatisticsSnapshotTest, NodeStatsCanBePopulated) {
   EXPECT_EQ(snapshot.node_stats[1].node_name, "node2");
 }
 
-// ============================================================================
 // Edge Cases and Boundary Tests
-// ============================================================================
 
 class EngineStatisticsEdgeCasesTest : public ::testing::Test {
 protected:
@@ -897,7 +842,6 @@ TEST_F(EngineStatisticsEdgeCasesTest, ZeroDivisionProtection) {
 }
 
 TEST_F(EngineStatisticsEdgeCasesTest, LatencyHistogramBoundaries) {
-  // Test exact boundary values
   m_stats.recordLatency(10);  // Should go to bucket 1, not 0
   m_stats.recordLatency(25);  // Should go to bucket 2, not 1
   m_stats.recordLatency(50);  // Should go to bucket 3, not 2
@@ -917,9 +861,7 @@ TEST_F(EngineStatisticsEdgeCasesTest, MaxLatencyValue) {
   EXPECT_EQ(m_stats.latency_histogram.buckets[15].load(), 1);
 }
 
-// ============================================================================
 // Integration Tests
-// ============================================================================
 
 class EngineStatisticsIntegrationTest : public ::testing::Test {
 protected:
@@ -972,13 +914,11 @@ TEST_F(EngineStatisticsIntegrationTest, SimulateWorkload) {
   EXPECT_EQ(snapshot.failed_executions, failed);
   EXPECT_EQ(snapshot.total_dropped_frames, dropped);
 
-  // Verify computed rates are reasonable
   EXPECT_GT(snapshot.success_rate, 95.0); // ~98% success
   EXPECT_LT(snapshot.success_rate, 100.0);
   EXPECT_GT(snapshot.drop_rate, 0.0);
   EXPECT_LT(snapshot.drop_rate, 10.0);
 
-  // Verify histogram has data
   auto hist_data = snapshot.histogramData();
   std::uint64_t total_hist = 0;
   for (const auto &[label, count] : hist_data) {
@@ -1008,10 +948,8 @@ TEST_F(EngineStatisticsIntegrationTest, ResetAndReuse) {
   EXPECT_DOUBLE_EQ(m_stats.successRate(), 90.0);
 }
 
-// ============================================================================
-// Live wiring integration tests (P5.4): every snapshot field must be fed
+// Live wiring integration: every snapshot field must be fed
 // by a real engine run, not just exist in the API.
-// ============================================================================
 
 namespace {
 

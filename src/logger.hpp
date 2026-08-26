@@ -28,9 +28,7 @@
 
 namespace ai_pipe::logging {
 
-// ============================================================================
 // Log Level
-// ============================================================================
 
 enum class LogLevel : uint8_t {
   Trace = 0,
@@ -54,9 +52,7 @@ constexpr LogLevel k_compile_time_log_level =
   return level >= k_compile_time_log_level;
 }
 
-// ============================================================================
 // Console Colors (ANSI escape codes)
-// ============================================================================
 
 namespace color {
 inline constexpr std::string_view k_reset = "\033[0m";
@@ -71,9 +67,7 @@ inline constexpr std::string_view k_bold_red = "\033[1;31m";
 inline constexpr std::string_view k_gray = "\033[90m";
 } // namespace color
 
-// ============================================================================
 // Source Location (C++20 compatible fallback)
-// ============================================================================
 
 struct SourceLocation {
   const char *file = "";
@@ -93,9 +87,7 @@ struct SourceLocation {
 #endif
 };
 
-// ============================================================================
 // Log Entry - Optimized for minimal allocations
-// ============================================================================
 
 struct LogEntry {
   LogLevel level = LogLevel::Info;
@@ -114,9 +106,7 @@ struct LogEntry {
         thread_id(std::this_thread::get_id()), category(cat) {}
 };
 
-// ============================================================================
 // Logger Configuration
-// ============================================================================
 
 struct LoggerConfig {
   LogLevel min_level = LogLevel::Debug;
@@ -140,9 +130,7 @@ struct LoggerConfig {
   std::string pattern = "[%T] [%L] [%t] [%s] %m";
 };
 
-// ============================================================================
 // Lock-Free SPSC Ring Buffer for Async Logging
-// ============================================================================
 
 template <typename T> class SPSCRingBuffer {
 public:
@@ -209,9 +197,7 @@ private:
   alignas(64) std::atomic<size_t> m_tail{0};
 };
 
-// ============================================================================
 // Thread-Local Formatting Buffer
-// ============================================================================
 
 class FormatBuffer {
 public:
@@ -289,9 +275,7 @@ inline FormatBuffer &getThreadLocalBuffer() {
   return buffer;
 }
 
-// ============================================================================
 // Logger Core
-// ============================================================================
 
 class Logger {
 public:
@@ -361,7 +345,6 @@ public:
   // Graceful shutdown
   void shutdown();
 
-  // Check if level is enabled (for conditional logging)
   [[nodiscard]] bool isEnabled(LogLevel level) const noexcept {
     return level >= m_level.load(std::memory_order_relaxed);
   }
@@ -419,9 +402,7 @@ private:
   CallbackId m_nextCallbackId{1};
 };
 
-// ============================================================================
 // Stream-Style Logger
-// ============================================================================
 
 class LogStream {
 public:
@@ -466,9 +447,7 @@ private:
   std::ostringstream m_stream;
 };
 
-// ============================================================================
 // Printf-style Implementation
-// ============================================================================
 
 template <typename... Args>
 void Logger::logf(LogLevel level, const SourceLocation &loc,
@@ -488,23 +467,18 @@ void Logger::logf(LogLevel level, const SourceLocation &loc,
   log(level, buffer, loc, category);
 }
 
-// ============================================================================
 // Hex Dump Utility
-// ============================================================================
 
 std::string hexDump(const void *data, size_t size, size_t bytes_per_line = 16);
 
 } // namespace ai_pipe::logging
 
-// ============================================================================
 // Logging Macros
-// ============================================================================
 
 // Internal macro for source location capture
 #define AI_PIPE_LOG_LOCATION                                                   \
   ::ai_pipe::logging::SourceLocation { __FILE__, __func__, __LINE__ }
 
-// Check if log level is enabled at compile time
 #define AI_PIPE_LOG_ENABLED(level)                                             \
   (::ai_pipe::logging::isLevelEnabled(::ai_pipe::logging::LogLevel::level))
 
@@ -694,10 +668,8 @@ std::string hexDump(const void *data, size_t size, size_t bytes_per_line = 16);
     }                                                                          \
   } while (0)
 
-// ============================================================================
-// Backward-Compatible Stream Macros (legacy naming: LOG_INFOS, LOG_DEBUG_S,
+// Compatibility stream macros preserving the LOG_INFOS, LOG_DEBUG_S,
 // etc.)
-// ============================================================================
 
 #define LOG_TRACES LOG_TRACE_S
 #define LOG_DEBUGS LOG_DEBUG_S

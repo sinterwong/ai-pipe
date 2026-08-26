@@ -1,17 +1,3 @@
-/**
- * @file test_data_packet.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Tests for DataPacket flat storage and TypedParam
- * @version 0.2
- * @date 2026-07-04
- *
- * v0.2 (R2.2): the exception-throwing accessors (getParam,
- * getOptionalParam, TypedParam::get/tryGet) were removed with the
- * exception dual-track; param<T>() / TypedParam::read are the only
- * read paths and every test asserts Result semantics.
- *
- * @copyright Copyright (c) 2026
- */
 #include "ai_pipe/data_packet.hpp"
 #include "ai_pipe/data_types.hpp"
 #include <gtest/gtest.h>
@@ -165,9 +151,7 @@ TEST(TypedParamTest, ReadOnMissingIsError) {
 
 } // namespace ai_pipe_unit_test::data_packet
 
-// =============================================================================
-// Ownership model (P3.3)
-// =============================================================================
+// Ownership model
 
 // Packets flowing through the graph are immutable by type
 static_assert(std::is_same_v<ai_pipe::PortDataPtr,

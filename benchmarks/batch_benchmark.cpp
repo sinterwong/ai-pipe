@@ -1,23 +1,11 @@
-/**
- * @file batch_benchmark.cpp
- * @brief Benchmark tests for batch execution mode
- *
- * This file contains performance tests for batch processing scenarios,
- * measuring throughput, latency, and scalability characteristics.
- */
-
 #include "benchmark_utils.hpp"
 #include <benchmark/benchmark.h>
 
 namespace ai_pipe::benchmark {
 
-// =============================================================================
 // Framework Overhead Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure pure framework overhead with passthrough nodes
- */
+// Measure pure framework overhead with passthrough nodes
 static void BM_Batch_FrameworkOverhead(::benchmark::State &state) {
   const auto depth = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -46,13 +34,9 @@ BENCHMARK(BM_Batch_FrameworkOverhead)
     ->Args({32})
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Worker Scaling Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure worker scaling efficiency with compute workload
- */
+// Measure worker scaling efficiency with compute workload
 static void BM_Batch_WorkerScaling_Compute(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t depth = 8;
@@ -79,9 +63,7 @@ BENCHMARK(BM_Batch_WorkerScaling_Compute)
     ->Unit(::benchmark::kMillisecond)
     ->MinTime(2.0);
 
-/**
- * @brief Measure worker scaling with IO-bound workload
- */
+// Measure worker scaling with IO-bound workload
 static void BM_Batch_WorkerScaling_IO(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const std::size_t depth = 8;
@@ -106,13 +88,9 @@ BENCHMARK(BM_Batch_WorkerScaling_IO)
     ->Apply(WorkerCountArgs)
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Pipeline Depth Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure impact of pipeline depth
- */
+// Measure impact of pipeline depth
 static void BM_Batch_DepthScaling(::benchmark::State &state) {
   const auto depth = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 4;
@@ -135,13 +113,9 @@ BENCHMARK(BM_Batch_DepthScaling)
     ->Apply(PipelineDepthArgs)
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Payload Size Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure impact of payload size on throughput
- */
+// Measure impact of payload size on throughput
 static void BM_Batch_PayloadSize(::benchmark::State &state) {
   const auto payload_size = static_cast<std::size_t>(state.range(0));
   const std::size_t depth = 4;
@@ -167,13 +141,9 @@ BENCHMARK(BM_Batch_PayloadSize)
     ->Apply(PayloadSizeArgs)
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Fork-Join Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure fork-join performance with varying branch count
- */
+// Measure fork-join performance with varying branch count
 static void BM_Batch_Diamond_BranchCount(::benchmark::State &state) {
   const auto branches = static_cast<std::size_t>(state.range(0));
   const std::size_t workers = 8;
@@ -207,9 +177,7 @@ BENCHMARK(BM_Batch_Diamond_BranchCount)
     ->Args({16})
     ->Unit(::benchmark::kMicrosecond);
 
-/**
- * @brief Measure multi-stage fork-join performance
- */
+// Measure multi-stage fork-join performance
 static void BM_Batch_MultiStage(::benchmark::State &state) {
   const auto stages = static_cast<std::size_t>(state.range(0));
   const std::size_t branches = 4;
@@ -238,13 +206,9 @@ BENCHMARK(BM_Batch_MultiStage)
     ->Args({8})
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Combined Parameter Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure combined effect of workers and depth
- */
+// Measure combined effect of workers and depth
 static void BM_Batch_WorkerDepth(::benchmark::State &state) {
   const auto workers = static_cast<std::uint8_t>(state.range(0));
   const auto depth = static_cast<std::size_t>(state.range(1));
@@ -269,13 +233,9 @@ BENCHMARK(BM_Batch_WorkerDepth)
     ->Apply(WorkerDepthArgs)
     ->Unit(::benchmark::kMicrosecond);
 
-// =============================================================================
 // Memory Bandwidth Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure memory-intensive workload performance
- */
+// Measure memory-intensive workload performance
 static void BM_Batch_MemoryBandwidth(::benchmark::State &state) {
   const auto buffer_size = static_cast<std::size_t>(state.range(0));
   const std::size_t copy_count = 10;
@@ -328,13 +288,9 @@ BENCHMARK(BM_Batch_MemoryBandwidth)
     ->Args({4 * 1024 * 1024}) // 4MB
     ->Unit(::benchmark::kMillisecond);
 
-// =============================================================================
 // Repeated Execution Benchmarks
-// =============================================================================
 
-/**
- * @brief Measure amortized overhead over many executions
- */
+// Measure amortized overhead over many executions
 static void BM_Batch_RepeatedExecution(::benchmark::State &state) {
   const auto executions = static_cast<std::size_t>(state.range(0));
   const std::size_t depth = 4;

@@ -8,7 +8,7 @@
 
 namespace {
 
-/** Passes the `input` packet to `output` without changing its storage. */
+// Passes the `input` packet to `output` without changing its storage.
 class EchoNode final : public ai_pipe::ILogicNode {
 public:
   explicit EchoNode(const std::string &name) : ILogicNode(name) {}
@@ -19,7 +19,8 @@ public:
     outputs["output"] = inputs.at("input");
   }
 
-  [[nodiscard]] std::vector<std::string> getExpectedInputPorts() const override {
+  [[nodiscard]] std::vector<std::string>
+  getExpectedInputPorts() const override {
     return {"input"};
   }
 

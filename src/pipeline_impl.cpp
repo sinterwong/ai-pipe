@@ -1,22 +1,3 @@
-/**
- * @file pipeline_impl.cpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Pipeline implementation
- * @version 2.0
- * @date 2025-12-24
- *
- * v2.0: Unified error handling with Result<T>.
- *       - initialize() returns Result<void>
- *       - run() returns Result<ExecutionOutput>
- *       - submit()/start() return Result<void>
- *       - pushInput() returns Result<PushStatus>
- *       - waitForDrain() returns Result<void>
- *       - Observer notifications use Error type
- *       - PipelineBuilder::build() returns Result<Pipeline> (never throws)
- *
- * @copyright Copyright (c) 2025
- */
-
 #include "pipeline_impl.hpp"
 #include "logger.hpp"
 #include <algorithm>
@@ -24,9 +5,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Pipeline::Impl Implementation
-// =============================================================================
 
 Pipeline::Impl::Impl() { LOG_INFO_S << "Pipeline::Impl: Constructed"; }
 
@@ -46,9 +25,7 @@ Pipeline::Impl::~Impl() {
   LOG_INFO_S << "Pipeline::Impl: Destructed";
 }
 
-// -------------------------------------------------------------------------
 // Initialization
-// -------------------------------------------------------------------------
 
 Result<void>
 Pipeline::Impl::initialize(Graph &&graph,
@@ -65,7 +42,6 @@ Pipeline::Impl::initialize(Graph &&graph,
   // Store options
   m_options = options;
 
-  // Create graph
   m_graph = std::make_unique<Graph>(std::move(graph));
 
   // Validate graph
@@ -80,7 +56,6 @@ Pipeline::Impl::initialize(Graph &&graph,
   m_customScheduler = std::move(scheduler);
   m_customSync = std::move(sync);
 
-  // Create execution engine with configuration
   auto engine_config = buildEngineConfig();
   m_engine = ExecutionEngine::create(engine_config);
 
@@ -91,7 +66,6 @@ Pipeline::Impl::initialize(Graph &&graph,
                              "Failed to create execution engine");
   }
 
-  // Set custom strategies if provided
   if (m_customScheduler) {
     auto strategy_result =
         m_engine->setSchedulerStrategy(m_customScheduler->clone());
@@ -112,7 +86,6 @@ Pipeline::Impl::initialize(Graph &&graph,
     }
   }
 
-  // Initialize engine
   auto init_result = m_engine->initialize(m_graph.get(), options.num_workers);
   if (!init_result) {
     LOG_ERROR_S << "Pipeline::Impl: Engine initialization failed: "
@@ -172,13 +145,9 @@ void Pipeline::Impl::setupEngineCallbacks() {
           std::lock_guard<std::mutex> lock(m_resultsMutex);
           m_lastError = err;
         }
-        // Error grading (R1.2): in streaming mode a node exception is a
-        // per-frame event - the engine returns the node to service and
-        // keeps accepting input - so the facade must not latch ERROR
-        // (that froze isRunning()/validateState() while the engine ran
-        // on). Per-frame failures reach observers and m_lastError only.
-        // In batch mode a node failure aborts the execution, so it is
-        // pipeline-fatal and ERROR is correct.
+        // Streaming failures apply to one frame, so they reach observers and
+        // `m_lastError` without stopping ingress. Batch failures abort the
+        // execution and therefore latch the facade in `ERROR`.
         if (!isStreaming()) {
           m_state.store(PipelineState::ERROR, std::memory_order_release);
         }
@@ -194,9 +163,7 @@ void Pipeline::Impl::setupEngineCallbacks() {
   m_engine->setEndOfStreamCallback([this]() { notifyEndOfStream(); });
 }
 
-// -------------------------------------------------------------------------
 // Batch Execution
-// -------------------------------------------------------------------------
 
 Result<ExecutionOutput>
 Pipeline::Impl::run(const PortDataMap &inputs,
@@ -214,7 +181,7 @@ Pipeline::Impl::run(const PortDataMap &inputs,
   notifyExecutionStarted();
 
   // Execute synchronously; a positive timeout bounds the wait inside
-  // the engine (R1.3) - on expiry the engine cancels cooperatively and
+  // the engine - on expiry the engine cancels cooperatively and
   // returns ExecutionTimeout instead of blocking on a hung node.
   std::optional<std::chrono::milliseconds> engine_timeout;
   if (actual_timeout.count() > 0) {
@@ -323,7 +290,6 @@ Pipeline::Impl::runAsync(const PortDataMap &inputs) {
         promise->set_value(Result<ExecutionOutput>::err(std::move(err)));
       });
 
-  // Start async execution
   auto started = m_engine->execute(inputs, false, m_context);
 
   if (!started && !done->exchange(true)) {
@@ -358,9 +324,7 @@ Result<void> Pipeline::Impl::submit(const PortDataMap &inputs) {
   return Result<void>::ok();
 }
 
-// -------------------------------------------------------------------------
 // Streaming Interface
-// -------------------------------------------------------------------------
 
 Result<void> Pipeline::Impl::start(std::shared_ptr<PipelineContext> context) {
   auto validation = validateState("start streaming");
@@ -462,9 +426,7 @@ Result<void> Pipeline::Impl::waitForDrain(std::size_t max_depth,
   return m_engine->waitForDrain(max_depth, timeout);
 }
 
-// -------------------------------------------------------------------------
 // Control
-// -------------------------------------------------------------------------
 
 void Pipeline::Impl::cancel() {
   if (!isRunning() && !isStreaming()) {
@@ -473,7 +435,7 @@ void Pipeline::Impl::cancel() {
 
   LOG_INFO_S << "Pipeline::Impl: Cancelling execution";
 
-  // R3.1: cancellation is signalled through both channels - the
+  // Cancellation is signalled through both channels: the
   // cooperative token (visible to nodes mid-process) and the engine
   // stop protocol (visible to scheduling points and waiters).
   if (m_context) {
@@ -499,8 +461,6 @@ void Pipeline::Impl::wait() {
   auto current_state = m_state.load(std::memory_order_acquire);
   if (current_state == PipelineState::RUNNING ||
       current_state == PipelineState::STOPPING) {
-    // Blocking wait on the engine's completion signal (R4.4): the
-    // former 10ms sleep poll is gone.
     m_engine->waitForIdle();
   }
 }
@@ -529,9 +489,7 @@ void Pipeline::Impl::reset() {
   LOG_INFO_S << "Pipeline::Impl: Reset complete";
 }
 
-// -------------------------------------------------------------------------
 // Status
-// -------------------------------------------------------------------------
 
 bool Pipeline::Impl::isReady() const {
   auto current_state = m_state.load(std::memory_order_acquire);
@@ -584,9 +542,7 @@ Result<void> Pipeline::Impl::setTraceSink(std::shared_ptr<ITraceSink> sink) {
   return m_engine->setTraceSink(std::move(sink));
 }
 
-// -------------------------------------------------------------------------
 // Accessors
-// -------------------------------------------------------------------------
 
 const Graph &Pipeline::Impl::graph() const {
   if (!m_graph) {
@@ -616,9 +572,7 @@ std::string Pipeline::Impl::info() const {
   return m_engine->info();
 }
 
-// -------------------------------------------------------------------------
 // Observer Management
-// -------------------------------------------------------------------------
 
 void Pipeline::Impl::addObserver(std::shared_ptr<IPipelineObserver> observer) {
   std::lock_guard<std::mutex> lock(m_observersMutex);
@@ -633,9 +587,7 @@ void Pipeline::Impl::removeObserver(
       m_observers.end());
 }
 
-// -------------------------------------------------------------------------
 // Internal Helpers
-// -------------------------------------------------------------------------
 
 Result<void> Pipeline::Impl::validateState(const char *operation) const {
   auto current_state = m_state.load(std::memory_order_acquire);
@@ -750,9 +702,7 @@ void Pipeline::Impl::notifyEndOfStream() {
   }
 }
 
-// =============================================================================
 // Pipeline Public Interface Implementation
-// =============================================================================
 
 Pipeline::Pipeline() : m_impl(std::make_unique<Impl>()) {}
 
@@ -896,9 +846,7 @@ Result<void> Pipeline::initialize(Graph &&graph,
                             std::move(scheduler), std::move(sync));
 }
 
-// =============================================================================
 // PipelineBuilder Implementation
-// =============================================================================
 
 struct PipelineBuilder::BuilderState {
   std::optional<Graph> graph;
@@ -1041,7 +989,6 @@ Result<Pipeline> PipelineBuilder::build() {
     return Result<Pipeline>::err(init_result.error());
   }
 
-  // Add observers
   if (m_state->callback_observer) {
     pipeline.addObserver(m_state->callback_observer);
   }

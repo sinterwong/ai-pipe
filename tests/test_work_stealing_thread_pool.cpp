@@ -1,15 +1,3 @@
-/**
- * @file test_work_stealing_thread_pool.cpp
- * @brief Unit tests for WorkStealingThreadPool
- *
- * Tests cover:
- * - Basic functionality (submit, execute, shutdown)
- * - Work-stealing behavior
- * - Concurrency correctness
- * - Performance under contention
- * - Edge cases and error handling
- */
-
 #include "work_stealing_thread_pool.hpp"
 #include <atomic>
 #include <chrono>
@@ -20,9 +8,7 @@
 using namespace ai_pipe;
 using namespace std::chrono_literals;
 
-// ============================================================================
 // Basic Functionality Tests
-// ============================================================================
 
 class WorkStealingThreadPoolBasicTest : public ::testing::Test {
 protected:
@@ -196,9 +182,7 @@ TEST_F(WorkStealingThreadPoolBasicTest, CompletedTasksCount) {
   EXPECT_EQ(pool.completedTasks(), 100);
 }
 
-// ============================================================================
 // Work-Stealing Behavior Tests
-// ============================================================================
 
 class WorkStealingBehaviorTest : public ::testing::Test {
 protected:
@@ -294,9 +278,7 @@ TEST_F(WorkStealingBehaviorTest, SubmitFromWorkerThread) {
   EXPECT_EQ(counter.load(), 10);
 }
 
-// ============================================================================
 // Concurrency Correctness Tests
-// ============================================================================
 
 class WorkStealingConcurrencyTest : public ::testing::Test {
 protected:
@@ -403,9 +385,7 @@ TEST_F(WorkStealingConcurrencyTest, StressTest) {
   }
 }
 
-// ============================================================================
 // Exception Handling Tests
-// ============================================================================
 
 class WorkStealingExceptionTest : public ::testing::Test {
 protected:
@@ -467,9 +447,7 @@ TEST_F(WorkStealingExceptionTest, TrySubmitToStoppedPool) {
   EXPECT_FALSE(result.has_value());
 }
 
-// ============================================================================
 // WorkStealingDeque Tests
-// ============================================================================
 
 class WorkStealingDequeTest : public ::testing::Test {
 protected:
@@ -584,9 +562,7 @@ TEST_F(WorkStealingDequeTest, ConcurrentPushAndSteal) {
   EXPECT_EQ(total_pushed.load(), total_popped.load());
 }
 
-// ============================================================================
 // Performance Comparison Tests
-// ============================================================================
 
 class WorkStealingPerformanceTest : public ::testing::Test {
 protected:
@@ -718,9 +694,7 @@ TEST_F(WorkStealingPerformanceTest, MixedWorkloads) {
   EXPECT_EQ(long_tasks.load(), 100);
 }
 
-// ============================================================================
 // Edge Cases
-// ============================================================================
 
 class WorkStealingEdgeCasesTest : public ::testing::Test {
 protected:
@@ -792,9 +766,7 @@ TEST_F(WorkStealingEdgeCasesTest, TaskThrowsDuringShutdown) {
   EXPECT_EQ(counter.load(), 90);
 }
 
-// ============================================================================
 // ScopedWorkStealingThreadPool Tests
-// ============================================================================
 
 TEST(ScopedWorkStealingThreadPoolTest, BasicUsage) {
   ScopedWorkStealingThreadPool pool(4);
