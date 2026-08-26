@@ -1,22 +1,3 @@
-/**
- * @file data_packet.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Type-erased key-value container passed between pipeline nodes
- * @version 0.2
- * @date 2026-07-04
- *
- * v0.2 (P3.1): storage switched from std::map<std::string, std::any> to a
- * flat vector scanned linearly. Packets typically carry a handful of
- * params, where a contiguous scan beats red-black tree traversal and
- * per-node heap allocations. The accessor API is unchanged; the storage
- * itself is now private (no external code accessed `.params` directly).
- *
- * Also introduces TypedParam<T>: a small declarative handle that binds a
- * param key to its C++ type once, giving nodes typed get/set access
- * without repeating <T> and key strings at every call site.
- *
- * @copyright Copyright (c) 2025
- */
 #ifndef AI_PIPE_UTILS_DATA_PACKET_HPP
 #define AI_PIPE_UTILS_DATA_PACKET_HPP
 

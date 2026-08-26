@@ -1,14 +1,3 @@
-/**
- * @file context.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Comprehensive pipeline execution context with thread-safe resource
- *        management, metrics collection, cancellation support, and more.
- * @version 0.2
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_PIPELINE_CONTEXT_HPP
 #define AI_PIPE_PIPELINE_CONTEXT_HPP
 
@@ -32,9 +21,7 @@ namespace ai_pipe {
 class PipelineContext;
 class ScopedNodeExecution;
 
-// =============================================================================
 // Supporting Types
-// =============================================================================
 
 /**
  * @brief Unique identifier for pipeline executions
@@ -142,9 +129,7 @@ private:
   std::string m_message;
 };
 
-// =============================================================================
 // Logger Adapter Interface
-// =============================================================================
 
 /**
  * @brief Log level enumeration (matches common logging frameworks)
@@ -202,9 +187,7 @@ public:
   void log(PipeLogLevel, const std::string &, const std::string &) override {}
 };
 
-// =============================================================================
 // Pipeline Context
-// =============================================================================
 
 /**
  * @brief Thread-safe execution context for pipeline
@@ -247,9 +230,7 @@ public:
   PipelineContext(PipelineContext &&) noexcept;
   PipelineContext &operator=(PipelineContext &&) noexcept;
 
-  // -------------------------------------------------------------------------
   // Resource Management (Thread-Safe)
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Store a named resource
@@ -307,9 +288,7 @@ public:
     return names;
   }
 
-  // -------------------------------------------------------------------------
   // Service Locator (Type-Based)
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Register a service by interface type
@@ -345,9 +324,7 @@ public:
     return m_services.count(std::type_index(typeid(Interface))) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Configuration Management
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Set a configuration value
@@ -383,9 +360,7 @@ public:
     return m_config.count(key) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Execution Tracking
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Start a new execution
@@ -410,9 +385,7 @@ public:
     return m_isExecuting.load(std::memory_order_acquire);
   }
 
-  // -------------------------------------------------------------------------
   // Node Metrics
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Begin tracking metrics for a node
@@ -436,9 +409,7 @@ public:
   [[nodiscard]] std::optional<NodeMetrics>
   nodeMetrics(const std::string &node_name) const;
 
-  // -------------------------------------------------------------------------
   // Cancellation Support
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Get the cancellation token
@@ -462,9 +433,7 @@ public:
     return m_cancellationToken.isCancelled();
   }
 
-  // -------------------------------------------------------------------------
   // Logger Adapter
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Set the logger adapter
@@ -527,9 +496,7 @@ public:
     log(PipeLogLevel::KError, node_name, message);
   }
 
-  // -------------------------------------------------------------------------
   // Progress Reporting
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Get progress reporter for a node
@@ -556,9 +523,7 @@ public:
     m_progressCallback = std::move(callback);
   }
 
-  // -------------------------------------------------------------------------
   // User Data (Arbitrary Key-Value Storage)
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Set arbitrary user data
@@ -593,9 +558,7 @@ public:
     return m_userData.erase(key) > 0;
   }
 
-  // -------------------------------------------------------------------------
   // Reset / Clear
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Reset context for new execution (clears metrics, progress)
@@ -656,9 +619,7 @@ private:
       m_nodeProgressReporters;
 };
 
-// =============================================================================
 // Scoped Node Execution Helper
-// =============================================================================
 
 /**
  * @brief RAII helper for node execution context
@@ -728,9 +689,7 @@ private:
   std::string m_errorMessage;
 };
 
-// =============================================================================
 // Common Logger Adapters
-// =============================================================================
 
 /**
  * @brief Simple console logger adapter (for testing/debugging)

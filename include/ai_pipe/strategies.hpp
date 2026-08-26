@@ -1,43 +1,3 @@
-/**
- * @file strategies.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Configuration and factories for the built-in strategies
- * @version 1.0
- * @date 2026-08-01
- *
- * ISchedulerStrategy and ISyncStrategy are public interfaces, but the
- * built-in implementations (BatchSchedulerStrategy,
- * StreamSchedulerStrategy, NoSyncStrategy, JoinAwareSyncStrategy) live
- * in private headers under src/ and are not installed. Without this
- * header a find_package() consumer could only reimplement a strategy
- * from scratch or fall back to whatever PipelineOptions selects.
- *
- * This header publishes the tuning surface — StreamSchedulerConfig —
- * and out-of-line factories that hand back the built-ins behind their
- * interface pointers. The concrete classes stay private on purpose: the
- * ABI promise made at 1.0 then covers the interfaces and this config
- * struct, not the scheduling internals, which stay free to change.
- *
- * Consumers who need behaviour the built-ins do not offer still
- * implement ISchedulerStrategy / ISyncStrategy directly; these
- * factories are for configuring and composing what already ships.
- *
- * Typical use:
- * @code
- *   StreamSchedulerConfig cfg;
- *   cfg.min_interval = std::chrono::milliseconds{33}; // ~30 fps cap
- *
- *   auto pipeline = Pipeline::create()
- *                       .withGraph(std::move(graph))
- *                       .withOptions(PipelineOptions::stream())
- *                       .withSchedulerStrategy(createStreamScheduler(cfg))
- *                       .withSyncStrategy(createJoinAwareSyncStrategy())
- *                       .build();
- * @endcode
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_STRATEGIES_HPP
 #define AI_PIPE_STRATEGIES_HPP
 
@@ -49,9 +9,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Stream Scheduler Configuration
-// =============================================================================
 
 /**
  * @brief Tuning knobs for the built-in streaming scheduler
@@ -77,9 +35,7 @@ struct StreamSchedulerConfig {
       0}; ///< Minimum interval between executions
 };
 
-// =============================================================================
 // Scheduler Factories
-// =============================================================================
 
 /**
  * @brief Create the built-in batch scheduler
@@ -107,9 +63,7 @@ createStreamScheduler(const StreamSchedulerConfig &config = {});
 createSchedulerStrategy(ExecutionMode mode,
                         const StreamSchedulerConfig &stream_config = {});
 
-// =============================================================================
 // Sync Factories
-// =============================================================================
 
 /**
  * @brief Create the no-op sync strategy

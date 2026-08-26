@@ -1,29 +1,3 @@
-/**
- * @file compiled_graph.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Immutable, index-based compiled view of a Graph for hot-path use
- * @version 0.1
- * @date 2026-07-03
- *
- * Public since R4.2: scheduler/sync strategies initialize from this
- * immutable snapshot instead of a raw Graph*, so strategies no longer
- * depend on the mutable Graph outliving the engine.
- *
- * Graph is the mutable construction API; CompiledGraph is the execution
- * engine's read-only view of it. Compilation happens once in
- * ExecutionEngine::initialize() and precomputes everything the hot path
- * previously derived by scanning the edge list per node execution:
- *
- *   - dense node indices (NodeIndex) with name and pointer lookup
- *   - successor/predecessor adjacency (deduplicated)
- *   - per-node out-edge routing table for output propagation
- *   - topological order via iterative Kahn's algorithm (no recursion,
- *     no stack-overflow risk on deep graphs) with built-in cycle detection
- *   - source and sink node sets
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_COMPILED_GRAPH_HPP
 #define AI_PIPE_COMPILED_GRAPH_HPP
 
@@ -198,9 +172,7 @@ public:
     return cg;
   }
 
-  // ---------------------------------------------------------------------
   // Lookup
-  // ---------------------------------------------------------------------
 
   [[nodiscard]] NodeIndex indexOf(const std::string &name) const {
     auto it = m_nameToIndex.find(name);
@@ -218,9 +190,7 @@ public:
 
   [[nodiscard]] std::size_t nodeCount() const { return m_nodes.size(); }
 
-  // ---------------------------------------------------------------------
   // Topology (all O(1) per node)
-  // ---------------------------------------------------------------------
 
   /** @brief Outgoing edges of a node, for output routing */
   [[nodiscard]] const std::vector<OutEdge> &outEdges(NodeIndex index) const {

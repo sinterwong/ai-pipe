@@ -1,18 +1,3 @@
-/**
- * @file frame_metadata.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Frame identity types and metadata abstractions for cross-branch
- * synchronization
- * @version 0.1
- * @date 2025-12-24
- *
- * This file defines the metadata abstraction required for synchronized
- * frame dropping across parallel branches in a DAG pipeline.
- *
- * @copyright Copyright (c) 2025
- *
- */
-
 #ifndef AI_PIPE_FRAME_METADATA_HPP
 #define AI_PIPE_FRAME_METADATA_HPP
 
@@ -25,9 +10,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Frame Identifier Types
-// =============================================================================
 
 /**
  * @brief Unique frame identifier for synchronization
@@ -49,9 +32,7 @@ using StreamId = std::uint32_t;
  */
 using Timestamp = std::chrono::steady_clock::time_point;
 
-// =============================================================================
 // Constants
-// =============================================================================
 
 namespace frame_constants {
 
@@ -88,9 +69,7 @@ constexpr FrameId k_max_frame_drift = 100;
 
 } // namespace frame_constants
 
-// =============================================================================
 // Frame Metadata Interface
-// =============================================================================
 
 /**
  * @brief Abstract interface for frame metadata
@@ -107,9 +86,7 @@ class IFrameMetadata {
 public:
   virtual ~IFrameMetadata() = default;
 
-  // -------------------------------------------------------------------------
   // Core Identification
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Get the unique frame identifier
@@ -129,9 +106,7 @@ public:
    */
   [[nodiscard]] virtual Timestamp timestamp() const = 0;
 
-  // -------------------------------------------------------------------------
   // Synchronization Support
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Check if this frame should synchronize with another
@@ -148,9 +123,7 @@ public:
    */
   [[nodiscard]] virtual int compareTo(const IFrameMetadata &other) const = 0;
 
-  // -------------------------------------------------------------------------
   // Validity Checks
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Check if frame ID is valid
@@ -171,18 +144,14 @@ public:
     return frameId() == frame_constants::k_end_of_stream_frame_id;
   }
 
-  // -------------------------------------------------------------------------
   // Cloning
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Create a deep copy of this metadata
    */
   [[nodiscard]] virtual std::unique_ptr<IFrameMetadata> clone() const = 0;
 
-  // -------------------------------------------------------------------------
   // Debug Support
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Get string representation for logging
@@ -190,9 +159,7 @@ public:
   [[nodiscard]] virtual std::string toString() const = 0;
 };
 
-// =============================================================================
 // Basic Frame Metadata Implementation
-// =============================================================================
 
 /**
  * @brief Basic frame metadata implementation
@@ -281,9 +248,7 @@ private:
   Timestamp m_timestamp;
 };
 
-// =============================================================================
 // Timestamp-Based Frame Metadata
-// =============================================================================
 
 /**
  * @brief Timestamp-based frame metadata for time-synchronized streams
@@ -355,9 +320,7 @@ private:
   std::chrono::milliseconds m_syncTolerance;
 };
 
-// =============================================================================
 // Frame Metadata Factory
-// =============================================================================
 
 /**
  * @brief Factory for creating frame metadata instances
@@ -388,9 +351,7 @@ public:
   }
 };
 
-// =============================================================================
 // Comparison Operators for Frame Metadata
-// =============================================================================
 
 inline bool operator<(const IFrameMetadata &lhs, const IFrameMetadata &rhs) {
   return lhs.compareTo(rhs) < 0;

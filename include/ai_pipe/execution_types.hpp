@@ -1,17 +1,3 @@
-/**
- * @file execution_types.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Execution engine types and configurations
- * @version 2.0
- * @date 2025-12-24
- *
- * v2.0: Unified error handling - replaced QueuePushResult with PushStatus
- *       used inside Result<PushStatus>. The deprecated QueuePushResult
- *       wrapper was removed after the migration completed.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_EXECUTION_TYPES_HPP
 #define AI_PIPE_EXECUTION_TYPES_HPP
 
@@ -142,9 +128,7 @@ struct QueueConfig {
   bool track_statistics = true;
 };
 
-// =============================================================================
 // Push Status (replaces QueuePushResult)
-// =============================================================================
 
 /**
  * @brief Outcome of a successful queue push operation
@@ -249,9 +233,7 @@ struct EngineConfig {
   }
 };
 
-// ============================================================================
 // Latency Histogram
-// ============================================================================
 
 /**
  * @brief Histogram bucket boundaries in microseconds
@@ -328,9 +310,7 @@ struct LatencyHistogram {
   }
 };
 
-// ============================================================================
 // Per-Node Statistics
-// ============================================================================
 
 struct NodeStatistics {
   std::string node_name;
@@ -429,9 +409,7 @@ struct AtomicNodeStatistics {
   }
 };
 
-// ============================================================================
 // Engine Statistics
-// ============================================================================
 
 struct EngineStatistics {
   // Execution counts. Unit: one NODE execution attempt (unified across
@@ -560,9 +538,7 @@ struct EngineStatistics {
   }
 };
 
-// ============================================================================
 // Engine Statistics Snapshot
-// ============================================================================
 
 struct EngineStatisticsSnapshot {
   std::uint64_t total_executions{0};

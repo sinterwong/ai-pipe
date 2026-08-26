@@ -1,16 +1,3 @@
-/**
- * @file i_scheduler_strategy.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Scheduler strategy interface definition
- * @version 1.0
- * @date 2025-12-24
- *
- * This file defines the pure interface for scheduling strategies.
- * It contains no implementation details and no internal dependencies.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_I_SCHEDULER_STRATEGY_HPP
 #define AI_PIPE_I_SCHEDULER_STRATEGY_HPP
 
@@ -29,9 +16,7 @@ namespace ai_pipe {
 // Forward declaration; full definition in ai_pipe/compiled_graph.hpp
 class CompiledGraph;
 
-// =============================================================================
 // Scheduling Types
-// =============================================================================
 
 /**
  * @brief Result of a scheduling decision
@@ -145,9 +130,7 @@ struct SinkExecutionCount {
   std::uint64_t executions{0};
 };
 
-// =============================================================================
 // Scheduler Strategy Interface
-// =============================================================================
 
 /**
  * @brief Abstract interface for scheduling strategies

@@ -1,41 +1,3 @@
-/**
- * @file plugin.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Dynamic node plugin loading via dlopen (F8)
- * @version 0.1
- * @date 2026-07-11
- *
- * A plugin is a shared library that registers node types with the
- * process-wide NodeRegistry. Registration itself needs no plugin
- * machinery - the AI_PIPE_REGISTER_NODE macros run at static
- * initialization, which dlopen triggers. What this header adds is the
- * ABI boundary and version handshake around that mechanism:
- *
- * - The plugin declares itself with AI_PIPE_PLUGIN("name"), which
- *   exports a C-linkage descriptor symbol (k_plugin_entry_symbol)
- *   carrying the plugin protocol revision and the AI_PIPE_VERSION it
- *   was built against.
- * - PluginLoader::load() dlopens the library, verifies the descriptor
- *   (rejecting foreign .so files and version mismatches - rolling back
- *   any node types the mismatched plugin already registered), and
- *   reports which node types the plugin contributed.
- *
- * ABI boundary contract: host and plugin must link the same
- * libai_pipe.so (the registry singleton and the C++ types crossing the
- * boundary - ILogicNode, PortData, Result - live there), and must be
- * built with ABI-compatible toolchains/flags. The handshake enforces
- * the framework version (pre-1.0: major and minor must match) and the
- * plugin protocol revision; it cannot detect toolchain ABI drift.
- *
- * Loaded libraries stay mapped until unload() or the PluginLoader is
- * destroyed. Nodes created from a plugin's factories are tracked:
- * unload() refuses with PluginInUse while any are alive, and the
- * destructor leaves the library mapped (never unmapped for the rest of
- * the process) rather than pull code out from under live instances.
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_PLUGIN_HPP
 #define AI_PIPE_PLUGIN_HPP
 
@@ -48,9 +10,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Plugin ABI
-// =============================================================================
 
 /**
  * @brief Revision of the plugin protocol itself
@@ -81,9 +41,7 @@ struct PluginDescriptor {
 /** @brief Signature of the entry symbol */
 using PluginDescriptorFn = const PluginDescriptor *(*)();
 
-// =============================================================================
 // Plugin Loader
-// =============================================================================
 
 /**
  * @brief Loads node plugins from shared libraries

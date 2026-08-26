@@ -1,24 +1,3 @@
-/**
- * @file trace.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Execution tracing hooks: per-frame span events via an
- *        injectable sink (F7)
- * @version 0.1
- * @date 2026-07-11
- *
- * The engine emits one TraceEvent per frame lifecycle phase (enqueue,
- * schedule, execute, propagate) to a user-injected ITraceSink,
- * upgrading the chapter-9 aggregate statistics into a per-frame
- * timeline. The built-in ChromeTraceSink buffers events and exports
- * the Chrome Trace Event JSON format, viewable in chrome://tracing and
- * Perfetto (ui.perfetto.dev).
- *
- * Tracing costs a single pointer check per hook when no sink is
- * installed.
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_TRACE_HPP
 #define AI_PIPE_TRACE_HPP
 
@@ -35,9 +14,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Trace Event
-// =============================================================================
 
 /**
  * @brief Frame lifecycle phase of a trace event
@@ -84,9 +61,7 @@ struct TraceEvent {
   std::uint64_t thread_id{0};            ///< Hashed executing thread id
 };
 
-// =============================================================================
 // Trace Sink Interface
-// =============================================================================
 
 /**
  * @brief Consumer of engine trace events
@@ -103,9 +78,7 @@ public:
   virtual void onEvent(const TraceEvent &event) = 0;
 };
 
-// =============================================================================
 // Chrome Trace Event Sink
-// =============================================================================
 
 /**
  * @brief Built-in sink buffering events for Chrome Trace Event export

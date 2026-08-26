@@ -1,17 +1,3 @@
-/**
- * @file execution_engine.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Execution Engine with Strategy-Based Architecture
- * @version 2.0
- * @date 2025-12-24
- *
- * v2.0: Unified error handling with Result<T>.
- *       All fallible operations return Result<void> or Result<PushStatus>
- *       instead of bare bool or ad-hoc types.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_EXECUTION_ENGINE_HPP
 #define AI_PIPE_EXECUTION_ENGINE_HPP
 
@@ -50,9 +36,7 @@ public:
   using SchedulerStrategyPtr = std::unique_ptr<ISchedulerStrategy>;
   using SyncStrategyPtr = std::unique_ptr<ISyncStrategy>;
 
-  // -------------------------------------------------------------------------
   // Construction
-  // -------------------------------------------------------------------------
 
   static std::unique_ptr<ExecutionEngine>
   create(const EngineConfig &config = {});
@@ -69,9 +53,7 @@ public:
   ExecutionEngine(ExecutionEngine &&) noexcept;
   ExecutionEngine &operator=(ExecutionEngine &&) noexcept;
 
-  // -------------------------------------------------------------------------
   // Strategy Injection
-  // -------------------------------------------------------------------------
 
   Result<void> setSchedulerStrategy(SchedulerStrategyPtr strategy);
   Result<void> setSyncStrategy(SyncStrategyPtr strategy);
@@ -86,9 +68,7 @@ public:
    */
   Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
-  // -------------------------------------------------------------------------
   // Core Interface
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Initialize the engine with a graph and worker count
@@ -130,9 +110,7 @@ public:
   [[nodiscard]] std::unordered_map<std::string, NodeExecutionState>
   getNodeStates() const;
 
-  // -------------------------------------------------------------------------
   // Callback Registration (for async event notifications)
-  // -------------------------------------------------------------------------
 
   void
   setPipelineResultCallback(std::function<void(const PortDataMap &)> callback);
@@ -151,9 +129,7 @@ public:
    */
   void setEndOfStreamCallback(std::function<void()> callback);
 
-  // -------------------------------------------------------------------------
   // Streaming Interface
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Start streaming mode
@@ -181,9 +157,7 @@ public:
   [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
                                              PortDataPtr data);
 
-  // -------------------------------------------------------------------------
   // End of stream (R6.1) - see docs/design/eos_flush.md
-  // -------------------------------------------------------------------------
 
   /**
    * @brief Declare that no more data will arrive on an input port
@@ -231,9 +205,7 @@ public:
   /** @brief Has EOS reached every sink? */
   [[nodiscard]] bool isEndOfStreamReached() const;
 
-  // -------------------------------------------------------------------------
   // State & Monitoring
-  // -------------------------------------------------------------------------
 
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
 
@@ -256,18 +228,14 @@ public:
    */
   void waitForIdle();
 
-  // -------------------------------------------------------------------------
   // Configuration
-  // -------------------------------------------------------------------------
 
   void setNodeQueueConfig(const std::string &node_name,
                           const QueueConfig &config);
 
   [[nodiscard]] const EngineConfig &config() const;
 
-  // -------------------------------------------------------------------------
   // Information
-  // -------------------------------------------------------------------------
 
   [[nodiscard]] std::string info() const;
   [[nodiscard]] std::string strategyInfo() const;
@@ -278,9 +246,7 @@ private:
   std::unique_ptr<Impl> m_impl;
 };
 
-// =============================================================================
 // Convenience Factory Functions
-// =============================================================================
 
 inline std::unique_ptr<ExecutionEngine>
 createBatchEngine(std::uint8_t workers = 4) {

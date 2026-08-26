@@ -1,21 +1,3 @@
-/**
- * @file node_registry.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Name-based node factory registry for config-driven graphs
- * @version 0.1
- * @date 2026-07-04
- *
- * Nodes previously could only be constructed by writing C++ that names
- * the concrete class. The registry decouples graph assembly from node
- * implementations: a node type registers a factory once (typically via
- * AI_PIPE_REGISTER_NODE at namespace scope in its .cpp), and callers
- * instantiate it by type name plus an optional PortData config bag -
- * the enabler for building pipelines from configuration files or
- * plugins.
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_NODE_REGISTRY_HPP
 #define AI_PIPE_NODE_REGISTRY_HPP
 

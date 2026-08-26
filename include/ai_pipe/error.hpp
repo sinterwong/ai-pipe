@@ -1,24 +1,3 @@
-/**
- * @file error.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Unified error handling: ErrorCode, Error, and Result<T>
- * @version 1.0
- * @date 2026-02-12
- *
- * This file provides the foundational error handling types for the AI Pipe
- * framework. It replaces the previous mix of bool returns, exceptions, and
- * ad-hoc error structs with a single, consistent Result<T> type.
- *
- * Design principles:
- *   - Result<T> for all synchronous API returns
- *   - Observer pattern (IPipelineObserver) for async event notifications
- *   - Zero-overhead on success path (no heap allocation)
- *   - Rich error context (code + message + optional node name)
- *   - Supports move-only types (e.g., Pipeline)
- *
- * @copyright Copyright (c) 2026
- */
-
 #ifndef AI_PIPE_ERROR_HPP
 #define AI_PIPE_ERROR_HPP
 
@@ -30,9 +9,7 @@
 
 namespace ai_pipe {
 
-// =============================================================================
 // Error Code Enumeration
-// =============================================================================
 
 /**
  * @brief Categorized error codes for the AI Pipe framework
@@ -157,9 +134,7 @@ inline const char *errorCodeToString(ErrorCode code) {
   return "Unknown";
 }
 
-// =============================================================================
 // Error Type
-// =============================================================================
 
 /**
  * @brief Rich error type carrying code, message, and optional context
@@ -266,9 +241,7 @@ private:
   std::string m_nodeName;
 };
 
-// =============================================================================
 // Result<T> - Primary (non-void specialization)
-// =============================================================================
 
 /**
  * @brief A Result type that holds either a value of type T or an Error.
@@ -461,9 +434,7 @@ private:
   };
 };
 
-// =============================================================================
 // Result<void> - Specialization for operations with no return value
-// =============================================================================
 
 /**
  * @brief Specialization of Result for void operations (init, start, stop...)
@@ -526,9 +497,7 @@ private:
   Error m_error;
 };
 
-// =============================================================================
 // Convenience alias
-// =============================================================================
 
 /** @brief Result type for void-returning operations */
 using VoidResult = Result<void>;

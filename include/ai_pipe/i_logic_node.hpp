@@ -1,13 +1,3 @@
-/**
- * @file i_logic_node.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Abstract processing node interface: ports, lifecycle, and process()
- * @version 0.1
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- *
- */
 #ifndef AI_PIPE_I_LOGIC_NODE_HPP
 #define AI_PIPE_I_LOGIC_NODE_HPP
 #include <string>

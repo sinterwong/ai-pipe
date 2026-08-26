@@ -1,18 +1,3 @@
-/**
- * @file pipeline.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief High-level Pipeline API for AI Pipe library
- * @version 2.0
- * @date 2025-12-24
- *
- * v2.0: Unified error handling with Result<T>.
- *       Pipeline::run() returns Result<ExecutionOutput> instead of
- *       ExecutionResult. All fallible operations use Result<void>.
- *       PipelineBuilder::build() returns Result<Pipeline> instead of throwing.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_PIPELINE_HPP
 #define AI_PIPE_PIPELINE_HPP
 
@@ -76,9 +61,7 @@ struct PipelineOptions {
   }
 };
 
-// =============================================================================
 // Execution Output (success payload for Pipeline::run())
-// =============================================================================
 
 /**
  * @brief Output from a successful pipeline execution
@@ -93,9 +76,7 @@ struct ExecutionOutput {
   std::chrono::milliseconds elapsed{0};
 };
 
-// =============================================================================
 // Pipeline Observer (retained for async event notifications)
-// =============================================================================
 
 class IPipelineObserver {
 public:
@@ -181,9 +162,7 @@ private:
       m_drop;
 };
 
-// =============================================================================
 // Pipeline
-// =============================================================================
 
 class Pipeline {
 public:
@@ -360,9 +339,7 @@ private:
   std::unique_ptr<Impl> m_impl;
 };
 
-// =============================================================================
 // Pipeline Builder
-// =============================================================================
 
 class PipelineBuilder {
 public:
@@ -416,9 +393,7 @@ private:
   std::unique_ptr<BuilderState> m_state;
 };
 
-// =============================================================================
 // Convenience Factory Functions
-// =============================================================================
 
 inline Result<Pipeline> makeBatchPipeline(Graph graph,
                                           std::uint8_t workers = 4) {

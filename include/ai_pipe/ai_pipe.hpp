@@ -1,16 +1,3 @@
-/**
- * @file ai_pipe.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Main include file for AI Pipe library
- * @version 1.0
- * @date 2025-12-24
- *
- * This file provides a single include point for all public API components
- * of the AI Pipe library.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_AI_PIPE_HPP
 #define AI_PIPE_AI_PIPE_HPP
 

@@ -1,16 +1,3 @@
-/**
- * @file i_sync_strategy.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Synchronization strategy interface definition
- * @version 1.0
- * @date 2025-12-24
- *
- * This file defines the pure interface for synchronization strategies.
- * It contains no implementation details and no internal dependencies.
- *
- * @copyright Copyright (c) 2025
- */
-
 #ifndef AI_PIPE_I_SYNC_STRATEGY_HPP
 #define AI_PIPE_I_SYNC_STRATEGY_HPP
 
@@ -24,9 +11,7 @@ namespace ai_pipe {
 // Forward declaration; full definition in ai_pipe/compiled_graph.hpp
 class CompiledGraph;
 
-// =============================================================================
 // Sync Types
-// =============================================================================
 
 /**
  * @brief Unique identifier for a synchronization group
@@ -43,9 +28,7 @@ using BranchId = std::string;
  */
 using FrameId = std::uint64_t;
 
-// =============================================================================
 // Sync Strategy Interface
-// =============================================================================
 
 /**
  * @brief Abstract interface for synchronization strategies

@@ -1,13 +1,3 @@
-/**
- * @file edge.hpp
- * @author Sinter Wong (sintercver@gmail.com)
- * @brief Directed edge connecting a source node port to a destination node port
- * @version 0.1
- * @date 2025-04-20
- *
- * @copyright Copyright (c) 2025
- *
- */
 #ifndef AI_PIPE_EDGE_HPP
 #define AI_PIPE_EDGE_HPP
 
