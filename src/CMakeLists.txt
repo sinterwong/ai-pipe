@@ -80,7 +80,7 @@ write_basic_package_version_file(
 )
 
 configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
+    "${PROJECT_SOURCE_DIR}/cmake/ai_pipe-config.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
     INSTALL_DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
 )

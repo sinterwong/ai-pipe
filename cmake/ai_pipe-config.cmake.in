@@ -1,0 +1,13 @@
+# Config file for the ai_pipe package.
+#
+# Defines the imported target ai_pipe::ai_pipe. This template must be expanded
+# with configure_package_config_file() so @PACKAGE_INIT@ provides the standard
+# relocatable-package helpers.
+
+@PACKAGE_INIT@
+
+if(NOT TARGET ai_pipe::ai_pipe)
+    include("${CMAKE_CURRENT_LIST_DIR}/ai_pipe-targets.cmake")
+endif()
+
+check_required_components(ai_pipe)
