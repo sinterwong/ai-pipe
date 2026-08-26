@@ -13,10 +13,17 @@
 
 namespace ai_pipe {
 
+/**
+ * Process-wide mapping from node type names to factories.
+ *
+ * Registration, lookup, creation, and removal are thread-safe. Load or unload
+ * plugins during application startup whenever possible so graph construction
+ * cannot race with a disappearing type.
+ */
 class NodeRegistry {
 public:
   /**
-   * @brief Factory signature: instance name + type-erased config bag
+   * Factory signature receiving an instance name and type-erased config bag.
    *
    * Factories return Result so configuration errors surface as values
    * (e.g. a required config param missing) instead of exceptions.
@@ -25,17 +32,9 @@ public:
       const std::string &node_name, const PortData &config)>;
 
   /**
-   * @brief The process-wide registry
-   *
-   * Defined in the library (node_registry.cpp), not inline: an inline
-   * definition is instantiated as a weak symbol in every module that
-   * includes this header, so a plugin built with hidden visibility (or
-   * statically linked against the ai_pipe archive) would silently get
-   * its own registry - node types it registers would never be visible
-   * to the host. Keeping the one definition inside libai_pipe makes
-   * every correctly linked module bind to the same instance; a plugin
-   * that still bundles its own copy of the library is a link error to
-   * fix, not a silent split registry.
+   * Returns the registry shared by the host and dynamically loaded plugins.
+   * Plugins must link the same shared `ai_pipe` library as the host; embedding
+   * a static copy creates a separate registry.
    */
   static NodeRegistry &instance();
 
@@ -43,7 +42,7 @@ public:
   NodeRegistry &operator=(const NodeRegistry &) = delete;
 
   /**
-   * @brief Register a factory under a type name
+   * Registers a factory under a unique, non-empty type name.
    * @return InvalidArgument if the name is empty, the factory is null,
    *         or the type name is already taken (first registration wins)
    */
@@ -61,7 +60,7 @@ public:
   }
 
   /**
-   * @brief Instantiate a node by registered type name
+   * Instantiates a node by registered type name.
    * @param type_name Registered type (e.g. class name)
    * @param node_name Instance name used in the graph
    * @param config Optional type-erased configuration bag
@@ -97,14 +96,14 @@ public:
     return types;
   }
 
-  /** @brief Remove a registration (primarily for tests/plugins) */
+  /** Removes a registration; existing node instances remain alive. */
   void unregisterType(const std::string &type_name) {
     std::unique_lock lock(m_mutex);
     m_factories.erase(type_name);
   }
 
   /**
-   * @brief Atomically replace a registered factory with a decorated one
+   * Atomically replaces a registered factory with a decorated factory.
    *
    * Support for PluginLoader instance tracking: after a plugin's static
    * initializers register their factories, the loader wraps each one so
@@ -141,7 +140,7 @@ private:
 };
 
 namespace detail {
-/** @brief Static-init helper backing the registration macros */
+/** @brief Static-init helper backing the registration macros. */
 struct NodeRegistrar {
   NodeRegistrar(const char *type_name, NodeRegistry::Factory factory) {
     // First registration wins; duplicates are reported by the Result
@@ -155,7 +154,7 @@ struct NodeRegistrar {
 } // namespace ai_pipe
 
 /**
- * @brief Register a node type constructible as NodeClass(name)
+ * @brief Register a node type constructible as NodeClass(name).
  *
  * Place at namespace scope in the node's translation unit:
  * @code
@@ -173,7 +172,7 @@ struct NodeRegistrar {
           })
 
 /**
- * @brief Register a node type constructible as NodeClass(name, config)
+ * @brief Register a node type constructible as NodeClass(name, config).
  */
 #define AI_PIPE_REGISTER_NODE_WITH_CONFIG(NodeClass)                           \
   static const ::ai_pipe::detail::NodeRegistrar                                \

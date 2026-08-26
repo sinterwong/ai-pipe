@@ -14,11 +14,7 @@
 namespace ai_pipe {
 
 /**
- * @brief Execution mode for the pipeline
- *
- * Two modes only (R3.3): the former HYBRID mode was removed - its
- * strategy advertised per-node scheduling configuration but implemented
- * none, and its actual behavior was STREAM without partial inputs.
+ * Selects bounded batch execution or continuous streaming execution.
  */
 enum class ExecutionMode {
   BATCH,  ///< Traditional batch processing
@@ -26,7 +22,7 @@ enum class ExecutionMode {
 };
 
 /**
- * @brief Convert execution mode to string
+ * @brief Convert execution mode to string.
  */
 inline std::string executionModeToString(ExecutionMode mode) {
   switch (mode) {
@@ -39,7 +35,7 @@ inline std::string executionModeToString(ExecutionMode mode) {
 }
 
 /**
- * @brief Frame alignment policy for multi-input (join) nodes
+ * @brief Frame alignment policy for multi-input (join) nodes.
  *
  * Selects the key used by the engine's aligned-gather path when a node
  * has more than one input port:
@@ -66,7 +62,7 @@ enum class AlignmentPolicy : std::uint8_t {
 };
 
 /**
- * @brief Convert alignment policy to string
+ * @brief Convert alignment policy to string.
  */
 inline std::string alignmentPolicyToString(AlignmentPolicy policy) {
   switch (policy) {
@@ -81,7 +77,7 @@ inline std::string alignmentPolicyToString(AlignmentPolicy policy) {
 }
 
 /**
- * @brief Degradation applied when a join waits too long for a branch
+ * @brief Degradation applied when a join waits too long for a branch.
  *
  * With EngineConfig::join_wait_timeout > 0 (streaming mode only), a
  * multi-input node whose inputs stay partially ready for longer than
@@ -100,7 +96,7 @@ enum class JoinTimeoutPolicy : std::uint8_t {
 };
 
 /**
- * @brief Convert join timeout policy to string
+ * @brief Convert join timeout policy to string.
  */
 inline std::string joinTimeoutPolicyToString(JoinTimeoutPolicy policy) {
   switch (policy) {
@@ -113,7 +109,7 @@ inline std::string joinTimeoutPolicyToString(JoinTimeoutPolicy policy) {
 }
 
 /**
- * @brief Configuration for node input queues
+ * @brief Configuration for node input queues.
  */
 struct QueueConfig {
   std::size_t capacity = 0;               ///< 0 = unbounded
@@ -128,10 +124,10 @@ struct QueueConfig {
   bool track_statistics = true;
 };
 
-// Push Status (replaces QueuePushResult)
+// Queue push status
 
 /**
- * @brief Outcome of a successful queue push operation
+ * @brief Outcome of a successful queue push operation.
  *
  * This type represents the two non-error outcomes of pushing data:
  *   - Enqueued: data was added to the queue normally
@@ -162,7 +158,7 @@ struct PushStatus {
 };
 
 /**
- * @brief Configuration for the execution engine
+ * @brief Configuration for the execution engine.
  */
 struct EngineConfig {
   ExecutionMode mode = ExecutionMode::BATCH;
@@ -236,7 +232,7 @@ struct EngineConfig {
 // Latency Histogram
 
 /**
- * @brief Histogram bucket boundaries in microseconds
+ * @brief Histogram bucket boundaries in microseconds.
  *
  * 16 buckets: <10us, <25us, <50us, <100us, <250us, <500us, <1ms, <2.5ms,
  *            <5ms, <10ms, <25ms, <50ms, <100ms, <250ms, <500ms, >=500ms
@@ -412,11 +408,9 @@ struct AtomicNodeStatistics {
 // Engine Statistics
 
 struct EngineStatistics {
-  // Execution counts. Unit: one NODE execution attempt (unified across
-  // batch/stream since P5.3; previously batch counted pipeline
-  // runs while stream counted node schedules, which broke successRate).
-  // total_executions ~= successful_executions + failed_executions,
-  // modulo attempts still in flight at snapshot time.
+  // Each count measures node execution attempts in both batch and stream mode.
+  // `total_executions` can temporarily exceed the success/failure sum while an
+  // attempt is in flight.
   std::atomic<std::uint64_t> total_executions{0};
   std::atomic<std::uint64_t> successful_executions{0};
   std::atomic<std::uint64_t> failed_executions{0};

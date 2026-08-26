@@ -21,6 +21,7 @@ namespace ai_pipe {
 class PipelineBuilder;
 class ITraceSink;
 
+/** High-level execution and streaming configuration. */
 struct PipelineOptions {
   ExecutionMode mode = ExecutionMode::BATCH;
   std::uint8_t num_workers = 4;
@@ -31,14 +32,14 @@ struct PipelineOptions {
   bool enable_sync_coordination = false;
   bool enable_statistics = true;
 
-  /// Multi-input alignment key; see AlignmentPolicy (execution_types.hpp)
+  /// Multi-input alignment key; see `AlignmentPolicy`.
   AlignmentPolicy alignment_policy = AlignmentPolicy::FrameId;
-  /// Pairing tolerance for AlignmentPolicy::Timestamp
+  /// Pairing tolerance used by `AlignmentPolicy::Timestamp`.
   std::chrono::microseconds alignment_tolerance{33000};
 
-  /// Join wait cap before degradation; 0 = wait indefinitely (default)
+  /// Join wait cap before degradation; zero waits indefinitely.
   std::chrono::milliseconds join_wait_timeout{0};
-  /// Degradation on join timeout; see JoinTimeoutPolicy
+  /// Degradation applied on join timeout; see `JoinTimeoutPolicy`.
   JoinTimeoutPolicy join_timeout_policy = JoinTimeoutPolicy::PartialInputs;
 
   static PipelineOptions batch(std::uint8_t workers = 4) {
@@ -61,23 +62,28 @@ struct PipelineOptions {
   }
 };
 
-// Execution Output (success payload for Pipeline::run())
+// Execution output
 
 /**
- * @brief Output from a successful pipeline execution
+ * Successful result of `Pipeline::run()`.
  *
- * This replaces the old ExecutionResult which mixed success data with error
- * info. In the new model, Pipeline::run() returns Result<ExecutionOutput>:
- *   - On success: contains ExecutionOutput with outputs and timing
- *   - On failure: contains Error with code, message, and node context
+ * `outputs` owns shared references to immutable packets emitted by sink nodes.
+ * The packets remain valid independently of the pipeline lifetime.
  */
 struct ExecutionOutput {
   PortDataMap outputs;
   std::chrono::milliseconds elapsed{0};
 };
 
-// Pipeline Observer (retained for async event notifications)
+// Pipeline observer
 
+/**
+ * Receives pipeline lifecycle events.
+ *
+ * Callbacks can run on engine worker threads and may overlap with caller-side
+ * pipeline operations. Implementations must be thread-safe and must copy any
+ * referenced data they retain beyond a callback.
+ */
 class IPipelineObserver {
 public:
   virtual ~IPipelineObserver() = default;
@@ -86,11 +92,11 @@ public:
   virtual void onExecutionCompleted(const PortDataMap &) {}
 
   /**
-   * @brief Called when a node execution fails asynchronously
-   * @param error The Error object with full context
+   * Reports an asynchronous node failure with node context when available.
    */
   virtual void onExecutionFailed(const Error &error) {
-    // Default: delegate to legacy signature for backward compatibility
+    // Preserve source compatibility for observers that override the protected
+    // two-string hook.
     onExecutionFailedLegacy(error.message(), error.nodeName());
   }
 
@@ -98,7 +104,7 @@ public:
                               const std::string &) {}
 
   /**
-   * @brief End of stream has reached every sink (R6.1)
+   * Reports that end of stream has reached every sink.
    *
    * Fired once per run, after the last sink's flush hook. The pipeline
    * is still running at this point - see Pipeline::signalEndOfStream().
@@ -107,13 +113,14 @@ public:
 
 protected:
   /**
-   * @brief Legacy signature for backward compatibility.
-   *        Override onExecutionFailed(const Error&) instead.
+   * Compatibility hook for existing observers. New observers should override
+   * `onExecutionFailed(const Error&)`.
    */
   virtual void onExecutionFailedLegacy(const std::string &,
                                        const std::string &) {}
 };
 
+/** Observer adapter configured with fluent `std::function` callbacks. */
 class CallbackObserver : public IPipelineObserver {
 public:
   CallbackObserver &onStart(std::function<void()> cb) {
@@ -162,8 +169,16 @@ private:
       m_drop;
 };
 
-// Pipeline
+// Pipeline facade
 
+/**
+ * Move-only facade for batch and streaming execution.
+ *
+ * A pipeline owns its graph, context, strategies, and execution engine. Unless
+ * a method explicitly accepts concurrent ingress, control operations should be
+ * serialized by the caller. `pushInput()` and observation methods are safe
+ * while streaming.
+ */
 class Pipeline {
 public:
   Pipeline();
@@ -177,17 +192,15 @@ public:
 
   static PipelineBuilder create();
 
-  // ---- Batch execution ----
+  // Batch execution
 
   /**
-   * @brief Run the pipeline synchronously
-   * @return Result<ExecutionOutput> - outputs+timing on success, Error on
-   * failure
+   * Runs the pipeline synchronously and returns owned sink outputs and timing.
    */
   Result<ExecutionOutput> run(const PortDataMap &inputs);
 
   /**
-   * @brief Run the pipeline synchronously with a bounded wait (R1.3)
+   * Runs the pipeline synchronously with a bounded wait.
    *
    * The timeout is real, not an after-the-fact check: when it expires
    * the call returns ExecutionTimeout immediately, even if a node is
@@ -205,30 +218,27 @@ public:
                               std::chrono::milliseconds timeout);
 
   /**
-   * @brief Run the pipeline asynchronously
-   * @return future that resolves to Result<ExecutionOutput>
+   * Starts asynchronous batch execution.
+   * @return Future resolving to owned outputs or an execution error.
    */
   std::future<Result<ExecutionOutput>> runAsync(const PortDataMap &inputs);
 
   /**
-   * @brief Submit inputs for fire-and-forget execution
-   * @return Result<void>
+   * Submits inputs without returning a completion handle.
    */
   Result<void> submit(const PortDataMap &inputs);
 
-  // ---- Streaming interface ----
+  // Streaming interface
 
   /**
-   * @brief Start streaming mode
-   * @return Result<void> - success or Error with appropriate code
+   * Starts streaming mode using the pipeline-owned context.
    */
   Result<void> start();
   Result<void> start(std::shared_ptr<PipelineContext> context);
   void stop(bool wait_for_drain = true);
 
   /**
-   * @brief Push input data for streaming processing
-   * @return Result<PushStatus> - push status on success, Error on rejection
+   * Pushes immutable input data for streaming processing.
    */
   [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
                                              PortDataPtr data);
@@ -237,7 +247,7 @@ public:
                                              PortDataPtr data);
 
   /**
-   * @brief Declare that no more data will arrive on an input port (R6.1)
+   * Declares that no more data will arrive on an input port.
    *
    * The graceful counterpart to stop(): stop() tears the pipeline down,
    * whereas this says "this input is finished" and lets the remaining
@@ -270,7 +280,7 @@ public:
                                  const std::string &port_name);
 
   /**
-   * @brief Block until EOS has reached every sink
+   * @brief Block until EOS has reached every sink.
    *
    * Returns Ok once the pipeline has produced everything it ever will.
    * Does not stop the pipeline - that stays the caller's decision.
@@ -293,12 +303,12 @@ public:
       std::size_t max_depth = 0,
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 
-  // ---- Control ----
+  // Control
   void cancel();
   void wait();
   void reset();
 
-  // ---- Status ----
+  // Status
   [[nodiscard]] bool isReady() const;
   [[nodiscard]] bool isRunning() const;
   [[nodiscard]] bool hasError() const;
@@ -310,19 +320,19 @@ public:
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
 
   /**
-   * @brief Install a trace sink on the underlying engine (F7)
+   * Installs a trace sink on the underlying engine.
    *
    * See ai_pipe/trace.hpp. Only allowed while the engine is idle.
    */
   Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
-  // ---- Accessors ----
+  // Accessors
   [[nodiscard]] const Graph &graph() const;
   [[nodiscard]] PipelineContext &context();
   [[nodiscard]] const PipelineContext &context() const;
   [[nodiscard]] std::string info() const;
 
-  // ---- Observer management ----
+  // Observer management
   void addObserver(std::shared_ptr<IPipelineObserver> observer);
   void removeObserver(const std::shared_ptr<IPipelineObserver> &observer);
 
@@ -339,8 +349,9 @@ private:
   std::unique_ptr<Impl> m_impl;
 };
 
-// Pipeline Builder
+// Pipeline builder
 
+/** Collects pipeline configuration and validates it in `build()`. */
 class PipelineBuilder {
 public:
   PipelineBuilder();
@@ -370,7 +381,7 @@ public:
   withSchedulerStrategy(std::unique_ptr<ISchedulerStrategy> strategy);
   PipelineBuilder &withSyncStrategy(std::unique_ptr<ISyncStrategy> strategy);
 
-  // Callbacks (now using Error-aware signatures)
+  // Callbacks
   PipelineBuilder &onResult(std::function<void(const PortDataMap &)> callback);
   PipelineBuilder &onError(std::function<void(const Error &)> callback);
   PipelineBuilder &onDrop(std::function<void(const std::string &, std::uint64_t,
@@ -378,13 +389,11 @@ public:
                               callback);
   PipelineBuilder &withObserver(std::shared_ptr<IPipelineObserver> observer);
 
-  // Build
-
   /**
-   * @brief Build the pipeline
-   * @return Result<Pipeline> - configured Pipeline on success, Error on failure
+   * Validates the graph and configuration, then builds a pipeline.
    *
-   * Unlike the old build() which threw exceptions, this never throws.
+   * Configuration failures are returned as `Error` values; this function does
+   * not throw for expected validation errors.
    */
   Result<Pipeline> build();
 

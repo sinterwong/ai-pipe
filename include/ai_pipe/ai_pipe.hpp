@@ -1,42 +1,21 @@
 #ifndef AI_PIPE_AI_PIPE_HPP
 #define AI_PIPE_AI_PIPE_HPP
 
-// Core Types
+#include "ai_pipe/context.hpp"
 #include "ai_pipe/data_types.hpp"
-#include "ai_pipe/enum.hpp"
-
-// Graph and Node Interfaces
 #include "ai_pipe/edge.hpp"
+#include "ai_pipe/enum.hpp"
+#include "ai_pipe/execution_engine.hpp"
+#include "ai_pipe/execution_types.hpp"
+#include "ai_pipe/frame_metadata.hpp"
 #include "ai_pipe/graph.hpp"
 #include "ai_pipe/i_logic_node.hpp"
-#include "ai_pipe/node_registry.hpp"
-
-// Pipeline Context
-#include "ai_pipe/context.hpp"
-
-// Execution Types and Configuration
-#include "ai_pipe/execution_types.hpp"
-
-// Strategy Interfaces (for custom implementations)
 #include "ai_pipe/i_scheduler_strategy.hpp"
 #include "ai_pipe/i_sync_strategy.hpp"
-
-// Built-in Strategy Configuration and Factories
-#include "ai_pipe/strategies.hpp"
-
-// Execution Engine
-#include "ai_pipe/execution_engine.hpp"
-
-// High-Level Pipeline API
+#include "ai_pipe/node_registry.hpp"
 #include "ai_pipe/pipeline.hpp"
-
-// Frame Metadata (for streaming scenarios)
-#include "ai_pipe/frame_metadata.hpp"
-
-// Execution Tracing (per-frame span events)
-#include "ai_pipe/trace.hpp"
-
-// Dynamic Node Plugins (dlopen loading)
 #include "ai_pipe/plugin.hpp"
+#include "ai_pipe/strategies.hpp"
+#include "ai_pipe/trace.hpp"
 
 #endif // AI_PIPE_AI_PIPE_HPP

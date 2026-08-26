@@ -13,7 +13,7 @@ namespace ai_pipe {
 // Frame Identifier Types
 
 /**
- * @brief Unique frame identifier for synchronization
+ * @brief Unique frame identifier for synchronization.
  *
  * Frame IDs should be monotonically increasing within a stream.
  * Special values:
@@ -23,12 +23,12 @@ namespace ai_pipe {
 using FrameId = std::uint64_t;
 
 /**
- * @brief Stream identifier for multi-source scenarios
+ * @brief Stream identifier for multi-source scenarios.
  */
 using StreamId = std::uint32_t;
 
 /**
- * @brief High-resolution timestamp type
+ * @brief High-resolution timestamp type.
  */
 using Timestamp = std::chrono::steady_clock::time_point;
 
@@ -42,20 +42,17 @@ constexpr FrameId k_invalid_frame_id = 0;
 /**
  * End-of-stream frame ID marker.
  *
- * Scope note (settled by R6.1): this id is NOT how the engine signals
- * end of stream. The engine-level protocol is a per-input-port EOS
- * latch (Pipeline::signalEndOfStream / ILogicNode::onEndOfStream), not
- * a packet id - an in-band marker packet would be silently eaten by the
- * queue drop policies it has to survive. See docs/design/eos_flush.md
- * §4 for why that alternative was rejected.
+ * This value does not drive the engine's end-of-stream protocol. Engine-level
+ * signaling uses a per-input-port latch through
+ * `Pipeline::signalEndOfStream()` and `ILogicNode::onEndOfStream()`, because a
+ * packet marker could be evicted by a queue drop policy.
  *
  * The constant therefore retains exactly two uses:
  *
- * 1. The sentinel maximum in the sync coordinator's watermark
- *    computation (engine-internal).
+ * 1. The sentinel maximum in the synchronization coordinator's watermark.
  * 2. A payload-level "last frame" tag that nodes may set and read
- *    themselves, via IFrameMetadata::isEndOfStream() /
- *    createEndOfStream(). The engine does not interpret it: stamping a
+ *    themselves, via `IFrameMetadata::isEndOfStream()` and
+ *    `createEndOfStream()`. The engine does not interpret it: stamping a
  *    packet with this id does not trigger flush or EOS propagation.
  */
 constexpr FrameId k_end_of_stream_frame_id =
@@ -72,7 +69,7 @@ constexpr FrameId k_max_frame_drift = 100;
 // Frame Metadata Interface
 
 /**
- * @brief Abstract interface for frame metadata
+ * @brief Abstract interface for frame metadata.
  *
  * Provides the essential information needed for:
  * - Frame identification and ordering
@@ -89,19 +86,19 @@ public:
   // Core Identification
 
   /**
-   * @brief Get the unique frame identifier
+   * @brief Get the unique frame identifier.
    * @return Frame ID (monotonically increasing within stream)
    */
   [[nodiscard]] virtual FrameId frameId() const = 0;
 
   /**
-   * @brief Get the source stream identifier
+   * @brief Get the source stream identifier.
    * @return Stream ID for multi-source scenarios
    */
   [[nodiscard]] virtual StreamId streamId() const = 0;
 
   /**
-   * @brief Get the frame timestamp
+   * @brief Get the frame timestamp.
    * @return Timestamp when the frame was captured/created
    */
   [[nodiscard]] virtual Timestamp timestamp() const = 0;
@@ -109,7 +106,7 @@ public:
   // Synchronization Support
 
   /**
-   * @brief Check if this frame should synchronize with another
+   * @brief Check if this frame should synchronize with another.
    * @param other The other frame metadata to compare
    * @return true if frames should be processed together
    */
@@ -117,7 +114,7 @@ public:
   shouldSyncWith(const IFrameMetadata &other) const = 0;
 
   /**
-   * @brief Compare frame ordering
+   * @brief Compare frame ordering.
    * @param other The other frame metadata
    * @return <0 if this is earlier, 0 if same, >0 if this is later
    */
@@ -126,14 +123,14 @@ public:
   // Validity Checks
 
   /**
-   * @brief Check if frame ID is valid
+   * @brief Check if frame ID is valid.
    */
   [[nodiscard]] virtual bool isValid() const {
     return frameId() != frame_constants::k_invalid_frame_id;
   }
 
   /**
-   * @brief Check if this is a payload-level end-of-stream tag
+   * @brief Check if this is a payload-level end-of-stream tag.
    *
    * This is a node-to-node convention, not the engine's EOS protocol:
    * the engine never inspects it. For real end-of-stream handling use
@@ -147,14 +144,14 @@ public:
   // Cloning
 
   /**
-   * @brief Create a deep copy of this metadata
+   * @brief Create a deep copy of this metadata.
    */
   [[nodiscard]] virtual std::unique_ptr<IFrameMetadata> clone() const = 0;
 
   // Debug Support
 
   /**
-   * @brief Get string representation for logging
+   * @brief Get string representation for logging.
    */
   [[nodiscard]] virtual std::string toString() const = 0;
 };
@@ -162,7 +159,7 @@ public:
 // Basic Frame Metadata Implementation
 
 /**
- * @brief Basic frame metadata implementation
+ * @brief Basic frame metadata implementation.
  *
  * Suitable for most use cases where synchronization is based on
  * frame ID matching within configurable tolerance.
@@ -170,7 +167,7 @@ public:
 class BasicFrameMetadata final : public IFrameMetadata {
 public:
   /**
-   * @brief Default constructor (invalid metadata)
+   * @brief Default constructor (invalid metadata).
    */
   BasicFrameMetadata()
       : m_frameId(frame_constants::k_invalid_frame_id),
@@ -178,7 +175,7 @@ public:
         m_timestamp(std::chrono::steady_clock::now()) {}
 
   /**
-   * @brief Construct with frame ID
+   * @brief Construct with frame ID.
    */
   explicit BasicFrameMetadata(
       FrameId frame_id,
@@ -187,7 +184,7 @@ public:
         m_timestamp(std::chrono::steady_clock::now()) {}
 
   /**
-   * @brief Construct with all parameters
+   * @brief Construct with all parameters.
    */
   BasicFrameMetadata(FrameId frame_id, StreamId stream_id, Timestamp timestamp)
       : m_frameId(frame_id), m_streamId(stream_id), m_timestamp(timestamp) {}
@@ -251,7 +248,7 @@ private:
 // Timestamp-Based Frame Metadata
 
 /**
- * @brief Timestamp-based frame metadata for time-synchronized streams
+ * @brief Timestamp-based frame metadata for time-synchronized streams.
  *
  * Useful when multiple streams don't share frame IDs but need to be
  * synchronized based on capture time (e.g., multi-camera systems).
@@ -259,7 +256,7 @@ private:
 class TimestampFrameMetadata final : public IFrameMetadata {
 public:
   /**
-   * @brief Synchronization tolerance for timestamp matching
+   * @brief Synchronization tolerance for timestamp matching.
    */
   static constexpr auto k_default_sync_tolerance =
       std::chrono::milliseconds{33};
@@ -323,12 +320,12 @@ private:
 // Frame Metadata Factory
 
 /**
- * @brief Factory for creating frame metadata instances
+ * @brief Factory for creating frame metadata instances.
  */
 class FrameMetadataFactory {
 public:
   /**
-   * @brief Create basic frame metadata with auto-incrementing frame ID
+   * @brief Create basic frame metadata with auto-incrementing frame ID.
    */
   static BasicFrameMetadata
   createBasic(StreamId stream_id = frame_constants::k_default_stream_id) {
@@ -338,7 +335,7 @@ public:
   }
 
   /**
-   * @brief Create a payload-level end-of-stream tag
+   * @brief Create a payload-level end-of-stream tag.
    *
    * A node-to-node convention the engine does not interpret; the
    * engine's own protocol is Pipeline::signalEndOfStream(). See the

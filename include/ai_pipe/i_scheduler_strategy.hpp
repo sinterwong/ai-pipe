@@ -19,14 +19,14 @@ class CompiledGraph;
 // Scheduling Types
 
 /**
- * @brief Result of a scheduling decision
+ * @brief Result of a scheduling decision.
  */
 enum class ScheduleDecision {
   ScheduleNow,   ///< Node should be scheduled immediately
   WaitForInputs, ///< Wait for more inputs before scheduling
   SkipExecution, ///< Skip this execution cycle
   /**
-   * Defer scheduling by ScheduleResult::retry_delay (R3.2): the engine
+   * Defer scheduling by `ScheduleResult::retry_delay`: the engine
    * arms its defer timer and re-runs the scheduling decision when the
    * delay expires, so a deferred node is re-evaluated even if no
    * further data event arrives.
@@ -35,7 +35,7 @@ enum class ScheduleDecision {
 };
 
 /**
- * @brief Context information for making scheduling decisions
+ * @brief Context information for making scheduling decisions.
  */
 struct SchedulingContext {
   std::shared_ptr<ILogicNode> node;
@@ -73,7 +73,7 @@ struct SchedulingContext {
 };
 
 /**
- * @brief Scheduling result with additional metadata
+ * @brief Scheduling result with additional metadata.
  */
 struct ScheduleResult {
   ScheduleDecision decision{ScheduleDecision::WaitForInputs};
@@ -100,7 +100,7 @@ struct ScheduleResult {
 };
 
 /**
- * @brief Defines what "completion" means for an execution
+ * @brief Defines what "completion" means for an execution.
  */
 enum class CompletionSemantics {
   SinglePass,     ///< Complete when all sinks execute once
@@ -110,7 +110,7 @@ enum class CompletionSemantics {
 };
 
 /**
- * @brief Completion check result
+ * @brief Completion check result.
  */
 struct CompletionStatus {
   bool is_complete{false};
@@ -119,7 +119,7 @@ struct CompletionStatus {
 };
 
 /**
- * @brief One sink node's execution count for completion checks (R4.5)
+ * One sink node's execution count for completion checks.
  *
  * The name view aliases engine-owned storage and is only valid for the
  * duration of the checkCompletion() call - copy it if a strategy needs
@@ -133,7 +133,7 @@ struct SinkExecutionCount {
 // Scheduler Strategy Interface
 
 /**
- * @brief Abstract interface for scheduling strategies
+ * @brief Abstract interface for scheduling strategies.
  *
  * Strategies determine:
  * - When a node should be scheduled
@@ -148,7 +148,7 @@ public:
   virtual ~ISchedulerStrategy() = default;
 
   /**
-   * @brief Decide whether a node should be scheduled
+   * @brief Decide whether a node should be scheduled.
    * @param context Scheduling context with node state
    * @return Schedule result with decision and reason
    */
@@ -156,7 +156,7 @@ public:
   shouldSchedule(const SchedulingContext &context) const = 0;
 
   /**
-   * @brief Handle node completion
+   * @brief Handle node completion.
    * @param node The completed node
    * @param success Whether execution succeeded
    * @param outputs The outputs produced
@@ -167,13 +167,11 @@ public:
                  const PortDataMap &outputs) = 0;
 
   /**
-   * @brief Check if execution is complete
+   * @brief Check if execution is complete.
    * @param active_node_count Number of currently active nodes
    * @param pending_node_count Number of pending nodes
-   * @param sink_execution_counts Execution counts for sink nodes (R4.5:
-   *        a reused snapshot vector - the engine calls this on every
-   *        task completion in batch mode, so the parameter type avoids
-   *        per-call map/string allocations)
+   * @param sink_execution_counts Reused snapshot of sink execution counts. The
+   *        `name` views remain valid only for this call.
    * @return Completion status
    */
   [[nodiscard]] virtual CompletionStatus checkCompletion(
@@ -181,37 +179,34 @@ public:
       const std::vector<SinkExecutionCount> &sink_execution_counts) const = 0;
 
   /**
-   * @brief Get completion semantics for this strategy
+   * @brief Get completion semantics for this strategy.
    */
   [[nodiscard]] virtual CompletionSemantics completionSemantics() const = 0;
 
   /**
-   * @brief Check if this strategy supports streaming
+   * @brief Check if this strategy supports streaming.
    */
   [[nodiscard]] virtual bool supportsStreaming() const = 0;
 
   /**
-   * @brief Get strategy name for logging
+   * @brief Get strategy name for logging.
    */
   [[nodiscard]] virtual std::string name() const = 0;
 
   /**
-   * @brief Initialize from the compiled topology snapshot (optional)
-   *
-   * R4.2: strategies initialize from the engine-owned CompiledGraph
-   * (an immutable indexed snapshot holding node ownership) instead of
-   * a raw Graph pointer, so no strategy depends on the caller keeping
-   * the mutable Graph alive after engine initialization.
+   * Initializes optional state from the engine-owned immutable topology
+   * snapshot. The strategy must not retain references to the caller's mutable
+   * `Graph`.
    */
   virtual void initialize(const CompiledGraph &graph) { (void)graph; }
 
   /**
-   * @brief Reset strategy state
+   * @brief Reset strategy state.
    */
   virtual void reset() {}
 
   /**
-   * @brief Clone this strategy
+   * @brief Clone this strategy.
    */
   [[nodiscard]] virtual std::unique_ptr<ISchedulerStrategy> clone() const = 0;
 };

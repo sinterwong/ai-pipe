@@ -20,16 +20,11 @@ namespace ai_pipe {
 class ITraceSink;
 
 /**
- * @brief Execution engine with strategy-based architecture
+ * Executes a graph using pluggable scheduling and synchronization strategies.
  *
- * This is the single execution engine class that supports all execution modes
- * through pluggable strategies:
- * - ISchedulerStrategy: Controls node scheduling behavior
- * - ISyncStrategy: Controls frame synchronization across branches
- *
- * All fallible operations return Result<T> for unified error handling:
- * - Result<void> for operations with no return value
- * - Result<PushStatus> for queue push operations
+ * Public observation and data-ingress methods are thread-safe. Strategies,
+ * tracing, and queue configuration may change only while the engine is idle.
+ * Destruction joins owned worker threads and tears down initialized nodes.
  */
 class ExecutionEngine {
 public:
@@ -53,33 +48,41 @@ public:
   ExecutionEngine(ExecutionEngine &&) noexcept;
   ExecutionEngine &operator=(ExecutionEngine &&) noexcept;
 
-  // Strategy Injection
+  // Strategy injection
 
+  /** Replaces the scheduler while idle; rejects a null strategy. */
   Result<void> setSchedulerStrategy(SchedulerStrategyPtr strategy);
+  /** Replaces the synchronization strategy while idle. */
   Result<void> setSyncStrategy(SyncStrategyPtr strategy);
+  /** Installs the built-in strategies and defaults for `mode` while idle. */
   void configureForMode(ExecutionMode mode);
 
   /**
-   * @brief Install a trace sink receiving per-frame span events (F7)
+   * Installs a trace sink receiving per-frame span events.
    *
    * See ai_pipe/trace.hpp. Pass nullptr to disable tracing. Like the
    * strategies, the sink can only change while the engine is idle.
-   * @return Result<void> - success or InvalidState while running
+   * Returns `InvalidState` while the engine is running.
    */
   Result<void> setTraceSink(std::shared_ptr<ITraceSink> sink);
 
-  // Core Interface
+  // Core execution
 
   /**
-   * @brief Initialize the engine with a graph and worker count
-   * @return Result<void> - success or Error with:
+   * Initializes the engine from a graph and worker count.
+   *
+   * The engine compiles an owning topology snapshot, so the caller may destroy
+   * the graph after this function returns. A zero worker count selects the
+   * configured/default count.
+   *
+   * @return Success or an error with:
    *   - InvalidArgument: null graph pointer
    *   - AlreadyRunning: engine is currently running
    */
   Result<void> initialize(Graph *graph, std::uint8_t num_workers = 0);
 
   /**
-   * @brief Execute the pipeline with initial inputs
+   * @brief Execute the pipeline with initial inputs.
    *
    * When `timeout` is set (and wait_for_completion is true), the wait is
    * bounded: on expiry the engine requests cooperative cancellation on
@@ -90,7 +93,7 @@ public:
    * reset() before the next execution. `timeout` is ignored in
    * streaming mode and when wait_for_completion is false.
    *
-   * @return Result<void> - success or Error with:
+   * @return Success or an error with:
    *   - AlreadyRunning: engine already executing
    *   - NotInitialized: engine not initialized
    *   - ExecutionFailed: input distribution or execution failed
@@ -102,15 +105,18 @@ public:
           std::shared_ptr<PipelineContext> context = nullptr,
           std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
+  /** Requests batch execution to stop without waiting for worker completion. */
   void stopExecutionAsync();
+  /** Requests batch execution to stop and waits for worker completion. */
   void stopExecutionSync();
+  /** Clears queued work and execution state after work has stopped. */
   void reset();
 
   [[nodiscard]] EngineState getState() const;
   [[nodiscard]] std::unordered_map<std::string, NodeExecutionState>
   getNodeStates() const;
 
-  // Callback Registration (for async event notifications)
+  // Callback registration
 
   void
   setPipelineResultCallback(std::function<void(const PortDataMap &)> callback);
@@ -124,27 +130,28 @@ public:
           callback);
 
   /**
-   * @brief Called once end of stream has reached every sink (R6.1)
+   * Registers a callback invoked once end of stream reaches every sink.
    * @see signalEndOfStream
    */
   void setEndOfStreamCallback(std::function<void()> callback);
 
-  // Streaming Interface
+  // Streaming interface
 
   /**
-   * @brief Start streaming mode
-   * @return Result<void> - success or Error with:
+   * Starts streaming mode.
+   * @return Success or an error with:
    *   - InvalidState: engine not idle
    *   - StreamingNotSupported: scheduler doesn't support streaming
    */
   Result<void>
   startStreaming(std::shared_ptr<PipelineContext> context = nullptr);
+  /** Stops streaming, optionally waiting for queued packets to drain first. */
   void stopStreaming(bool wait_for_drain = true);
   [[nodiscard]] bool isStreaming() const;
 
   /**
-   * @brief Push input data into a source node's queue
-   * @return Result<PushStatus> - PushStatus on success, or Error with:
+   * Pushes immutable input data into a source node's queue.
+   * @return Push status or an error with:
    *   - NotStreaming: not in streaming/running mode
    *   - NodeNotFound: unknown node name
    *   - PortNotFound: no valid port on node
@@ -157,10 +164,10 @@ public:
   [[nodiscard]] Result<PushStatus> pushInput(const std::string &source_node,
                                              PortDataPtr data);
 
-  // End of stream (R6.1) - see docs/design/eos_flush.md
+  // End of stream; see `docs/design/eos_flush.md`.
 
   /**
-   * @brief Declare that no more data will arrive on an input port
+   * @brief Declare that no more data will arrive on an input port.
    *
    * Latches end-of-stream on the port. Already-queued packets are still
    * processed; once the port drains, and once every other input port of
@@ -188,7 +195,7 @@ public:
   Result<void> signalEndOfStream(const std::string &source_node);
 
   /**
-   * @brief Block until EOS has reached every sink
+   * @brief Block until EOS has reached every sink.
    *
    * Returns Ok once the last sink has run its flush hook, meaning the
    * pipeline has produced everything it ever will. Does NOT stop the
@@ -205,7 +212,7 @@ public:
   /** @brief Has EOS reached every sink? */
   [[nodiscard]] bool isEndOfStreamReached() const;
 
-  // State & Monitoring
+  // State and monitoring
 
   [[nodiscard]] EngineStatisticsSnapshot statistics() const;
 
@@ -220,7 +227,7 @@ public:
       std::chrono::milliseconds timeout = std::chrono::milliseconds{5000});
 
   /**
-   * @brief Block until the engine leaves the RUNNING state (R4.4)
+   * Blocks until the engine leaves the `RUNNING` state.
    *
    * A condition-variable wait on the engine's completion signal - no
    * polling. Covers batch completion, stop/cancel, errors, and
@@ -241,12 +248,11 @@ public:
   [[nodiscard]] std::string strategyInfo() const;
 
 private:
-  // PIMPL idiom to hide implementation details
   class Impl;
   std::unique_ptr<Impl> m_impl;
 };
 
-// Convenience Factory Functions
+// Convenience factories
 
 inline std::unique_ptr<ExecutionEngine>
 createBatchEngine(std::uint8_t workers = 4) {
