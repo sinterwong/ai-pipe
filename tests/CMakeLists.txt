@@ -4,6 +4,10 @@ project(Tests)
 
 # Test source files
 file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.cc")
+if(NOT TARGET ai_pipe::config)
+    list(REMOVE_ITEM TEST_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_graph_loader.cpp")
+endif()
 
 # Dependency configuration
 set(DEPENDENCY_INCLUDES
@@ -19,14 +23,23 @@ set(DEPENDENCY_LIBS
     GTest::gtest_main
     ${OpenCV_LIBS}
 )
+if(TARGET ai_pipe::config)
+    list(APPEND DEPENDENCY_LIBS ai_pipe::config)
+endif()
 
 # Configure test output directory
 file(MAKE_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_OUTPUT_DIR}/bin/tests)
 
-# Test plugins (F8): built into plugins/, dlopen'ed by the loader tests
-if(UNIX)
+# Test plugins (F8): a static Windows host cannot satisfy DLL imports from its
+# executable, while POSIX hosts can export their symbols for this test setup.
+set(AI_PIPE_CAN_TEST_PLUGINS FALSE)
+if(UNIX OR BUILD_SHARED_LIBS)
+    set(AI_PIPE_CAN_TEST_PLUGINS TRUE)
     add_subdirectory(plugins)
+else()
+    list(REMOVE_ITEM TEST_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_plugin_loader.cpp")
 endif()
 
 # Public headers must be self-contained: compile one TU per header so a
@@ -56,12 +69,21 @@ set_target_properties(ai_pipe_header_checks PROPERTIES
 # Build test executable
 add_executable(ai_pipe_tests ${TEST_SOURCES})
 
-if(UNIX)
+if(AI_PIPE_CAN_TEST_PLUGINS)
     # Build-tree fallback for locating the test plugins; when running
     # from the install tree the tests find them at ./tests/plugins.
     target_compile_definitions(ai_pipe_tests PRIVATE
         AI_PIPE_TEST_PLUGIN_DIR="${CMAKE_CURRENT_BINARY_DIR}/plugins"
+        AI_PIPE_TEST_PLUGIN_FILENAME="$<TARGET_FILE_NAME:ai_pipe_test_plugin>"
+        AI_PIPE_TEST_PLUGIN_NOENTRY_FILENAME="$<TARGET_FILE_NAME:ai_pipe_test_plugin_noentry>"
+        AI_PIPE_TEST_PLUGIN_BADVERSION_FILENAME="$<TARGET_FILE_NAME:ai_pipe_test_plugin_badversion>"
+        AI_PIPE_TEST_PLUGIN_REJECT_FILENAME="$<TARGET_FILE_NAME:ai_pipe_test_plugin_reject>"
     )
+    add_dependencies(ai_pipe_tests
+        ai_pipe_test_plugin
+        ai_pipe_test_plugin_noentry
+        ai_pipe_test_plugin_badversion
+        ai_pipe_test_plugin_reject)
 endif()
 
 # Set target properties

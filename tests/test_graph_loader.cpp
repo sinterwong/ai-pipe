@@ -61,23 +61,7 @@ AI_PIPE_REGISTER_NODE(JsonSourceNode);
 AI_PIPE_REGISTER_NODE(JsonPassNode);
 AI_PIPE_REGISTER_NODE_WITH_CONFIG(JsonConfiguredNode);
 
-#define SKIP_WITHOUT_JSON()                                                    \
-  if (!jsonGraphLoaderAvailable()) {                                           \
-    GTEST_SKIP() << "Built without AI_PIPE_WITH_JSON";                         \
-  }
-
-TEST(GraphLoaderTest, StubReportsUnavailableWhenDisabled) {
-  if (jsonGraphLoaderAvailable()) {
-    GTEST_SKIP() << "Built with AI_PIPE_WITH_JSON";
-  }
-  auto result = loadGraphFromJson("{}");
-  ASSERT_FALSE(result.isOk());
-  EXPECT_EQ(result.errorCode(), ErrorCode::InvalidConfiguration);
-  EXPECT_NE(result.errorMessage().find("AI_PIPE_WITH_JSON"), std::string::npos);
-}
-
 TEST(GraphLoaderTest, LoadsNodesAndEdges) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [
       {"type": "JsonSourceNode", "name": "src"},
@@ -103,7 +87,6 @@ TEST(GraphLoaderTest, LoadsNodesAndEdges) {
 }
 
 TEST(GraphLoaderTest, ConfigValuesArriveTyped) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [
       {"type": "JsonConfiguredNode", "name": "cfg", "config": {
@@ -138,7 +121,6 @@ TEST(GraphLoaderTest, ConfigValuesArriveTyped) {
 }
 
 TEST(GraphLoaderTest, PipelineOptionsUseModeDefaultsThenOverrides) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [{"type": "JsonSourceNode", "name": "src"}],
     "options": {"mode": "stream", "num_workers": 2}
@@ -155,7 +137,6 @@ TEST(GraphLoaderTest, PipelineOptionsUseModeDefaultsThenOverrides) {
 }
 
 TEST(GraphLoaderTest, OmittedOptionsYieldDefaults) {
-  SKIP_WITHOUT_JSON();
   const std::string doc =
       R"({"nodes": [{"type": "JsonSourceNode", "name": "src"}]})";
   auto result = loadPipelineFromJson(doc);
@@ -165,7 +146,6 @@ TEST(GraphLoaderTest, OmittedOptionsYieldDefaults) {
 }
 
 TEST(GraphLoaderTest, LoadedDescriptionBuildsAPipeline) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [
       {"type": "JsonSourceNode", "name": "src"},
@@ -186,7 +166,6 @@ TEST(GraphLoaderTest, LoadedDescriptionBuildsAPipeline) {
 }
 
 TEST(GraphLoaderTest, FileVariantLoads) {
-  SKIP_WITHOUT_JSON();
   const std::string path =
       testing::TempDir() + "/ai_pipe_graph_loader_test.json";
   {
@@ -203,7 +182,6 @@ TEST(GraphLoaderTest, FileVariantLoads) {
 }
 
 TEST(GraphLoaderTest, MalformedJsonIsReported) {
-  SKIP_WITHOUT_JSON();
   auto result = loadGraphFromJson("{ not json");
   ASSERT_FALSE(result.isOk());
   EXPECT_EQ(result.errorCode(), ErrorCode::InvalidConfiguration);
@@ -211,7 +189,6 @@ TEST(GraphLoaderTest, MalformedJsonIsReported) {
 }
 
 TEST(GraphLoaderTest, SchemaViolationsAreRejected) {
-  SKIP_WITHOUT_JSON();
   const std::string source_only =
       R"("nodes": [{"type": "JsonSourceNode", "name": "src"}])";
 
@@ -269,7 +246,6 @@ TEST(GraphLoaderTest, SchemaViolationsAreRejected) {
 }
 
 TEST(GraphLoaderTest, AllOptionKeysRoundTrip) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [{"type": "JsonSourceNode", "name": "src"}],
     "options": {
@@ -304,7 +280,6 @@ TEST(GraphLoaderTest, AllOptionKeysRoundTrip) {
 }
 
 TEST(GraphLoaderTest, AlignmentAndJoinPolicyNamesParse) {
-  SKIP_WITHOUT_JSON();
   const std::string source_only =
       R"("nodes": [{"type": "JsonSourceNode", "name": "src"}])";
 
@@ -338,7 +313,6 @@ TEST(GraphLoaderTest, AlignmentAndJoinPolicyNamesParse) {
 }
 
 TEST(GraphLoaderTest, OptionValueViolationsAreRejected) {
-  SKIP_WITHOUT_JSON();
   const std::string source_only =
       R"("nodes": [{"type": "JsonSourceNode", "name": "src"}])";
 
@@ -388,7 +362,6 @@ TEST(GraphLoaderTest, OptionValueViolationsAreRejected) {
 }
 
 TEST(GraphLoaderTest, PipelineFileVariantLoads) {
-  SKIP_WITHOUT_JSON();
   const std::string path =
       testing::TempDir() + "/ai_pipe_pipeline_loader_test.json";
   {
@@ -410,7 +383,6 @@ TEST(GraphLoaderTest, PipelineFileVariantLoads) {
 }
 
 TEST(GraphLoaderTest, CycleIsRejected) {
-  SKIP_WITHOUT_JSON();
   const std::string doc = R"({
     "nodes": [
       {"type": "JsonPassNode", "name": "a"},

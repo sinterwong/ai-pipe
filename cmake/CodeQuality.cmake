@@ -59,6 +59,7 @@ function(ai_pipe_configure_code_quality)
     set(format_sources)
     foreach(source_root IN ITEMS
             benchmarks
+            config
             examples
             include
             src

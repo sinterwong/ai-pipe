@@ -7,15 +7,29 @@ file(GLOB_RECURSE AI_PIPE_PUBLIC_HEADERS CONFIGURE_DEPENDS
     "${AI_PIPE_PUBLIC_INCLUDE_DIR}/ai_pipe/*.hpp"
 )
 
-file(GLOB AI_PIPE_ROOT_HDRS CONFIGURE_DEPENDS "*.hpp")
-file(GLOB AI_PIPE_ROOT_SRCS CONFIGURE_DEPENDS "*.cpp")
-
 set(AI_PIPE_SOURCES
-    ${AI_PIPE_ROOT_SRCS}
+    context.cpp
+    engine_log.cpp
+    execution_engine_impl.cpp
+    graph.cpp
+    logger.cpp
+    node_registry.cpp
+    pipeline_impl.cpp
+    plugin_loader.cpp
+    strategies.cpp
 )
 
 set(AI_PIPE_PRIVATE_HEADERS
-    ${AI_PIPE_ROOT_HDRS}
+    execution_engine_impl.hpp
+    frame_alignment.hpp
+    join_aware_sync_strategy.hpp
+    lock_free_queue.hpp
+    logger.hpp
+    pipeline_impl.hpp
+    scheduler_strategies.hpp
+    sync_coordinator.hpp
+    sync_strategies.hpp
+    work_stealing_thread_pool.hpp
 )
 
 # Build shared library
@@ -58,14 +72,6 @@ target_include_directories(ai_pipe
 # Link dependencies (CMAKE_DL_LIBS: dlopen for the plugin loader)
 target_link_libraries(ai_pipe PRIVATE ${CMAKE_DL_LIBS})
 
-# Optional JSON graph loader: nlohmann/json is vendored, header-only, and
-# consumed PRIVATE-ly, so enabling it adds no link-time or install-time
-# dependency; graph_loader.cpp compiles to stubs when the option is OFF.
-if(AI_PIPE_WITH_JSON)
-    target_compile_definitions(ai_pipe PRIVATE AI_PIPE_WITH_JSON=1)
-    target_include_directories(ai_pipe SYSTEM PRIVATE ${3RDPARTY_ROOT})
-endif()
-
 # Generate package configuration files. The config/targets files go to
 # lib/cmake/ai_pipe, which find_package() searches by default (a flat
 # share/ needed a manual ai_pipe_DIR). configure_package_config_file is
@@ -103,6 +109,7 @@ install(TARGETS ai_pipe
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/ai_pipe-config-version.cmake"
+    "${PROJECT_SOURCE_DIR}/cmake/AIPipePlugin.cmake"
     DESTINATION ${AI_PIPE_CMAKE_INSTALL_DIR}
     COMPONENT dev
 )

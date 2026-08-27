@@ -82,6 +82,18 @@ The framework provides two primary execution modes — **Batch** for single-pass
 | `LockFreeQueue` | `lock_free_queue.hpp` | Bounded MPMC queue with drop policy support |
 | `WorkStealingThreadPool` | `work_stealing_thread_pool.hpp` | High-performance thread pool with work stealing |
 
+### Optional Components
+
+- `ai_pipe::config` provides the JSON graph loader without introducing JSON
+  into the core library. Enable it with `AI_PIPE_BUILD_CONFIG=ON` and link the
+  component explicitly; see [JSON Graph Loader](docs/JSON_Graph_Loader.md).
+- Node implementations can be built as resident shared-library plugins with
+  explicit, transactional registration and stable type IDs; see the
+  [Node Plugin Guide](docs/Plugin_Guide.md).
+- Scheduler and synchronization policies remain ordinary strategy objects.
+  They are runtime behaviors owned by a pipeline, rather than global plugin
+  registrations, so applications can inject custom implementations directly.
+
 ### Packet Ownership Model
 
 Packets flowing through the graph are **immutable**. Create a packet with

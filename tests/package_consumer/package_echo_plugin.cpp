@@ -2,16 +2,11 @@
 #include <ai_pipe/node_registry.hpp>
 #include <ai_pipe/plugin.hpp>
 
-#include <memory>
-#include <string>
-#include <vector>
-
 namespace {
 
-// Passes the `input` packet to `output` without changing its storage.
-class EchoNode final : public ai_pipe::ILogicNode {
+class PackageEchoNode final : public ai_pipe::ILogicNode {
 public:
-  explicit EchoNode(const std::string &name) : ILogicNode(name) {}
+  explicit PackageEchoNode(const std::string &name) : ILogicNode(name) {}
 
   void process(const ai_pipe::PortDataMap &inputs,
                ai_pipe::PortDataMap &outputs,
@@ -19,22 +14,19 @@ public:
     outputs["output"] = inputs.at("input");
   }
 
-  [[nodiscard]] std::vector<std::string>
-  getExpectedInputPorts() const override {
+  std::vector<std::string> getExpectedInputPorts() const override {
     return {"input"};
   }
-
-  [[nodiscard]] std::vector<std::string>
-  getExpectedOutputPorts() const override {
+  std::vector<std::string> getExpectedOutputPorts() const override {
     return {"output"};
   }
 };
 
 } // namespace
 
-AI_PIPE_PLUGIN("example_echo_node");
+AI_PIPE_PLUGIN("package_consumer.echo");
 
 extern "C" AI_PIPE_PLUGIN_EXPORT bool
 ai_pipe_register_plugin_v1(ai_pipe::NodeRegistry &registry) {
-  return registry.registerNode<EchoNode>("example.echo").isOk();
+  return registry.registerNode<PackageEchoNode>("package.echo").isOk();
 }

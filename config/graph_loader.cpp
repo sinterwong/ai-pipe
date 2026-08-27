@@ -1,7 +1,5 @@
 #include "ai_pipe/graph_loader.hpp"
 
-#ifdef AI_PIPE_WITH_JSON
-
 #include <cstdint>
 #include <fstream>
 #include <limits>
@@ -478,8 +476,6 @@ Result<std::string> readFile(const std::string &path) {
 
 } // namespace
 
-bool jsonGraphLoaderAvailable() { return true; }
-
 Result<Graph> loadGraphFromJson(const std::string &json_text,
                                 const NodeRegistry &registry) {
   auto doc = parseDocument(json_text);
@@ -526,41 +522,3 @@ loadPipelineFromJsonFile(const std::string &path,
 }
 
 } // namespace ai_pipe
-
-#else // !AI_PIPE_WITH_JSON
-
-namespace ai_pipe {
-namespace {
-
-template <typename T> Result<T> unavailable() {
-  return Result<T>::err(
-      ErrorCode::InvalidConfiguration,
-      "AI Pipe was built without JSON support; reconfigure with "
-      "-DAI_PIPE_WITH_JSON=ON to enable the graph loader");
-}
-
-} // namespace
-
-bool jsonGraphLoaderAvailable() { return false; }
-
-Result<Graph> loadGraphFromJson(const std::string &, const NodeRegistry &) {
-  return unavailable<Graph>();
-}
-
-Result<Graph> loadGraphFromJsonFile(const std::string &, const NodeRegistry &) {
-  return unavailable<Graph>();
-}
-
-Result<PipelineDescription> loadPipelineFromJson(const std::string &,
-                                                 const NodeRegistry &) {
-  return unavailable<PipelineDescription>();
-}
-
-Result<PipelineDescription> loadPipelineFromJsonFile(const std::string &,
-                                                     const NodeRegistry &) {
-  return unavailable<PipelineDescription>();
-}
-
-} // namespace ai_pipe
-
-#endif // AI_PIPE_WITH_JSON

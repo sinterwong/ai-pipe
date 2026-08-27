@@ -13,6 +13,8 @@
 
 namespace ai_pipe {
 
+class PluginLoader;
+
 /**
  * Process-wide mapping from node type names to factories.
  *
@@ -59,6 +61,30 @@ public:
     return Result<void>::ok();
   }
 
+  /** Registers a stable type id for a node constructible as Node(name). */
+  template <typename Node>
+  Result<void> registerNode(const std::string &type_name) {
+    return registerFactory(
+        type_name,
+        [](const std::string &node_name,
+           const PortData &) -> Result<std::shared_ptr<ILogicNode>> {
+          return std::shared_ptr<ILogicNode>(std::make_shared<Node>(node_name));
+        });
+  }
+
+  /** Registers a stable type id for a node constructible as Node(name, config).
+   */
+  template <typename Node>
+  Result<void> registerConfiguredNode(const std::string &type_name) {
+    return registerFactory(
+        type_name,
+        [](const std::string &node_name,
+           const PortData &config) -> Result<std::shared_ptr<ILogicNode>> {
+          return std::shared_ptr<ILogicNode>(
+              std::make_shared<Node>(node_name, config));
+        });
+  }
+
   /**
    * Instantiates a node by registered type name.
    * @param type_name Registered type (e.g. class name)
@@ -102,38 +128,22 @@ public:
     m_factories.erase(type_name);
   }
 
-  /**
-   * Atomically replaces a registered factory with a decorated factory.
-   *
-   * Support for PluginLoader instance tracking: after a plugin's static
-   * initializers register their factories, the loader wraps each one so
-   * created nodes carry a liveness token (see plugin_loader.cpp). The
-   * decoration happens under the registry lock, so no create() can slip
-   * between reading the original factory and installing the wrapper.
-   *
-   * @param wrap Receives the current factory, returns its replacement
-   * @return InvalidArgument if the type is not registered or the
-   *         wrapper returned a null factory (registration unchanged)
-   */
-  Result<void> wrapFactory(const std::string &type_name,
-                           const std::function<Factory(Factory)> &wrap) {
-    std::unique_lock lock(m_mutex);
-    auto it = m_factories.find(type_name);
-    if (it == m_factories.end()) {
-      return Result<void>::err(ErrorCode::InvalidArgument,
-                               "Unknown node type: " + type_name);
-    }
-    Factory wrapped = wrap(it->second);
-    if (!wrapped) {
-      return Result<void>::err(ErrorCode::InvalidArgument,
-                               "Factory wrapper returned a null factory");
-    }
-    it->second = std::move(wrapped);
-    return Result<void>::ok();
+private:
+  using Snapshot = std::unordered_map<std::string, Factory>;
+
+  [[nodiscard]] Snapshot snapshot() const {
+    std::shared_lock lock(m_mutex);
+    return m_factories;
   }
 
-private:
+  void restore(Snapshot snapshot) {
+    std::unique_lock lock(m_mutex);
+    m_factories = std::move(snapshot);
+  }
+
   NodeRegistry() = default;
+
+  friend class PluginLoader;
 
   mutable std::shared_mutex m_mutex;
   std::unordered_map<std::string, Factory> m_factories;

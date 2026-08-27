@@ -82,9 +82,10 @@ struct ExecutionOutput {
  *
  * Callbacks can run on engine worker threads and may overlap with caller-side
  * pipeline operations. Implementations must be thread-safe and must copy any
- * referenced data they retain beyond a callback. Each accepted execution emits
- * at most one terminal callback: onExecutionCompleted on success, or
- * onExecutionFailed on failure.
+ * referenced data they retain beyond a callback. A successfully completed
+ * batch execution emits onExecutionCompleted exactly once. Streaming failures
+ * are per-frame events and may therefore produce multiple onExecutionFailed
+ * callbacks during one streaming run.
  */
 class IPipelineObserver {
 public:

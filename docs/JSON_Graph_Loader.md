@@ -8,20 +8,23 @@ graph — nodes, edges, and engine options — as data instead of C++.
 
 ## Enabling
 
-The loader is an optional component gated by the CMake option
-`AI_PIPE_WITH_JSON` (default `OFF`), backed by the vendored,
-header-only `nlohmann/json` consumed privately — enabling it adds no
-link-time or install-time dependency, and the core library stays
-dependency-free when it is off.
+The loader is the optional `ai_pipe::config` component, gated by
+`AI_PIPE_BUILD_CONFIG` (default `OFF`). It uses the vendored header-only
+`nlohmann/json` privately, so `libai_pipe` stays dependency-free.
 
 ```sh
-cmake -B build -DAI_PIPE_WITH_JSON=ON ...
+cmake -B build -DAI_PIPE_BUILD_CONFIG=ON ...
 ```
 
-The API (`ai_pipe/graph_loader.hpp`) is always declared and linkable.
-When the library was built without JSON support, every loader function
-returns `ErrorCode::InvalidConfiguration`; call
-`jsonGraphLoaderAvailable()` to detect support at runtime.
+Consumers link the component explicitly:
+
+```cmake
+find_package(ai_pipe REQUIRED CONFIG COMPONENTS config)
+target_link_libraries(my_app PRIVATE ai_pipe::config)
+```
+
+The API remains in `ai_pipe/graph_loader.hpp`; there is no runtime stub when the
+component is omitted.
 
 ## API
 

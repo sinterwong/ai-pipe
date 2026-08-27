@@ -10,8 +10,8 @@
   撞到的能力墙按需拉动 R6 对应条目（R6.1 EOS 已完成，预计下一个是
   R6.3 内存策略）。
 
-- [ ] **R5.2 ABI/SemVer 政策文档**：1.0 冻结前明确公共头文件清单、ABI
-  兼容承诺与弃用流程。
+- [x] **R5.2 ABI/SemVer 政策文档**：公共兼容面、版本规则、插件工具链
+  边界、弃用流程与驻留生命周期见 `docs/ABI_Policy.md`。
 
 - [ ] **R5.3 公共 API 终审**：逐头文件 review。关注点：头文件自洽性
   （compile-check 已有 CI）、命名一致性、`Timestamp` 用 steady_clock
@@ -66,21 +66,12 @@
 
 ## 已知问题
 
-- [ ] **N1. 批模式完成通知可能重复触发**：任务完成路径上，两个 worker
-  可能先后把 `m_activeTasks` 读成 0 并都走进
-  `checkCompletionAndNotify` 的完成分支——引擎状态 CAS 保证状态只翻转
-  一次，但 result 回调/observer 通知可能重复。runAsync 的 promise 已用
-  done 标志自防，常驻回调的重复 `onExecutionCompleted` 对 observer
-  可见。随 R5.3 定契约（at-least-once vs exactly-once）或在引擎加
-  一次性完成闩。
+- [x] **N1. 批模式完成通知 exactly-once**：每次 batch run 使用原子完成闩，
+  多 worker 同时观察到最终状态时只有一个发布 result/observer 回调。
 
-- [ ] **N2. 策略热替换不触发 initialize**：`setSchedulerStrategy`/
-  `setSyncStrategy` 在 IDLE 时可调用，但只有
-  `ExecutionEngine::initialize()` 会对策略跑
-  `initialize(CompiledGraph&)`——引擎已 initialize 后再 set 的策略拿
-  不到拓扑（JoinAware 将没有任何 sync group）。门面路径不受影响
-  （先 set 后 initialize）。随 R5.3 决定：set 时若已有 CompiledGraph
-  即补跑 initialize，或在文档写明调用顺序契约。
+- [x] **N2. 策略替换生命周期**：IDLE 时替换策略会立即用当前
+  `CompiledGraph` 初始化；SyncStrategy 同时刷新节点跟踪缓存与 drop 回调。
+  空策略与运行期替换均拒绝。契约见 `docs/Lifecycle_Contract.md`。
 
 ## 性能观察项（跟踪记录见 docs/Performance_Report.md §5.4）
 

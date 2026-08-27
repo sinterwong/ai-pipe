@@ -55,7 +55,7 @@ jobs:
         -DBUILD_AI_PIPE_TESTS=ON
         -DBUILD_AI_PIPE_EXAMPLES=ON
         -DBUILD_AI_PIPE_BENCHMARKS=ON
-        -DAI_PIPE_WITH_JSON=ON
+        -DAI_PIPE_BUILD_CONFIG=ON
         -S ${{ github.workspace }}
 
     - name: Build
@@ -67,6 +67,15 @@ jobs:
     - name: Run GTests
       working-directory: ${{ steps.strings.outputs.install-dir }}
       run: ./tests/ai_pipe_tests --gtest_filter=*.*
+
+    - name: Verify installed config module and external plugin SDK
+      run: |
+        cmake -S ${{ github.workspace }}/tests/package_consumer \
+          -B ${{ github.workspace }}/build-package-consumer \
+          -DCMAKE_PREFIX_PATH=${{ steps.strings.outputs.install-dir }}
+        cmake --build ${{ github.workspace }}/build-package-consumer
+        ${{ github.workspace }}/build-package-consumer/ai_pipe_package_consumer \
+          ${{ github.workspace }}/build-package-consumer/libai_pipe_plugin_package_echo.so
 
   sanitize:
     runs-on: ubuntu-24.04
@@ -106,7 +115,7 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DBUILD_AI_PIPE_TESTS=ON
-        -DAI_PIPE_WITH_JSON=ON
+        -DAI_PIPE_BUILD_CONFIG=ON
         -DAI_PIPE_SANITIZER=${{ matrix.sanitizer }}
         -S ${{ github.workspace }}
 
@@ -141,7 +150,7 @@ jobs:
         -DBUILD_SHARED_LIBS=OFF
         -DAI_PIPE_WERROR=ON
         -DBUILD_AI_PIPE_TESTS=ON
-        -DAI_PIPE_WITH_JSON=ON
+        -DAI_PIPE_BUILD_CONFIG=ON
         -S ${{ github.workspace }}
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j
@@ -149,13 +158,10 @@ jobs:
       working-directory: ${{ github.workspace }}/build
       run: ./x86_64/bin/tests/ai_pipe_tests
 
-  build-nojson:
+  build-core-only:
     runs-on: ubuntu-24.04
-    # The JSON loader is an optional component (F1): without
-    # AI_PIPE_WITH_JSON it compiles as a link-compatible stub returning
-    # InvalidConfiguration. Every other job builds with JSON=ON, so this
-    # is the only place the stub branch (and its dedicated test,
-    # GraphLoaderTest.StubReportsUnavailableWhenDisabled) actually runs.
+    # The JSON loader is a separately linked optional component. This gate
+    # verifies the dependency-free core builds and tests without it.
     env:
       CC: gcc-13
       CXX: g++-13
@@ -169,13 +175,13 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-13 g++-13
-    - name: Configure (JSON loader disabled, warnings as errors)
+    - name: Configure (config module disabled, warnings as errors)
       run: >
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=Release
         -DAI_PIPE_WERROR=ON
         -DBUILD_AI_PIPE_TESTS=ON
-        -DAI_PIPE_WITH_JSON=OFF
+        -DAI_PIPE_BUILD_CONFIG=OFF
         -S ${{ github.workspace }}
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j
@@ -209,7 +215,7 @@ jobs:
         -DCMAKE_TOOLCHAIN_FILE=platforms/linux/aarch64-gnu.cmake
         -DCMAKE_BUILD_TYPE=Release
         -DAI_PIPE_WERROR=ON
-        -DAI_PIPE_WITH_JSON=ON
+        -DAI_PIPE_BUILD_CONFIG=ON
         -S ${{ github.workspace }}
     - name: Build
       run: cmake --build ${{ github.workspace }}/build -j
@@ -261,11 +267,11 @@ jobs:
         cmake -B ${{ github.workspace }}/build
         -DCMAKE_BUILD_TYPE=Debug
         -DBUILD_AI_PIPE_TESTS=ON
-        -DAI_PIPE_WITH_JSON=ON
+        -DAI_PIPE_BUILD_CONFIG=ON
         -S ${{ github.workspace }}
     - name: Run clang-tidy on library sources
       run: |
-        clang-tidy-18 -p ${{ github.workspace }}/build src/*.cpp
+        clang-tidy-18 -p ${{ github.workspace }}/build src/*.cpp config/*.cpp
 
   benchmark-gate:
     runs-on: ubuntu-24.04

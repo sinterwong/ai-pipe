@@ -63,6 +63,7 @@ enum class ErrorCode : std::uint16_t {
   PluginLoadFailed = 500,
   PluginSymbolMissing = 501,
   PluginVersionMismatch = 502,
+  /// Reserved for source compatibility; resident plugins are never unmapped.
   PluginInUse = 503,
 };
 

@@ -839,7 +839,7 @@ target_link_libraries(my_app PRIVATE ai_pipe::ai_pipe)
 | `edge.hpp` | 边定义 |
 | `graph.hpp` | 图构建 |
 | `compiled_graph.hpp` | 编译后拓扑快照（策略 `initialize()` 入参）|
-| `graph_loader.hpp` | JSON 构图（`AI_PIPE_WITH_JSON`）|
+| `graph_loader.hpp` | JSON 构图（可选 `ai_pipe::config` 组件）|
 | `node_registry.hpp` | 节点类型注册 |
 | `plugin.hpp` | 动态节点插件 |
 | `data_packet.hpp` | 数据包 |
@@ -969,14 +969,19 @@ class TimestampSyncStrategy : public ai_pipe::ISyncStrategy {
 
 ```cpp
 // 插件侧（编译为 MODULE 共享库，链接 libai_pipe.so）
-AI_PIPE_PLUGIN("my_detector_pack");   // 导出版本握手描述符
-AI_PIPE_REGISTER_NODE(MyDetectorNode); // 静态初始化时注册（dlopen 触发）
+AI_PIPE_PLUGIN("my_detector_pack"); // 导出版本握手描述符
+extern "C" AI_PIPE_PLUGIN_EXPORT bool
+ai_pipe_register_plugin_v1(ai_pipe::NodeRegistry &registry) {
+  return registry.registerNode<MyDetectorNode>("acme.detector").isOk();
+}
 
 // 宿主侧
 ai_pipe::PluginLoader loader;
 auto loaded = loader.load("plugins/libmy_detector_pack.so");
 // 或整目录扫描（非递归，按路径排序保证确定性）：
 auto all = loader.loadDirectory("plugins/");
+// 或扫描显式路径、AI_PIPE_PLUGIN_PATH 和安装目录：
+auto discovered = loader.discover();
 // loaded->registered_types 列出该插件贡献的节点类型
 ```
 
@@ -989,13 +994,12 @@ auto all = loader.loadDirectory("plugins/");
   只读一个 standard-layout C 结构体）：插件协议修订号
   （`k_plugin_abi_version`）须精确相等；框架版本 pre-1.0 要求
   major.minor 相同。
-- 注册发生在 dlopen 静态初始化期间、握手之前（机制使然），故加载器对
-  注册表做前后快照：握手失败时回滚该插件注册的全部节点类型再 dlclose，
-  错误码为 `PluginSymbolMissing` / `PluginVersionMismatch`。
-- 卸载（`unload`/析构）先反注册再 dlclose；调用方须保证该插件创建的节点
-  实例已全部销毁。注意 GCC 的 STB_GNU_UNIQUE 符号会使 glibc 将库标记为
-  NODELETE（dlclose 不真正卸载、重载不会重跑注册）——插件建议以
-  `-fno-gnu-unique` 编译。
+- 描述符握手通过后才调用 `ai_pipe_register_plugin_v1`。注册失败、抛异常或
+  未贡献节点时完整恢复注册表快照并关闭被拒绝的库。
+- 成功插件驻留到进程结束；`unload()` 只反注册工厂，不卸载代码，因此已有
+  节点、回调、静态对象及跨插件依赖不会悬空。
+- 外部工程使用安装的 `ai_pipe_add_plugin()` 统一命名、编译选项和安装位置；
+  详见 `docs/Plugin_Guide.md` 与 `docs/ABI_Policy.md`。
 
 ---
 

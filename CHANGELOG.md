@@ -9,6 +9,17 @@ Guide).
 
 ### Changed
 
+- **Core/config boundary**: JSON graph assembly is now the optional
+  `ai_pipe::config` library (`AI_PIPE_BUILD_CONFIG`) rather than a conditional
+  implementation and stub inside `libai_pipe`.
+- **Plugin ABI v2**: dynamic plugins use descriptor-first explicit,
+  transactional registration with stable type ids and metadata. Successful
+  libraries remain mapped until process exit; deactivation removes factories
+  without invalidating existing objects.
+- **Execution lifecycle**: successful batch completion callbacks are
+  exactly-once, and strategies replaced after graph initialization are
+  initialized immediately.
+
 - **clang-tidy is now a required CI gate** (F2): the check set is
   curated in `.clang-tidy` (bugprone / concurrency / performance /
   portability groups + identifier naming; three false-positive/low-value
@@ -20,6 +31,11 @@ Guide).
   deviations documented inline via NOLINT.
 
 ### Added
+
+- Installed `ai_pipe_add_plugin()` helper, plugin discovery through
+  `AI_PIPE_PLUGIN_PATH` and installation-relative directories, ABI/lifecycle
+  policy documents, package-consumer verification, and a configurable soak
+  runner.
 
 - **JSON graph loader** (F1, `AI_PIPE_WITH_JSON`, default OFF):
   `ai_pipe/graph_loader.hpp` loads a declarative pipeline description -
