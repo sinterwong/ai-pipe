@@ -10,6 +10,71 @@ using namespace ai_pipe;
 using namespace std::chrono_literals;
 
 namespace ai_pipe_unit_test::execution_engine {
+
+class InitializingBatchScheduler final : public ISchedulerStrategy {
+public:
+  explicit InitializingBatchScheduler(std::shared_ptr<std::atomic<int>> count)
+      : m_count(std::move(count)) {}
+
+  ScheduleResult
+  shouldSchedule(const SchedulingContext &context) const override {
+    return m_delegate.shouldSchedule(context);
+  }
+  bool onNodeComplete(const std::shared_ptr<ILogicNode> &node, bool success,
+                      const PortDataMap &outputs) override {
+    return m_delegate.onNodeComplete(node, success, outputs);
+  }
+  CompletionStatus
+  checkCompletion(std::size_t active, std::size_t pending,
+                  const std::vector<SinkExecutionCount> &sinks) const override {
+    return m_delegate.checkCompletion(active, pending, sinks);
+  }
+  CompletionSemantics completionSemantics() const override {
+    return m_delegate.completionSemantics();
+  }
+  bool supportsStreaming() const override {
+    return m_delegate.supportsStreaming();
+  }
+  std::string name() const override { return "InitializingBatchScheduler"; }
+  void initialize(const CompiledGraph &) override { m_count->fetch_add(1); }
+  void reset() override { m_delegate.reset(); }
+  std::unique_ptr<ISchedulerStrategy> clone() const override {
+    return std::make_unique<InitializingBatchScheduler>(m_count);
+  }
+
+private:
+  std::shared_ptr<std::atomic<int>> m_count;
+  BatchSchedulerStrategy m_delegate;
+};
+
+class InitializingNoSyncStrategy final : public ISyncStrategy {
+public:
+  explicit InitializingNoSyncStrategy(std::shared_ptr<std::atomic<int>> count)
+      : m_count(std::move(count)) {}
+
+  void initialize(const CompiledGraph &) override { m_count->fetch_add(1); }
+  void reset() override {}
+  void registerSyncGroup(const SyncGroupId &, const std::vector<BranchId> &,
+                         const std::string &) override {}
+  void mapNodeToGroup(const std::string &, const SyncGroupId &,
+                      const BranchId &) override {}
+  std::vector<BranchId> reportDrop(const std::string &, FrameId,
+                                   const std::string &) override {
+    return {};
+  }
+  bool shouldDrop(const std::string &, FrameId) const override { return false; }
+  void markProcessed(const std::string &, FrameId) override {}
+  FrameId getWatermark(const SyncGroupId &) const override { return 0; }
+  bool isEnabled() const override { return false; }
+  std::string name() const override { return "InitializingNoSyncStrategy"; }
+  std::unique_ptr<ISyncStrategy> clone() const override {
+    return std::make_unique<InitializingNoSyncStrategy>(m_count);
+  }
+
+private:
+  std::shared_ptr<std::atomic<int>> m_count;
+};
+
 class ExecutionEngineTest : public ::testing::Test {
 protected:
   void SetUp() override { m_graph = std::make_unique<Graph>(); }
@@ -162,6 +227,42 @@ TEST_F(ExecutionEngineTest, SetSyncStrategy) {
       engine->setSyncStrategy(std::make_unique<NoSyncStrategy>()).isOk());
   EXPECT_TRUE(engine->strategyInfo().find("NoSyncStrategy") !=
               std::string::npos);
+}
+
+TEST_F(ExecutionEngineTest, RejectsNullStrategies) {
+  auto engine = createBatchEngine();
+  auto scheduler_result = engine->setSchedulerStrategy(nullptr);
+  auto sync_result = engine->setSyncStrategy(nullptr);
+  ASSERT_FALSE(scheduler_result.isOk());
+  ASSERT_FALSE(sync_result.isOk());
+  EXPECT_EQ(scheduler_result.error().code(), ErrorCode::InvalidArgument);
+  EXPECT_EQ(sync_result.error().code(), ErrorCode::InvalidArgument);
+}
+
+TEST_F(ExecutionEngineTest, InitializesStrategiesReplacedAfterGraphSetup) {
+  auto engine = createBatchEngine();
+  createLinearPipeline();
+  ASSERT_TRUE(engine->initialize(m_graph.get()).isOk());
+
+  auto scheduler_initializations = std::make_shared<std::atomic<int>>(0);
+  auto sync_initializations = std::make_shared<std::atomic<int>>(0);
+  ASSERT_TRUE(
+      engine
+          ->setSchedulerStrategy(std::make_unique<InitializingBatchScheduler>(
+              scheduler_initializations))
+          .isOk());
+  ASSERT_TRUE(
+      engine
+          ->setSyncStrategy(std::make_unique<InitializingNoSyncStrategy>(
+              sync_initializations))
+          .isOk());
+
+  EXPECT_EQ(scheduler_initializations->load(), 1);
+  EXPECT_EQ(sync_initializations->load(), 1);
+
+  PortDataMap inputs;
+  inputs["source"] = createData(7);
+  EXPECT_TRUE(engine->execute(inputs).isOk());
 }
 
 TEST_F(ExecutionEngineTest, ConfigureForStreamMode) {
@@ -385,6 +486,31 @@ TEST_F(ExecutionEngineTest, ResultCallback) {
 
   EXPECT_TRUE(callback_called.load());
   EXPECT_FALSE(received_results.empty());
+}
+
+TEST_F(ExecutionEngineTest, CompletionCallbackFiresExactlyOncePerRun) {
+  auto source = std::make_shared<SourceNode>("source");
+  auto sink1 = std::make_shared<SinkNode>("sink1");
+  auto sink2 = std::make_shared<SinkNode>("sink2");
+  ASSERT_TRUE(m_graph->addNode(source));
+  ASSERT_TRUE(m_graph->addNode(sink1));
+  ASSERT_TRUE(m_graph->addNode(sink2));
+  ASSERT_TRUE(m_graph->addEdge("source", "output", "sink1", "input"));
+  ASSERT_TRUE(m_graph->addEdge("source", "output", "sink2", "input"));
+
+  auto engine = createBatchEngine(4);
+  ASSERT_TRUE(engine->initialize(m_graph.get()).isOk());
+  std::atomic<int> callback_count{0};
+  engine->setPipelineResultCallback(
+      [&](const PortDataMap &) { callback_count.fetch_add(1); });
+
+  constexpr int k_runs = 100;
+  for (int i = 0; i < k_runs; ++i) {
+    PortDataMap inputs;
+    inputs["source"] = createData(static_cast<std::uint64_t>(i + 1));
+    ASSERT_TRUE(engine->execute(inputs).isOk());
+  }
+  EXPECT_EQ(callback_count.load(), k_runs);
 }
 
 TEST_F(ExecutionEngineTest, ErrorCallback) {

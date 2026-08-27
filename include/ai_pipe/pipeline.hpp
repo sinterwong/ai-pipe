@@ -82,7 +82,9 @@ struct ExecutionOutput {
  *
  * Callbacks can run on engine worker threads and may overlap with caller-side
  * pipeline operations. Implementations must be thread-safe and must copy any
- * referenced data they retain beyond a callback.
+ * referenced data they retain beyond a callback. Each accepted execution emits
+ * at most one terminal callback: onExecutionCompleted on success, or
+ * onExecutionFailed on failure.
  */
 class IPipelineObserver {
 public:
