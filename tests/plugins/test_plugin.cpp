@@ -25,8 +25,12 @@ public:
   }
 };
 
-AI_PIPE_REGISTER_NODE(PluginEchoNode);
-
 } // namespace ai_pipe_test_plugin
 
 AI_PIPE_PLUGIN("test_plugin");
+
+extern "C" AI_PIPE_PLUGIN_EXPORT bool
+ai_pipe_register_plugin_v1(ai_pipe::NodeRegistry &registry) {
+  return registry.registerNode<ai_pipe_test_plugin::PluginEchoNode>("test.echo")
+      .isOk();
+}

@@ -521,6 +521,10 @@ private:
 
   std::atomic<EngineState> m_engineState{EngineState::IDLE};
   std::atomic<int> m_activeTasks{0};
+  // One result notification per batch execution. Multiple workers may
+  // concurrently observe the final active-task transition; only the winner of
+  // this latch is allowed to publish completion.
+  std::atomic<bool> m_completionReported{false};
   std::atomic<bool> m_stopFlag{false};
   std::atomic<bool> m_streamingMode{false};
 

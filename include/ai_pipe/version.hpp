@@ -3,7 +3,7 @@
 /** Library semantic-version major component. */
 #define AI_PIPE_VER_MAJOR 0
 /** Library semantic-version minor component. */
-#define AI_PIPE_VER_MINOR 5
+#define AI_PIPE_VER_MINOR 6
 /** Library semantic-version patch component. */
 #define AI_PIPE_VER_PATCH 0
 

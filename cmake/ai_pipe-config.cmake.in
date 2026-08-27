@@ -10,4 +10,12 @@ if(NOT TARGET ai_pipe::ai_pipe)
     include("${CMAKE_CURRENT_LIST_DIR}/ai_pipe-targets.cmake")
 endif()
 
+if(TARGET ai_pipe::config)
+    set(ai_pipe_config_FOUND TRUE)
+else()
+    set(ai_pipe_config_FOUND FALSE)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/AIPipePlugin.cmake")
+
 check_required_components(ai_pipe)

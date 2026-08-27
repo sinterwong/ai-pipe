@@ -18,9 +18,16 @@ AI_PIPE_REGISTER_NODE(BadVersionNode);
 
 // Hand-rolled descriptor (instead of AI_PIPE_PLUGIN) with a plugin ABI
 // revision the host does not speak.
-extern "C" const ::ai_pipe::PluginDescriptor *ai_pipe_plugin_descriptor() {
+extern "C" AI_PIPE_PLUGIN_EXPORT const ::ai_pipe::PluginDescriptor *
+ai_pipe_plugin_descriptor() {
   static const ::ai_pipe::PluginDescriptor descriptor{
       ::ai_pipe::k_plugin_abi_version + 999,
-      static_cast<std::uint32_t>(AI_PIPE_VERSION), "bad_version"};
+      static_cast<std::uint32_t>(AI_PIPE_VERSION),
+      "bad_version",
+      "1.0.0",
+      "ai-pipe-tests",
+      "ABI rejection fixture",
+      nullptr,
+      0};
   return &descriptor;
 }

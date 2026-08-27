@@ -19,10 +19,13 @@ cmake --build build/external_plugin
 ```
 
 The resulting `ai_pipe_plugin_example_echo` shared library exports the AI Pipe
-plugin descriptor and registers `EchoNode`. Load it with
+plugin descriptor and explicitly registers the stable node id `example.echo`.
+Load it with
 `ai_pipe::PluginLoader` before constructing a node through
 `ai_pipe::NodeRegistry`.
 
 The host and plugin must use the same shared AI Pipe library. Linking a static
 copy into the plugin would create a separate process-wide registry and hide its
-node registration from the host.
+node registration from the host. Successful plugin libraries stay mapped until
+process exit; `PluginLoader::unload()` deactivates their factories without
+unmapping code that existing nodes or callbacks may still use.

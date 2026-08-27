@@ -21,9 +21,6 @@ struct PipelineDescription {
   PipelineOptions options;
 };
 
-/** @brief True when the library was built with AI_PIPE_WITH_JSON */
-[[nodiscard]] bool jsonGraphLoaderAvailable();
-
 /**
  * @brief Assemble a Graph from a JSON document
  *

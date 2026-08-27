@@ -149,6 +149,10 @@ auto node = ai_pipe::NodeRegistry::instance()
                 .create("DetectorNode", "det0", config);  // Result
 ```
 
+动态插件不要使用上述静态注册宏；应导出显式注册入口，并为节点分配稳定、
+与 C++ 类名解耦的类型 ID。插件协议、CMake 辅助函数和发现路径见
+[`Plugin_Guide.md`](Plugin_Guide.md)。
+
 ## 6. 上下文（PipelineContext）
 
 - 资源/服务：`ctx->setResource` / `ctx->getService<T>()`（线程安全）。

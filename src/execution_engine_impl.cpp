@@ -216,10 +216,18 @@ ExecutionEngine::Impl::~Impl() {
 
 Result<void> ExecutionEngine::Impl::setSchedulerStrategy(
     std::unique_ptr<ISchedulerStrategy> strategy) {
+  if (!strategy) {
+    return Result<void>::err(ErrorCode::InvalidArgument,
+                             "Scheduler strategy must not be null");
+  }
+  std::lock_guard<std::mutex> lock(m_engineMutex);
   if (m_engineState.load(std::memory_order_acquire) != EngineState::IDLE) {
     return Result<void>::err(
         ErrorCode::InvalidState,
         "Cannot change strategies while engine is running");
+  }
+  if (m_compiledGraph) {
+    strategy->initialize(*m_compiledGraph);
   }
   m_schedulerStrategy = std::move(strategy);
   return Result<void>::ok();
@@ -227,12 +235,29 @@ Result<void> ExecutionEngine::Impl::setSchedulerStrategy(
 
 Result<void> ExecutionEngine::Impl::setSyncStrategy(
     std::unique_ptr<ISyncStrategy> strategy) {
+  if (!strategy) {
+    return Result<void>::err(ErrorCode::InvalidArgument,
+                             "Sync strategy must not be null");
+  }
+  std::lock_guard<std::mutex> lock(m_engineMutex);
   if (m_engineState.load(std::memory_order_acquire) != EngineState::IDLE) {
     return Result<void>::err(
         ErrorCode::InvalidState,
         "Cannot change strategies while engine is running");
   }
+  if (m_compiledGraph) {
+    strategy->initialize(*m_compiledGraph);
+  }
   m_syncStrategy = std::move(strategy);
+
+  const bool sync_active = m_syncStrategy->isEnabled();
+  for (auto &state : m_statesByIndex) {
+    if (state) {
+      state->sync_tracked =
+          sync_active && m_syncStrategy->tracksNode(state->name);
+    }
+  }
+  setupDropCallbacks();
   return Result<void>::ok();
 }
 
@@ -367,6 +392,7 @@ Result<void> ExecutionEngine::Impl::initialize(Graph *graph,
 
   // Reset counters
   m_activeTasks.store(0, std::memory_order_relaxed);
+  m_completionReported.store(false, std::memory_order_relaxed);
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_streamingMode.store(false, std::memory_order_relaxed);
   m_engineState.store(EngineState::IDLE, std::memory_order_relaxed);
@@ -561,6 +587,7 @@ void ExecutionEngine::Impl::reset() {
 
   m_accumulatedResults.clear();
   m_activeTasks.store(0, std::memory_order_relaxed);
+  m_completionReported.store(false, std::memory_order_relaxed);
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_streamingMode.store(false, std::memory_order_relaxed);
   m_sinksAtEos.store(0, std::memory_order_relaxed);
@@ -721,6 +748,7 @@ Result<void> ExecutionEngine::Impl::startStreaming(
     context->cancellation().reset();
   }
   m_currentContext.store(std::move(context));
+  m_completionReported.store(false, std::memory_order_relaxed);
   m_streamingMode.store(true, std::memory_order_release);
   m_stopFlag.store(false, std::memory_order_release);
   m_engineState.store(EngineState::RUNNING, std::memory_order_release);
@@ -2328,6 +2356,12 @@ void ExecutionEngine::Impl::checkCompletionAndNotify() {
       m_schedulerStrategy->checkCompletion(active_tasks, 0, sink_counts);
 
   if (status.is_complete) {
+    bool completion_expected = false;
+    if (!m_completionReported.compare_exchange_strong(
+            completion_expected, true, std::memory_order_acq_rel)) {
+      notifyCompletionWaiters();
+      return;
+    }
     LOG_TRACE_S << "ExecutionEngine: Execution complete - " << status.reason;
 
     // Fire-and-forget executions have no synchronous waiter to restore the
@@ -2428,6 +2462,7 @@ Result<void> ExecutionEngine::Impl::waitForCompletion(
 void ExecutionEngine::Impl::resetInternalState() {
   m_stopFlag.store(false, std::memory_order_relaxed);
   m_activeTasks.store(0, std::memory_order_relaxed);
+  m_completionReported.store(false, std::memory_order_relaxed);
   m_nextFrameId.store(1, std::memory_order_relaxed);
   // EOS is terminal for one run; reset() is what starts a new one.
   m_sinksAtEos.store(0, std::memory_order_relaxed);

@@ -50,9 +50,19 @@ public:
 
   // Strategy injection
 
-  /** Replaces the scheduler while idle; rejects a null strategy. */
+  /**
+   * Replaces the scheduler while idle; rejects a null strategy.
+   *
+   * If initialize() has already compiled a graph, the replacement is
+   * initialized from that snapshot before this call returns.
+   */
   Result<void> setSchedulerStrategy(SchedulerStrategyPtr strategy);
-  /** Replaces the synchronization strategy while idle. */
+  /**
+   * Replaces the synchronization strategy while idle; rejects null.
+   *
+   * On an initialized engine the replacement is initialized immediately and
+   * cached node/group membership is refreshed before the next run.
+   */
   Result<void> setSyncStrategy(SyncStrategyPtr strategy);
   /** Installs the built-in strategies and defaults for `mode` while idle. */
   void configureForMode(ExecutionMode mode);

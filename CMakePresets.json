@@ -9,7 +9,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "BUILD_AI_PIPE_TESTS": "ON",
-        "AI_PIPE_WITH_JSON": "ON"
+        "AI_PIPE_BUILD_CONFIG": "ON"
       }
     },
     {
@@ -63,7 +63,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/platforms/linux/aarch64-gnu.cmake",
-        "AI_PIPE_WITH_JSON": "ON"
+        "AI_PIPE_BUILD_CONFIG": "ON"
       }
     }
   ],
